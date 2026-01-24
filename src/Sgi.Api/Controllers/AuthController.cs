@@ -1,0 +1,99 @@
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Tokens;
+using Sgi.Domain.Core;
+using Sgi.Infrastructure.Data;
+
+namespace Sgi.Api.Controllers;
+
+public class JwtSettings
+{
+    public string Key { get; set; } = string.Empty;
+    public string Issuer { get; set; } = string.Empty;
+    public string Audience { get; set; } = string.Empty;
+    public int ExpiresInMinutes { get; set; } = 60;
+}
+
+public record LoginRequest(string Email, string Senha);
+
+public record LoginResponse(string AccessToken, DateTime ExpiresAt);
+
+[ApiController]
+[Route("api/[controller]")]
+public class AuthController : ControllerBase
+{
+    private readonly SgiDbContext _db;
+    private readonly JwtSettings _jwtSettings;
+
+    public AuthController(SgiDbContext db, IConfiguration configuration)
+    {
+        _db = db;
+        _jwtSettings = configuration.GetSection("Jwt").Get<JwtSettings>() ?? new JwtSettings();
+    }
+
+    [HttpPost("login")]
+    public async Task<ActionResult<LoginResponse>> Login(LoginRequest request)
+    {
+        var usuario = await _db.Usuarios
+            .AsNoTracking()
+            .FirstOrDefaultAsync(u => u.EmailLogin == request.Email && u.Status == "ativo");
+
+        if (usuario is null)
+        {
+            return Unauthorized("Usuário ou senha inválidos");
+        }
+
+        if (!VerifyPassword(request.Senha, usuario.SenhaHash))
+        {
+            return Unauthorized("Usuário ou senha inválidos");
+        }
+
+        var tokenHandler = new JwtSecurityTokenHandler();
+        var key = Encoding.UTF8.GetBytes(_jwtSettings.Key);
+
+        var claims = new List<Claim>
+        {
+            new(JwtRegisteredClaimNames.Sub, usuario.Id.ToString()),
+            new(JwtRegisteredClaimNames.Email, usuario.EmailLogin),
+            new("uid", usuario.Id.ToString())
+        };
+
+        var expires = DateTime.UtcNow.AddMinutes(_jwtSettings.ExpiresInMinutes);
+
+        var tokenDescriptor = new SecurityTokenDescriptor
+        {
+            Subject = new ClaimsIdentity(claims),
+            Expires = expires,
+            Issuer = _jwtSettings.Issuer,
+            Audience = _jwtSettings.Audience,
+            SigningCredentials = new SigningCredentials(
+                new SymmetricSecurityKey(key),
+                SecurityAlgorithms.HmacSha256Signature)
+        };
+
+        var token = tokenHandler.CreateToken(tokenDescriptor);
+        var tokenString = tokenHandler.WriteToken(token);
+
+        return Ok(new LoginResponse(tokenString, expires));
+    }
+
+    // Utilização simples de hash com SHA256 apenas para ambiente de desenvolvimento.
+    public static string HashPassword(string password)
+    {
+        var bytes = Encoding.UTF8.GetBytes(password);
+        var hashBytes = SHA256.HashData(bytes);
+        return Convert.ToBase64String(hashBytes);
+    }
+
+    public static bool VerifyPassword(string password, string storedHash)
+    {
+        var hashOfInput = HashPassword(password);
+        return hashOfInput == storedHash;
+    }
+}
+

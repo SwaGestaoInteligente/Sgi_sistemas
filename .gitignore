@@ -1,0 +1,18 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+
+# Frontend
+sgi-web/node_modules/
+sgi-web/dist/
+
+# Banco de dados local
+src/Sgi.Api/sgi.db
+
+# Arquivos temporários
+temp_App_tsx.txt
+
+# Ambientes locais
+sgi-web/.env
