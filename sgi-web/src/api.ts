@@ -34,6 +34,13 @@ export interface Pessoa {
 export interface ContaFinanceira {
   id: string;
   nome: string;
+  tipo?: string;
+  banco?: string;
+  agencia?: string;
+  numeroConta?: string;
+  saldoInicial?: number;
+  moeda?: string;
+  status?: string;
 }
 
 export interface Chamado {
@@ -45,6 +52,26 @@ export interface Chamado {
 export interface Reserva {
   id: string;
   status: string;
+}
+
+export interface LancamentoFinanceiro {
+  id: string;
+  organizacaoId: string;
+  tipo: string; // "pagar" | "receber"
+  situacao: string; // "pendente" | "pago" | "cancelado"
+  planoContasId: string;
+  centroCustoId?: string;
+  contaFinanceiraId?: string;
+  pessoaId: string;
+  descricao: string;
+  valor: number;
+  dataCompetencia: string;
+  dataVencimento?: string;
+  dataPagamento?: string;
+  formaPagamento: string;
+  parcelaNumero?: number;
+  parcelaTotal?: number;
+  referencia?: string;
 }
 
 async function request<T>(
@@ -194,8 +221,40 @@ export const api = {
     }
   },
 
-  async listarContas(token: string): Promise<ContaFinanceira[]> {
-    return request<ContaFinanceira[]>("/api/financeiro/contas", {}, token);
+  async listarContas(
+    token: string,
+    organizacaoId?: string
+  ): Promise<ContaFinanceira[]> {
+    const path = organizacaoId
+      ? `/api/financeiro/contas?organizacaoId=${encodeURIComponent(
+          organizacaoId
+        )}`
+      : "/api/financeiro/contas";
+    return request<ContaFinanceira[]>(path, {}, token);
+  },
+
+  async criarContaFinanceira(
+    token: string,
+    payload: {
+      organizacaoId: string;
+      nome: string;
+      tipo?: string;
+      banco?: string;
+      agencia?: string;
+      numeroConta?: string;
+      saldoInicial?: number;
+      moeda?: string;
+      status?: string;
+    }
+  ): Promise<ContaFinanceira> {
+    return request<ContaFinanceira>(
+      "/api/financeiro/contas",
+      {
+        method: "POST",
+        body: JSON.stringify(payload)
+      },
+      token
+    );
   },
 
   async listarChamados(token: string): Promise<Chamado[]> {
@@ -204,5 +263,86 @@ export const api = {
 
   async listarReservas(token: string): Promise<Reserva[]> {
     return request<Reserva[]>("/api/operacao/reservas", {}, token);
+  },
+
+  async listarLancamentos(
+    token: string,
+    organizacaoId: string,
+    contaId?: string
+  ): Promise<LancamentoFinanceiro[]> {
+    const searchParams = new URLSearchParams();
+    searchParams.set("organizacaoId", organizacaoId);
+    if (contaId) {
+      searchParams.set("contaId", contaId);
+    }
+    const path = `/api/financeiro/lancamentos?${searchParams.toString()}`;
+    return request<LancamentoFinanceiro[]>(path, {}, token);
+  },
+
+  async criarLancamento(
+    token: string,
+    payload: Omit<LancamentoFinanceiro, "id">
+  ): Promise<LancamentoFinanceiro> {
+    return request<LancamentoFinanceiro>(
+      "/api/financeiro/lancamentos",
+      {
+        method: "POST",
+        body: JSON.stringify(payload)
+      },
+      token
+    );
+  },
+
+  async removerContaFinanceira(
+    token: string,
+    id: string
+  ): Promise<void> {
+    const headers: HeadersInit = {
+      "Content-Type": "application/json"
+    };
+
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+
+    const res = await fetch(`${API_BASE_URL}/api/financeiro/contas/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+      headers
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(text || `Erro HTTP ${res.status}`);
+    }
+  },
+
+  async atualizarStatusContaFinanceira(
+    token: string,
+    id: string,
+    status: string
+  ): Promise<void> {
+    const headers: HeadersInit = {
+      "Content-Type": "application/json"
+    };
+
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+
+    const res = await fetch(
+      `${API_BASE_URL}/api/financeiro/contas/${encodeURIComponent(
+        id
+      )}/status`,
+      {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify({ status })
+      }
+    );
+
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(text || `Erro HTTP ${res.status}`);
+    }
   }
 };
