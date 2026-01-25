@@ -81,6 +81,7 @@ async function request<T>(
 ): Promise<T> {
   const headers: HeadersInit = {
     "Content-Type": "application/json",
+    "ngrok-skip-browser-warning": "true",
     ...(options.headers || {})
   };
 
@@ -203,7 +204,8 @@ export const api = {
       id
     )}?organizacaoId=${encodeURIComponent(organizacaoId)}`;
     const headers: HeadersInit = {
-      "Content-Type": "application/json"
+      "Content-Type": "application/json",
+      "ngrok-skip-browser-warning": "true"
     };
 
     if (token) {
@@ -298,17 +300,21 @@ export const api = {
     id: string
   ): Promise<void> {
     const headers: HeadersInit = {
-      "Content-Type": "application/json"
+      "Content-Type": "application/json",
+      "ngrok-skip-browser-warning": "true"
     };
 
     if (token) {
       headers.Authorization = `Bearer ${token}`;
     }
 
-    const res = await fetch(`${API_BASE_URL}/api/financeiro/contas/${encodeURIComponent(id)}`, {
-      method: "DELETE",
-      headers
-    });
+    const res = await fetch(
+      `${API_BASE_URL}/api/financeiro/contas/${encodeURIComponent(id)}`,
+      {
+        method: "DELETE",
+        headers
+      }
+    );
 
     if (!res.ok) {
       const text = await res.text();
@@ -322,7 +328,8 @@ export const api = {
     status: string
   ): Promise<void> {
     const headers: HeadersInit = {
-      "Content-Type": "application/json"
+      "Content-Type": "application/json",
+      "ngrok-skip-browser-warning": "true"
     };
 
     if (token) {
