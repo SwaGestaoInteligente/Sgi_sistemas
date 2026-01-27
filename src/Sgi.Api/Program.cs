@@ -17,6 +17,7 @@ builder.Services.AddCors(options =>
     options.AddDefaultPolicy(policy =>
         policy.WithOrigins(
                 "http://localhost:5173",
+                "http://localhost:5174",
                 "https://swagestaointeligente.github.io"
             )
             .AllowAnyHeader()
@@ -67,8 +68,6 @@ if (app.Environment.IsDevelopment())
     app.UseSwagger();
     app.UseSwaggerUI();
 }
-
-app.UseHttpsRedirection();
 
 app.UseCors();
 

@@ -44,5 +44,43 @@ public class OrganizacoesController : ControllerBase
 
         return CreatedAtAction(nameof(GetById), new { id = model.Id }, model);
     }
-}
 
+    public class AtualizarOrganizacaoRequest
+    {
+        public string Nome { get; set; } = string.Empty;
+        public string? Tipo { get; set; }
+        public string? ModulosAtivos { get; set; }
+        public string? Status { get; set; }
+    }
+
+    [HttpPut("{id:guid}")]
+    public async Task<ActionResult<Organizacao>> Update(Guid id, AtualizarOrganizacaoRequest request)
+    {
+        var item = await _db.Organizacoes.FindAsync(id);
+        if (item == null)
+        {
+            return NotFound();
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Nome))
+        {
+            return BadRequest("Nome é obrigatório.");
+        }
+
+        item.Nome = request.Nome.Trim();
+        item.Tipo = request.Tipo;
+        if (!string.IsNullOrWhiteSpace(request.ModulosAtivos))
+        {
+            item.ModulosAtivos = request.ModulosAtivos;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Status))
+        {
+            item.Status = request.Status;
+        }
+
+        await _db.SaveChangesAsync();
+
+        return Ok(item);
+    }
+}

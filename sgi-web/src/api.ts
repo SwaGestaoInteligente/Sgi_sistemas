@@ -1,5 +1,5 @@
 export const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL ?? "http://localhost:5000";
+  import.meta.env.VITE_API_BASE_URL ?? "http://localhost:7000";
 
 export interface LoginResponse {
   accessToken: string;
@@ -43,6 +43,16 @@ export interface ContaFinanceira {
   status?: string;
 }
 
+export interface PlanoContas {
+  id: string;
+  organizacaoId: string;
+  codigo: string;
+  nome: string;
+  tipo: string;
+  nivel: number;
+  parentId?: string;
+}
+
 export interface Chamado {
   id: string;
   titulo: string;
@@ -52,6 +62,20 @@ export interface Chamado {
 export interface Reserva {
   id: string;
   status: string;
+}
+
+export interface ChargeItem {
+  id: string;
+  organizacaoId: string;
+  nome: string;
+  tipo: string;
+  financeCategoryId: string;
+  valorPadrao?: number;
+  permiteAlterarValor: boolean;
+  exigeReserva: boolean;
+  geraCobrancaAutomatica: boolean;
+  descricaoOpcional?: string;
+  ativo: boolean;
 }
 
 export interface LancamentoFinanceiro {
@@ -99,7 +123,13 @@ async function request<T>(
     throw new Error(text || `Erro HTTP ${res.status}`);
   }
 
-  return (await res.json()) as T;
+  // Algumas rotas (ex.: PATCH/POST sem corpo) retornam 204 ou corpo vazio.
+  const text = await res.text();
+  if (!text) {
+    return undefined as T;
+  }
+
+  return JSON.parse(text) as T;
 }
 
 export const api = {
@@ -121,6 +151,22 @@ export const api = {
   }): Promise<Organizacao> {
     return request<Organizacao>("/api/Organizacoes", {
       method: "POST",
+      body: JSON.stringify(dados)
+    });
+  },
+
+  async atualizarOrganizacao(
+    id: string,
+    dados: {
+      nome: string;
+      tipo?: string;
+      modulosAtivos?: string;
+      status?: string;
+    }
+  ): Promise<Organizacao> {
+    const path = `/api/Organizacoes/${encodeURIComponent(id)}`;
+    return request<Organizacao>(path, {
+      method: "PUT",
       body: JSON.stringify(dados)
     });
   },
@@ -267,16 +313,211 @@ export const api = {
     return request<Reserva[]>("/api/operacao/reservas", {}, token);
   },
 
+  async listarPlanosContas(
+    token: string,
+    organizacaoId?: string,
+    tipo?: string
+  ): Promise<PlanoContas[]> {
+    const searchParams = new URLSearchParams();
+    if (organizacaoId) {
+      searchParams.set("organizacaoId", organizacaoId);
+    }
+    if (tipo) {
+      searchParams.set("tipo", tipo);
+    }
+    const suffix = searchParams.toString();
+    const path = `/api/financeiro/planos-contas${suffix ? `?${suffix}` : ""}`;
+    return request<PlanoContas[]>(path, {}, token);
+  },
+
+  async criarPlanoContas(
+    token: string,
+    payload: {
+      organizacaoId: string;
+      codigo: string;
+      nome: string;
+      tipo: string;
+      nivel: number;
+      parentId?: string;
+    }
+  ): Promise<PlanoContas> {
+    return request<PlanoContas>(
+      "/api/financeiro/planos-contas",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          organizacaoId: payload.organizacaoId,
+          codigo: payload.codigo,
+          nome: payload.nome,
+          tipo: payload.tipo,
+          nivel: payload.nivel,
+          parentId: payload.parentId ?? null
+        })
+      },
+      token
+    );
+  },
+
+  async atualizarPlanoContas(
+    token: string,
+    id: string,
+    payload: {
+      codigo: string;
+      nome: string;
+      tipo: string;
+      nivel: number;
+      parentId?: string;
+    }
+  ): Promise<PlanoContas> {
+    const path = `/api/financeiro/planos-contas/${encodeURIComponent(id)}`;
+    return request<PlanoContas>(
+      path,
+      {
+        method: "PUT",
+        body: JSON.stringify({
+          codigo: payload.codigo,
+          nome: payload.nome,
+          tipo: payload.tipo,
+          nivel: payload.nivel,
+          parentId: payload.parentId ?? null
+        })
+      },
+      token
+    );
+  },
+
+  async removerPlanoContas(
+    token: string,
+    id: string
+  ): Promise<void> {
+    const path = `/api/financeiro/planos-contas/${encodeURIComponent(id)}`;
+    await request<void>(
+      path,
+      {
+        method: "DELETE"
+      },
+      token
+    );
+  },
+
+  async listarItensCobrados(
+    token: string,
+    organizacaoId?: string,
+    apenasAtivos?: boolean
+  ): Promise<ChargeItem[]> {
+    const searchParams = new URLSearchParams();
+    if (organizacaoId) {
+      searchParams.set("organizacaoId", organizacaoId);
+    }
+    if (apenasAtivos === true) {
+      searchParams.set("apenasAtivos", "true");
+    }
+    const suffix = searchParams.toString();
+    const path = `/api/financeiro/itens-cobrados${suffix ? `?${suffix}` : ""}`;
+    return request<ChargeItem[]>(path, {}, token);
+  },
+
+  async criarItemCobrado(
+    token: string,
+    payload: {
+      organizacaoId: string;
+      nome: string;
+      tipo: string;
+      financeCategoryId: string;
+      valorPadrao?: number;
+      permiteAlterarValor: boolean;
+      exigeReserva: boolean;
+      geraCobrancaAutomatica: boolean;
+      descricaoOpcional?: string;
+    }
+  ): Promise<ChargeItem> {
+    return request<ChargeItem>(
+      "/api/financeiro/itens-cobrados",
+      {
+        method: "POST",
+        body: JSON.stringify(payload)
+      },
+      token
+    );
+  },
+
+  async atualizarItemCobrado(
+    token: string,
+    id: string,
+    payload: {
+      nome: string;
+      tipo: string;
+      financeCategoryId: string;
+      valorPadrao?: number;
+      permiteAlterarValor: boolean;
+      exigeReserva: boolean;
+      geraCobrancaAutomatica: boolean;
+      descricaoOpcional?: string;
+      ativo: boolean;
+    }
+  ): Promise<void> {
+    await request<void>(
+      `/api/financeiro/itens-cobrados/${encodeURIComponent(id)}`,
+      {
+        method: "PUT",
+        body: JSON.stringify(payload)
+      },
+      token
+    );
+  },
+
+  async atualizarStatusItemCobrado(
+    token: string,
+    id: string,
+    ativo: boolean
+  ): Promise<void> {
+    await request<void>(
+      `/api/financeiro/itens-cobrados/${encodeURIComponent(id)}/status`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ ativo })
+      },
+      token
+    );
+  },
+
   async listarLancamentos(
     token: string,
     organizacaoId: string,
-    contaId?: string
+    options?: {
+      contaId?: string;
+      tipo?: string;
+      situacao?: string;
+      competenciaInicio?: string;
+      competenciaFim?: string;
+      vencimentoInicio?: string;
+      vencimentoFim?: string;
+    }
   ): Promise<LancamentoFinanceiro[]> {
     const searchParams = new URLSearchParams();
     searchParams.set("organizacaoId", organizacaoId);
-    if (contaId) {
-      searchParams.set("contaId", contaId);
+    if (options?.contaId) {
+      searchParams.set("contaId", options.contaId);
     }
+    if (options?.tipo) {
+      searchParams.set("tipo", options.tipo);
+    }
+    if (options?.situacao) {
+      searchParams.set("situacao", options.situacao);
+    }
+    if (options?.competenciaInicio) {
+      searchParams.set("competenciaInicio", options.competenciaInicio);
+    }
+    if (options?.competenciaFim) {
+      searchParams.set("competenciaFim", options.competenciaFim);
+    }
+    if (options?.vencimentoInicio) {
+      searchParams.set("vencimentoInicio", options.vencimentoInicio);
+    }
+    if (options?.vencimentoFim) {
+      searchParams.set("vencimentoFim", options.vencimentoFim);
+    }
+
     const path = `/api/financeiro/lancamentos?${searchParams.toString()}`;
     return request<LancamentoFinanceiro[]>(path, {}, token);
   },
@@ -290,6 +531,32 @@ export const api = {
       {
         method: "POST",
         body: JSON.stringify(payload)
+      },
+      token
+    );
+  },
+
+  async pagarLancamento(
+    token: string,
+    id: string
+  ): Promise<void> {
+    await request<void>(
+      `/api/financeiro/lancamentos/${encodeURIComponent(id)}/pagar`,
+      {
+        method: "POST"
+      },
+      token
+    );
+  },
+
+  async cancelarLancamento(
+    token: string,
+    id: string
+  ): Promise<void> {
+    await request<void>(
+      `/api/financeiro/lancamentos/${encodeURIComponent(id)}/cancelar`,
+      {
+        method: "POST"
       },
       token
     );

@@ -25,6 +25,7 @@ public class SgiDbContext : DbContext
 
     public DbSet<ContaFinanceira> ContasFinanceiras => Set<ContaFinanceira>();
     public DbSet<PlanoContas> PlanosContas => Set<PlanoContas>();
+    public DbSet<ChargeItem> ItensCobrados => Set<ChargeItem>();
     public DbSet<CentroCusto> CentrosCusto => Set<CentroCusto>();
     public DbSet<LancamentoFinanceiro> LancamentosFinanceiros => Set<LancamentoFinanceiro>();
     public DbSet<DocumentoCobranca> DocumentosCobranca => Set<DocumentoCobranca>();
@@ -55,6 +56,7 @@ public class SgiDbContext : DbContext
 
         modelBuilder.Entity<ContaFinanceira>().ToTable("ContasFinanceiras");
         modelBuilder.Entity<PlanoContas>().ToTable("PlanosContas");
+        modelBuilder.Entity<ChargeItem>().ToTable("ItensCobrados");
         modelBuilder.Entity<CentroCusto>().ToTable("CentrosCusto");
         modelBuilder.Entity<LancamentoFinanceiro>().ToTable("LancamentosFinanceiros");
         modelBuilder.Entity<DocumentoCobranca>().ToTable("DocumentosCobranca");
@@ -66,4 +68,3 @@ public class SgiDbContext : DbContext
         modelBuilder.Entity<Reserva>().ToTable("Reservas");
     }
 }
-
