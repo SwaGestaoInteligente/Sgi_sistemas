@@ -405,57 +405,72 @@ const InnerApp: React.FC = () => {
   };
 
 const Dashboard: React.FC = () => {
-    const { token } = useAuth();
-    const [loading, setLoading] = useState(false);
-    const [erro, setErro] = useState<string | null>(null);
-    const [contas, setContas] = useState<any[]>([]);
-    const [chamados, setChamados] = useState<any[]>([]);
-    const [reservas, setReservas] = useState<any[]>([]);
-  
-    const carregar = async () => {
-      if (!token) return;
-      try {
-        setErro(null);
-        setLoading(true);
-        const [contasRes, chamadosRes, reservasRes] = await Promise.all([
-          api.listarContas(token),
-          api.listarChamados(token),
-          api.listarReservas(token)
-        ]);
-        setContas(contasRes);
-        setChamados(chamadosRes);
-        setReservas(reservasRes);
-      } catch (e: any) {
-        setErro(e.message || "Erro ao carregar dados");
-      } finally {
-        setLoading(false);
-      }
-    };
-  
-    return (
-      <div>
-        <button onClick={carregar} disabled={loading}>
-          {loading ? "Carregando..." : "Atualizar resumo"}
-        </button>
-        {erro && <p className="error">{erro}</p>}
-  
-        <div className="grid">
-          <div className="card">
-            <h2>Contas Financeiras</h2>
-            <p>Total: {contas.length}</p>
-          </div>
-          <div className="card">
-            <h2>Chamados</h2>
-            <p>Total: {chamados.length}</p>
-          </div>
-          <div className="card">
-            <h2>Reservas</h2>
-            <p>Total: {reservas.length}</p>
-          </div>
+  const { token } = useAuth();
+  const [loading, setLoading] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+  const [contas, setContas] = useState<ContaFinanceira[]>([]);
+  const [chamados, setChamados] = useState<any[]>([]);
+  const [reservas, setReservas] = useState<any[]>([]);
+
+  const carregar = async () => {
+    if (!token) return;
+    try {
+      setErro(null);
+      setLoading(true);
+      const [contasRes, chamadosRes, reservasRes] = await Promise.all([
+        api.listarContas(token),
+        api.listarChamados(token),
+        api.listarReservas(token)
+      ]);
+      setContas(contasRes);
+      setChamados(chamadosRes);
+      setReservas(reservasRes);
+    } catch (e: any) {
+      setErro(e.message || "Erro ao carregar dados");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const totalSaldoInicial = contas.reduce(
+    (soma, c) => soma + (c.saldoInicial ?? 0),
+    0
+  );
+
+  return (
+    <div>
+      <button onClick={carregar} disabled={loading}>
+        {loading ? "Carregando..." : "Atualizar resumo financeiro"}
+      </button>
+      {erro && <p className="error">{erro}</p>}
+
+      <div className="grid" style={{ marginTop: 16 }}>
+        <div className="card">
+          <h2>Contas financeiras</h2>
+          <p>Total de contas: {contas.length}</p>
+          <p>
+            Saldo inicial somado:{" "}
+            {totalSaldoInicial.toLocaleString("pt-BR", {
+              style: "currency",
+              currency: "BRL"
+            })}
+          </p>
+        </div>
+
+        <div className="card">
+          <h2>Chamados</h2>
+          <p>Total: {chamados.length}</p>
+        </div>
+
+        <div className="card">
+          <h2>Reservas</h2>
+          <p>Total: {reservas.length}</p>
         </div>
       </div>
-    );
-  };
+    </div>
+  );
+};
+
   
 const FinanceiroView: React.FC<{ organizacao: Organizacao }> = ({
   organizacao
