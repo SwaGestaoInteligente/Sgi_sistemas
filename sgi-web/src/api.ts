@@ -305,12 +305,24 @@ export const api = {
     );
   },
 
-  async listarChamados(token: string): Promise<Chamado[]> {
-    return request<Chamado[]>("/api/operacao/chamados", {}, token);
+  async listarChamados(
+    token: string,
+    organizacaoId?: string
+  ): Promise<Chamado[]> {
+    const suffix = organizacaoId
+      ? `?organizacaoId=${encodeURIComponent(organizacaoId)}`
+      : "";
+    return request<Chamado[]>(`/api/operacao/chamados${suffix}`, {}, token);
   },
 
-  async listarReservas(token: string): Promise<Reserva[]> {
-    return request<Reserva[]>("/api/operacao/reservas", {}, token);
+  async listarReservas(
+    token: string,
+    organizacaoId?: string
+  ): Promise<Reserva[]> {
+    const suffix = organizacaoId
+      ? `?organizacaoId=${encodeURIComponent(organizacaoId)}`
+      : "";
+    return request<Reserva[]>(`/api/operacao/reservas${suffix}`, {}, token);
   },
 
   async listarPlanosContas(

@@ -1,4 +1,7 @@
 import React, { useEffect, useState } from "react";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+import * as XLSX from "xlsx";
 import { AuthProvider, useAuth } from "../hooks/useAuth";
 import {
   api,
@@ -482,7 +485,7 @@ const InnerApp: React.FC = () => {
               Aqui podemos mostrar resumos de financeiro, chamados e reservas
               usando os endpoints já existentes.
             </p>
-            <Dashboard />
+            <Dashboard organizacao={organizacaoSelecionada} />
           </>
         )}
 
@@ -498,7 +501,9 @@ const InnerApp: React.FC = () => {
   );
 };
 
-const Dashboard: React.FC = () => {
+const Dashboard: React.FC<{ organizacao: Organizacao | null }> = ({
+  organizacao
+}) => {
   const { token } = useAuth();
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -507,14 +512,14 @@ const Dashboard: React.FC = () => {
   const [reservas, setReservas] = useState<any[]>([]);
 
   const carregar = async () => {
-    if (!token) return;
+    if (!token || !organizacao) return;
     try {
       setErro(null);
       setLoading(true);
       const [contasRes, chamadosRes, reservasRes] = await Promise.all([
-        api.listarContas(token),
-        api.listarChamados(token),
-        api.listarReservas(token)
+        api.listarContas(token, organizacao.id),
+        api.listarChamados(token, organizacao.id),
+        api.listarReservas(token, organizacao.id)
       ]);
       setContas(contasRes);
       setChamados(chamadosRes);
@@ -528,7 +533,7 @@ const Dashboard: React.FC = () => {
 
   useEffect(() => {
     void carregar();
-  }, [token]);
+  }, [token, organizacao?.id]);
 
   const totalContas = contas.length;
   const saldoInicialTotal = contas.reduce(
@@ -1057,7 +1062,12 @@ const FinanceiroView: React.FC<{ organizacao: Organizacao }> = ({
   const { token } = useAuth();
   const [aba, setAba] =
     useState<
-      "contas" | "contasPagar" | "contasReceber" | "itensCobrados" | "categorias"
+      | "contas"
+      | "contasPagar"
+      | "contasReceber"
+      | "itensCobrados"
+      | "categorias"
+      | "relatorios"
     >("contas");
   const [contas, setContas] = useState<ContaFinanceira[]>([]);
   const [loading, setLoading] = useState(false);
@@ -1084,6 +1094,7 @@ const FinanceiroView: React.FC<{ organizacao: Organizacao }> = ({
   const [novaReceitaDescricao, setNovaReceitaDescricao] = useState("");
   const [novaReceitaVencimento, setNovaReceitaVencimento] = useState("");
   const [novaReceitaValor, setNovaReceitaValor] = useState("");
+  const [novaReceitaCategoriaId, setNovaReceitaCategoriaId] = useState("");
 
   // Itens cobrados (salão, tags, multas, etc.)
   const [itensCobrados, setItensCobrados] = useState<ChargeItem[]>([]);
@@ -1182,11 +1193,30 @@ const FinanceiroView: React.FC<{ organizacao: Organizacao }> = ({
     }
   };
 
+  const carregarCategoriasDespesa = async () => {
+    if (!token) return;
+    try {
+      setErro(null);
+      setLoading(true);
+      const lista = await api.listarPlanosContas(
+        token,
+        organizacaoId,
+        "Despesa"
+      );
+      setCategoriasDespesa(lista);
+    } catch (e: any) {
+      setErro(e.message || "Erro ao carregar categorias financeiras");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     void carregarContas();
     void carregarDespesas();
     void carregarReceitas();
     void carregarCategoriasReceita();
+    void carregarCategoriasDespesa();
     // Itens cobrados serão carregados sob demanda ao abrir a aba
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, organizacaoId]);
@@ -1271,15 +1301,17 @@ const FinanceiroView: React.FC<{ organizacao: Organizacao }> = ({
 
   const criarDespesa = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!token || !novaDescricao.trim() || !novoVencimento || !novoValor) {
+    if (
+      !token ||
+      !novaDescricao.trim() ||
+      !novoVencimento ||
+      !novoValor ||
+      !novaDespesaCategoriaId
+    ) {
       return;
     }
 
     const conta = contas[0];
-    const categoriaDespesa =
-      categoriasDespesa.find((c) => c.id === novaDespesaCategoriaId) ??
-      categoriasDespesa.find((c) => c.tipo === "Despesa");
-
     try {
       setErro(null);
       setLoading(true);
@@ -1287,8 +1319,7 @@ const FinanceiroView: React.FC<{ organizacao: Organizacao }> = ({
         organizacaoId,
         tipo: "pagar",
         situacao: "pendente",
-        planoContasId:
-          categoriaDespesa?.id ?? "00000000-0000-0000-0000-000000000000",
+        planoContasId: novaDespesaCategoriaId,
         centroCustoId: undefined,
         contaFinanceiraId: conta?.id,
         pessoaId: "00000000-0000-0000-0000-000000000000",
@@ -1322,7 +1353,8 @@ const FinanceiroView: React.FC<{ organizacao: Organizacao }> = ({
       !token ||
       !novaReceitaDescricao.trim() ||
       !novaReceitaVencimento ||
-      !novaReceitaValor
+      !novaReceitaValor ||
+      !novaReceitaCategoriaId
     ) {
       return;
     }
@@ -1336,7 +1368,7 @@ const FinanceiroView: React.FC<{ organizacao: Organizacao }> = ({
         organizacaoId,
         tipo: "receber",
         situacao: "pendente",
-        planoContasId: "00000000-0000-0000-0000-000000000000",
+        planoContasId: novaReceitaCategoriaId,
         centroCustoId: undefined,
         contaFinanceiraId: conta?.id,
         pessoaId: "00000000-0000-0000-0000-000000000000",
@@ -1358,6 +1390,7 @@ const FinanceiroView: React.FC<{ organizacao: Organizacao }> = ({
       setNovaReceitaDescricao("");
       setNovaReceitaVencimento("");
       setNovaReceitaValor("");
+      setNovaReceitaCategoriaId("");
     } catch (e: any) {
       setErro(e.message || "Erro ao criar receita");
     } finally {
@@ -1373,13 +1406,180 @@ const FinanceiroView: React.FC<{ organizacao: Organizacao }> = ({
     0
   );
 
-  const totalDespesas = despesas.length;
   const totalAPagar = despesas
     .filter((d) => d.situacao === "pendente")
     .reduce((sum, d) => sum + d.valor, 0);
   const totalPagas = despesas
     .filter((d) => d.situacao === "pago")
     .reduce((sum, d) => sum + d.valor, 0);
+
+  const categoriasDespesaPorId = Object.fromEntries(
+    categoriasDespesa.map((c) => [c.id, `${c.codigo} - ${c.nome}`])
+  );
+  const categoriasReceitaPorId = Object.fromEntries(
+    categoriasReceita.map((c) => [c.id, `${c.codigo} - ${c.nome}`])
+  );
+
+  const despesasValidas = despesas.filter(
+    (d) => d.situacao !== "cancelado"
+  );
+  const receitasValidas = receitas.filter(
+    (r) => r.situacao !== "cancelado"
+  );
+  const totalReceitasPorCategoria = receitasValidas.reduce(
+    (acc, r) => {
+      const key = r.planoContasId || "sem-categoria";
+      acc[key] = (acc[key] ?? 0) + r.valor;
+      return acc;
+    },
+    {} as Record<string, number>
+  );
+  const totalDespesasPorCategoria = despesasValidas.reduce(
+    (acc, d) => {
+      const key = d.planoContasId || "sem-categoria";
+      acc[key] = (acc[key] ?? 0) + d.valor;
+      return acc;
+    },
+    {} as Record<string, number>
+  );
+  const totalReceitas = receitasValidas.reduce(
+    (sum, r) => sum + r.valor,
+    0
+  );
+  const totalDespesas = despesasValidas.reduce(
+    (sum, d) => sum + d.valor,
+    0
+  );
+  const saldoPeriodo = totalReceitas - totalDespesas;
+
+  const carregarLogoBase64 = async () => {
+    try {
+      const res = await fetch("/swa1.jpeg");
+      if (!res.ok) return null;
+      const blob = await res.blob();
+      return await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(String(reader.result));
+        reader.readAsDataURL(blob);
+      });
+    } catch {
+      return null;
+    }
+  };
+
+  const gerarRelatorioPdf = async () => {
+    const doc = new jsPDF();
+    const logo = await carregarLogoBase64();
+    const titulo = `Relatorio Financeiro - ${organizacao.nome}`;
+    doc.setFontSize(14);
+    if (logo) {
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const logoSize = 32;
+      const logoX = (pageWidth - logoSize) / 2;
+      doc.addImage(logo, "JPEG", logoX, 8, logoSize, logoSize);
+    }
+    const titleX = 14;
+    const startY = logo ? 48 : 16;
+    doc.text(titulo, titleX, startY);
+    doc.setFontSize(11);
+    doc.text(
+      `Total receitas: ${totalReceitas.toLocaleString("pt-BR", {
+        style: "currency",
+        currency: "BRL"
+      })}`,
+      titleX,
+      startY + 10
+    );
+    doc.text(
+      `Total despesas: ${totalDespesas.toLocaleString("pt-BR", {
+        style: "currency",
+        currency: "BRL"
+      })}`,
+      titleX,
+      startY + 18
+    );
+    doc.text(
+      `Saldo do periodo: ${saldoPeriodo.toLocaleString("pt-BR", {
+        style: "currency",
+        currency: "BRL"
+      })}`,
+      titleX,
+      startY + 26
+    );
+
+    const receitasRows = Object.entries(totalReceitasPorCategoria).map(
+      ([id, total]) => [
+        categoriasReceitaPorId[id] ?? "Sem categoria",
+        total.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
+      ]
+    );
+    autoTable(doc, {
+      startY: startY + 36,
+      head: [["Receitas por categoria", "Total"]],
+      body: receitasRows.length ? receitasRows : [["Nenhuma receita", "-"]]
+    });
+
+    const despesasRows = Object.entries(totalDespesasPorCategoria).map(
+      ([id, total]) => [
+        categoriasDespesaPorId[id] ?? "Sem categoria",
+        total.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
+      ]
+    );
+    autoTable(doc, {
+      startY: (doc as any).lastAutoTable.finalY + 8,
+      head: [["Despesas por categoria", "Total"]],
+      body: despesasRows.length ? despesasRows : [["Nenhuma despesa", "-"]]
+    });
+
+    const arquivo = `relatorio_financeiro_${organizacao.nome
+      .replace(/[^a-z0-9]+/gi, "_")
+      .toLowerCase()}.pdf`;
+    doc.save(arquivo);
+  };
+
+  const gerarRelatorioExcel = () => {
+    const wb = XLSX.utils.book_new();
+
+    const resumo = [
+      ["Relatorio Financeiro", organizacao.nome],
+      ["Total receitas", totalReceitas],
+      ["Total despesas", totalDespesas],
+      ["Saldo do periodo", saldoPeriodo]
+    ];
+    const wsResumo = XLSX.utils.aoa_to_sheet(resumo);
+    XLSX.utils.book_append_sheet(wb, wsResumo, "Resumo");
+
+    const receitasSheet = [
+      ["Categoria", "Total"],
+      ...Object.entries(totalReceitasPorCategoria).map(([id, total]) => [
+        categoriasReceitaPorId[id] ?? "Sem categoria",
+        total
+      ])
+    ];
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.aoa_to_sheet(receitasSheet),
+      "Receitas"
+    );
+
+    const despesasSheet = [
+      ["Categoria", "Total"],
+      ...Object.entries(totalDespesasPorCategoria).map(([id, total]) => [
+        categoriasDespesaPorId[id] ?? "Sem categoria",
+        total
+      ])
+    ];
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.aoa_to_sheet(despesasSheet),
+      "Despesas"
+    );
+
+    const arquivo = `relatorio_financeiro_${organizacao.nome
+      .replace(/[^a-z0-9]+/gi, "_")
+      .toLowerCase()}.xlsx`;
+    XLSX.writeFile(wb, arquivo);
+  };
 
   return (
     <div className="finance-page">
@@ -1478,6 +1678,16 @@ const FinanceiroView: React.FC<{ organizacao: Organizacao }> = ({
           onClick={() => setAba("categorias")}
         >
           Categorias financeiras
+        </button>
+        <button
+          type="button"
+          className={
+            "finance-tab" +
+            (aba === "relatorios" ? " finance-tab--active" : "")
+          }
+          onClick={() => setAba("relatorios")}
+        >
+          Relatorios
         </button>
       </div>
 
@@ -1708,12 +1918,18 @@ const FinanceiroView: React.FC<{ organizacao: Organizacao }> = ({
               </label>
             </div>
             <label>
-              Categoria de despesa (em breve)
-              <select disabled>
-                <option>
-                  Usando a primeira categoria de Despesa disponível no plano
-                  de contas.
-                </option>
+              Categoria de despesa
+              <select
+                value={novaDespesaCategoriaId}
+                onChange={(e) => setNovaDespesaCategoriaId(e.target.value)}
+                required
+              >
+                <option value="">Selecione uma categoria</option>
+                {categoriasDespesa.map((cat) => (
+                  <option key={cat.id} value={cat.id}>
+                    {cat.codigo} - {cat.nome}
+                  </option>
+                ))}
               </select>
             </label>
             <button
@@ -1722,7 +1938,8 @@ const FinanceiroView: React.FC<{ organizacao: Organizacao }> = ({
                 loading ||
                 !novaDescricao.trim() ||
                 !novoVencimento ||
-                !novoValor
+                !novoValor ||
+                !novaDespesaCategoriaId
               }
             >
               {loading ? "Salvando..." : "Criar despesa"}
@@ -1744,6 +1961,7 @@ const FinanceiroView: React.FC<{ organizacao: Organizacao }> = ({
             <thead>
               <tr>
                 <th>Descrição</th>
+                <th>Categoria</th>
                 <th>Vencimento</th>
                 <th>Valor</th>
                 <th>Situação</th>
@@ -1756,6 +1974,9 @@ const FinanceiroView: React.FC<{ organizacao: Organizacao }> = ({
                 .map((d) => (
                   <tr key={d.id}>
                     <td>{d.descricao}</td>
+                    <td>
+                      {categoriasDespesaPorId[d.planoContasId] ?? "-"}
+                    </td>
                     <td>
                       {d.dataVencimento
                         ? new Date(d.dataVencimento).toLocaleDateString(
@@ -1836,7 +2057,7 @@ const FinanceiroView: React.FC<{ organizacao: Organizacao }> = ({
                 ))}
               {despesas.length === 0 && (
                 <tr>
-                  <td colSpan={5} style={{ textAlign: "center" }}>
+                  <td colSpan={6} style={{ textAlign: "center" }}>
                     Nenhuma despesa cadastrada ainda.
                   </td>
                 </tr>
@@ -1891,13 +2112,29 @@ const FinanceiroView: React.FC<{ organizacao: Organizacao }> = ({
                 />
               </label>
             </div>
+            <label>
+              Categoria de receita
+              <select
+                value={novaReceitaCategoriaId}
+                onChange={(e) => setNovaReceitaCategoriaId(e.target.value)}
+                required
+              >
+                <option value="">Selecione uma categoria</option>
+                {categoriasReceita.map((cat) => (
+                  <option key={cat.id} value={cat.id}>
+                    {cat.codigo} - {cat.nome}
+                  </option>
+                ))}
+              </select>
+            </label>
             <button
               type="submit"
               disabled={
                 loading ||
                 !novaReceitaDescricao.trim() ||
                 !novaReceitaVencimento ||
-                !novaReceitaValor
+                !novaReceitaValor ||
+                !novaReceitaCategoriaId
               }
             >
               {loading ? "Salvando..." : "Criar receita"}
@@ -1919,6 +2156,7 @@ const FinanceiroView: React.FC<{ organizacao: Organizacao }> = ({
             <thead>
               <tr>
                 <th>Descrição</th>
+                <th>Categoria</th>
                 <th>Vencimento</th>
                 <th>Valor</th>
                 <th>Situação</th>
@@ -1928,6 +2166,9 @@ const FinanceiroView: React.FC<{ organizacao: Organizacao }> = ({
               {receitas.map((r) => (
                 <tr key={r.id}>
                   <td>{r.descricao}</td>
+                  <td>
+                    {categoriasReceitaPorId[r.planoContasId] ?? "-"}
+                  </td>
                   <td>
                     {r.dataVencimento
                       ? new Date(r.dataVencimento).toLocaleDateString(
@@ -1946,7 +2187,7 @@ const FinanceiroView: React.FC<{ organizacao: Organizacao }> = ({
               ))}
               {receitas.length === 0 && (
                 <tr>
-                  <td colSpan={4} style={{ textAlign: "center" }}>
+                  <td colSpan={5} style={{ textAlign: "center" }}>
                     Nenhuma receita cadastrada ainda.
                   </td>
                 </tr>
@@ -2529,6 +2770,134 @@ const FinanceiroView: React.FC<{ organizacao: Organizacao }> = ({
               </tbody>
             </table>
           </section>
+        </div>
+      )}
+
+      {aba === "relatorios" && (
+        <div className="finance-table-card" style={{ marginTop: 12 }}>
+          <div className="finance-table-header">
+            <div>
+              <h3>Relatorios - Balancete simples</h3>
+              <p style={{ marginTop: 4, color: "#6b7280" }}>
+                Totais por categoria com base nos lancamentos atuais.
+              </p>
+            </div>
+            <div className="finance-card-actions">
+              <button type="button" onClick={() => void gerarRelatorioPdf()}>
+                PDF
+              </button>
+              <button type="button" onClick={gerarRelatorioExcel}>
+                Excel
+              </button>
+              <button type="button" onClick={() => setAba("contas")}>
+                Voltar
+              </button>
+            </div>
+          </div>
+
+          <div className="finance-card-grid" style={{ marginTop: 12 }}>
+            <div className="finance-card">
+              <div className="finance-card-header-row">
+                <strong>Total de receitas</strong>
+              </div>
+              <p>
+                {totalReceitas.toLocaleString("pt-BR", {
+                  style: "currency",
+                  currency: "BRL"
+                })}
+              </p>
+            </div>
+            <div className="finance-card">
+              <div className="finance-card-header-row">
+                <strong>Total de despesas</strong>
+              </div>
+              <p>
+                {totalDespesas.toLocaleString("pt-BR", {
+                  style: "currency",
+                  currency: "BRL"
+                })}
+              </p>
+            </div>
+            <div className="finance-card">
+              <div className="finance-card-header-row">
+                <strong>Saldo do periodo</strong>
+              </div>
+              <p>
+                {saldoPeriodo.toLocaleString("pt-BR", {
+                  style: "currency",
+                  currency: "BRL"
+                })}
+              </p>
+            </div>
+          </div>
+
+          <div style={{ marginTop: 16 }}>
+            <h4>Receitas por categoria</h4>
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Categoria</th>
+                  <th>Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Object.entries(totalReceitasPorCategoria).map(
+                  ([id, total]) => (
+                    <tr key={id}>
+                      <td>{categoriasReceitaPorId[id] ?? "Sem categoria"}</td>
+                      <td>
+                        {total.toLocaleString("pt-BR", {
+                          style: "currency",
+                          currency: "BRL"
+                        })}
+                      </td>
+                    </tr>
+                  )
+                )}
+                {Object.keys(totalReceitasPorCategoria).length === 0 && (
+                  <tr>
+                    <td colSpan={2} style={{ textAlign: "center" }}>
+                      Nenhuma receita cadastrada ainda.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <div style={{ marginTop: 16 }}>
+            <h4>Despesas por categoria</h4>
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Categoria</th>
+                  <th>Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Object.entries(totalDespesasPorCategoria).map(
+                  ([id, total]) => (
+                    <tr key={id}>
+                      <td>{categoriasDespesaPorId[id] ?? "Sem categoria"}</td>
+                      <td>
+                        {total.toLocaleString("pt-BR", {
+                          style: "currency",
+                          currency: "BRL"
+                        })}
+                      </td>
+                    </tr>
+                  )
+                )}
+                {Object.keys(totalDespesasPorCategoria).length === 0 && (
+                  <tr>
+                    <td colSpan={2} style={{ textAlign: "center" }}>
+                      Nenhuma despesa cadastrada ainda.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>

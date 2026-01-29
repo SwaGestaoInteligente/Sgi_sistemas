@@ -1,0 +1,57 @@
+﻿RELATORIO DO DIA - SGI / CONDOMINIO (28/01/2026)
+
+1) AMBIENTE / EXECUCAO
+- API rodando em: http://localhost:7000
+- Front rodando em: http://localhost:5173/Sgi_sistemas/
+- Ajustado .env e .env.development para usar porta 7000
+- Node e npm instalados. Para rodar npm usamos:
+  & "C:\Program Files\nodejs\npm.cmd"
+
+2) CORRECOES DE ORGANIZACAO
+- Dashboard agora filtra Contas, Chamados e Reservas por organizacaoId.
+- api.ts atualizado para listarChamados(token, organizacaoId) e listarReservas(token, organizacaoId).
+
+3) PADRAO VISUAL
+- styles.css com variaveis de cor e fonte Manrope.
+- Botões com sombra/hover.
+- Container ocupa mais a tela.
+
+4) FINANCEIRO (MELHORIAS)
+- Categorias obrigatorias em Contas a pagar e Contas a receber.
+- Select de categoria nas duas telas.
+- Categoria exibida na tabela de despesas e receitas.
+- Aba "Relatorios" adicionada (balancete simples).
+- Botao "Voltar" dentro de Relatorios.
+
+5) RELATORIOS PDF/EXCEL
+- Botões PDF e Excel funcionando.
+- Dependencias instaladas no sgi-web:
+  jspdf, jspdf-autotable, xlsx
+- PDF gera tabelas de receitas/despesas por categoria.
+- Logo no PDF: temporariamente desativado (arquivo nao encontrado).
+
+6) ERROS RESOLVIDOS
+- "Failed to fetch" por porta errada.
+- "401 Unauthorized" por falta de token.
+- "totalDespesas" duplicado.
+- Caracteres quebrados (Relatorios).
+
+7) COMANDOS PARA RODAR NO OUTRO PC
+API:
+cd C:\projetos\Sgi_sistemas
+ dotnet run --project src\Sgi.Api\Sgi.Api.csproj --urls http://localhost:7000
+
+Front:
+cd C:\projetos\Sgi_sistemas\sgi-web
+ & "C:\Program Files\nodejs\npm.cmd" run dev -- --port 5173
+
+Abrir navegador:
+http://localhost:5173/Sgi_sistemas/
+
+8) O QUE FALTA (PRIORIDADES)
+- Formulario completo para categorias financeiras (sem prompt).
+- Relatorios com filtro por periodo.
+- Conciliação bancaria.
+- Inadimplencia.
+- Cobranças com boleto/PIX.
+
