@@ -29,6 +29,7 @@ public class SgiDbContext : DbContext
     public DbSet<CentroCusto> CentrosCusto => Set<CentroCusto>();
     public DbSet<LancamentoFinanceiro> LancamentosFinanceiros => Set<LancamentoFinanceiro>();
     public DbSet<DocumentoCobranca> DocumentosCobranca => Set<DocumentoCobranca>();
+    public DbSet<CotaCondominial> CotasCondominio => Set<CotaCondominial>();
     public DbSet<RegraRateio> RegrasRateio => Set<RegraRateio>();
     public DbSet<LancamentoRateado> LancamentosRateados => Set<LancamentoRateado>();
 
@@ -60,6 +61,7 @@ public class SgiDbContext : DbContext
         modelBuilder.Entity<CentroCusto>().ToTable("CentrosCusto");
         modelBuilder.Entity<LancamentoFinanceiro>().ToTable("LancamentosFinanceiros");
         modelBuilder.Entity<DocumentoCobranca>().ToTable("DocumentosCobranca");
+        modelBuilder.Entity<CotaCondominial>().ToTable("CotasCondominio");
         modelBuilder.Entity<RegraRateio>().ToTable("RegrasRateio");
         modelBuilder.Entity<LancamentoRateado>().ToTable("LancamentosRateados");
 

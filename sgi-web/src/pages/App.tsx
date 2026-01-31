@@ -10,10 +10,125 @@ import {
   LancamentoFinanceiro,
   PlanoContas,
   Organizacao,
-  Pessoa
+  Pessoa,
+  UnidadeOrganizacional
 } from "../api";
 
 import { LoginPage } from "./LoginPage";
+
+// --------------------------------------------------------
+// Dashboard (adicionado para evitar erro "Dashboard is not defined")
+// --------------------------------------------------------
+
+const Dashboard: React.FC<{ organizacao: Organizacao | null }> = ({
+  organizacao
+}) => {
+  const { token } = useAuth();
+  const [loading, setLoading] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+  const [contas, setContas] = useState<ContaFinanceira[]>([]);
+  const [chamados, setChamados] = useState<any[]>([]);
+  const [reservas, setReservas] = useState<any[]>([]);
+
+  const carregar = async () => {
+    if (!token || !organizacao) return;
+    try {
+      setErro(null);
+      setLoading(true);
+      const [contasRes, chamadosRes, reservasRes] = await Promise.all([
+        api.listarContas(token, organizacao.id),
+        api.listarChamados(token, organizacao.id),
+        api.listarReservas(token, organizacao.id)
+      ]);
+      setContas(contasRes);
+      setChamados(chamadosRes);
+      setReservas(reservasRes);
+    } catch (e: any) {
+      setErro(e.message || "Erro ao carregar dados do dashboard");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void carregar();
+  }, [token, organizacao?.id]);
+
+  const totalContas = contas.length;
+  const saldoInicialTotal = contas.reduce(
+    (sum, c) => sum + (c.saldoInicial ?? 0),
+    0
+  );
+  const contasAtivas = contas.filter((c) => c.status === "ativo").length;
+
+  const chamadosAbertos = chamados.filter(
+    (c) => c.status && c.status.toLowerCase() !== "concluido"
+  ).length;
+
+  const reservasAtivas = reservas.filter(
+    (r) => r.status && r.status.toLowerCase() === "ativa"
+  ).length;
+
+  return (
+    <div className="dashboard">
+      <div className="dashboard-header-row">
+        <span className="dashboard-caption">
+          Visão rápida da organização
+        </span>
+        <button
+          type="button"
+          onClick={carregar}
+          disabled={loading}
+          className="dashboard-refresh"
+        >
+          {loading ? "Atualizando..." : "Atualizar dados"}
+        </button>
+      </div>
+
+      <div className="dashboard-grid">
+        <div className="dashboard-card dashboard-card--primary">
+          <div className="dashboard-card-label">Saldo inicial total</div>
+          <div className="dashboard-card-value">
+            R$ {saldoInicialTotal.toFixed(2)}
+          </div>
+          <div className="dashboard-card-sub">
+            {totalContas} conta(s) cadastrada(s).
+          </div>
+        </div>
+
+        <div className="dashboard-card">
+          <div className="dashboard-card-label">Contas ativas</div>
+          <div className="dashboard-card-value">{contasAtivas}</div>
+          <div className="dashboard-card-sub">
+            Em uso no dia a dia.
+          </div>
+        </div>
+
+        <div className="dashboard-card">
+          <div className="dashboard-card-label">Chamados</div>
+          <div className="dashboard-card-value">{chamados.length}</div>
+          <div className="dashboard-card-sub">
+            Abertos / pendentes: {chamadosAbertos}
+          </div>
+        </div>
+
+        <div className="dashboard-card">
+          <div className="dashboard-card-label">Reservas</div>
+          <div className="dashboard-card-value">{reservas.length}</div>
+          <div className="dashboard-card-sub">
+            Ativas / futuras: {reservasAtivas}
+          </div>
+        </div>
+      </div>
+
+      {erro && (
+        <p className="error" style={{ marginTop: 8 }}>
+          {erro}
+        </p>
+      )}
+    </div>
+  );
+};
 
 type Segmento = {
   id: string;
@@ -141,7 +256,11 @@ const InnerApp: React.FC = () => {
   const [novoNomeOrg, setNovoNomeOrg] = useState("");
   const [criandoOrg, setCriandoOrg] = useState(false);
   const [view, setView] =
-    useState<"dashboard" | "pessoas" | "financeiro">("dashboard");
+   useState<"dashboard" | "pessoas" | "unidades" | "financeiro">(
+    "dashboard"
+  );
+
+
 
   const irParaInicio = () => {
     setOrganizacaoSelecionada(null);
@@ -382,7 +501,6 @@ const InnerApp: React.FC = () => {
     );
   }
 
-
   // 3) Dashboard + Pessoas para a organização selecionada
   return (
     <>
@@ -468,6 +586,15 @@ const InnerApp: React.FC = () => {
               Pessoas
             </button>
             <button
+              onClick={() => setView("unidades")}
+              style={{
+                backgroundColor: view === "unidades" ? "#2563eb" : "#e5e7eb",
+                color: view === "unidades" ? "#ffffff" : "#111827"
+              }}
+            >
+              Unidades
+            </button>
+            <button
               onClick={() => setView("financeiro")}
               style={{
                 backgroundColor: view === "financeiro" ? "#2563eb" : "#e5e7eb",
@@ -493,6 +620,10 @@ const InnerApp: React.FC = () => {
           <PessoasView organizacao={organizacaoSelecionada} />
         )}
 
+        {view === "unidades" && (
+          <UnidadesView organizacao={organizacaoSelecionada} />
+        )}
+
         {view === "financeiro" && (
           <FinanceiroView organizacao={organizacaoSelecionada} />
         )}
@@ -501,108 +632,164 @@ const InnerApp: React.FC = () => {
   );
 };
 
-const Dashboard: React.FC<{ organizacao: Organizacao | null }> = ({
+  const UnidadesView: React.FC<{ organizacao: Organizacao | null }> = ({
   organizacao
 }) => {
   const { token } = useAuth();
+  const [unidades, setUnidades] = useState<UnidadeOrganizacional[]>([]);
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
-  const [contas, setContas] = useState<ContaFinanceira[]>([]);
-  const [chamados, setChamados] = useState<any[]>([]);
-  const [reservas, setReservas] = useState<any[]>([]);
 
-  const carregar = async () => {
+  const [tipo, setTipo] = useState("Apartamento");
+  const [codigoInterno, setCodigoInterno] = useState("");
+  const [nome, setNome] = useState("");
+
+  const carregarUnidades = async () => {
     if (!token || !organizacao) return;
     try {
       setErro(null);
       setLoading(true);
-      const [contasRes, chamadosRes, reservasRes] = await Promise.all([
-        api.listarContas(token, organizacao.id),
-        api.listarChamados(token, organizacao.id),
-        api.listarReservas(token, organizacao.id)
-      ]);
-      setContas(contasRes);
-      setChamados(chamadosRes);
-      setReservas(reservasRes);
+      const lista = await api.listarUnidades(token, organizacao.id);
+      setUnidades(lista);
     } catch (e: any) {
-      setErro(e.message || "Erro ao carregar dados do dashboard");
+      setErro(e.message || "Erro ao carregar unidades");
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    void carregar();
+    void carregarUnidades();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, organizacao?.id]);
 
-  const totalContas = contas.length;
-  const saldoInicialTotal = contas.reduce(
-    (sum, c) => sum + (c.saldoInicial ?? 0),
-    0
-  );
-  const contasAtivas = contas.filter((c) => c.status === "ativo").length;
+  const salvarUnidade = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!token || !organizacao) return;
+    if (!nome.trim()) return;
 
-  const chamadosAbertos = chamados.filter(
-    (c) => c.status && c.status.toLowerCase() !== "concluido"
-  ).length;
+    try {
+      setErro(null);
+      setLoading(true);
+      const criada = await api.criarUnidade(token, {
+        organizacaoId: organizacao.id,
+        tipo,
+        codigoInterno: codigoInterno.trim(),
+        nome: nome.trim()
+      });
+      setUnidades((prev) => [...prev, criada]);
+      setCodigoInterno("");
+      setNome("");
+    } catch (e: any) {
+      setErro(e.message || "Erro ao salvar unidade");
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  const reservasAtivas = reservas.filter(
-    (r) => r.status && r.status.toLowerCase() === "ativa"
-  ).length;
+  if (!organizacao) {
+    return null;
+  }
 
   return (
-    <div className="dashboard">
-      <div className="dashboard-header-row">
-        <span className="dashboard-caption">
-          Visão rápida da organização
-        </span>
-        <button
-          type="button"
-          onClick={carregar}
-          disabled={loading}
-          className="dashboard-refresh"
-        >
-          {loading ? "Atualizando..." : "Atualizar dados"}
-        </button>
-      </div>
-
-      <div className="dashboard-grid">
-        <div className="dashboard-card dashboard-card--primary">
-          <div className="dashboard-card-label">Saldo inicial total</div>
-          <div className="dashboard-card-value">
-            R$ {saldoInicialTotal.toFixed(2)}
-          </div>
-          <div className="dashboard-card-sub">
-            {totalContas} conta(s) cadastrada(s).
-          </div>
+    <div className="people-page">
+      <div className="people-header-row">
+        <div>
+          <h2>Unidades</h2>
+          <p className="people-header-sub">
+            Cadastre blocos, apartamentos, casas e outras unidades da
+            organização <strong>{organizacao.nome}</strong>.
+          </p>
         </div>
-
-        <div className="dashboard-card">
-          <div className="dashboard-card-label">Contas ativas</div>
-          <div className="dashboard-card-value">{contasAtivas}</div>
-          <div className="dashboard-card-sub">
-            Em uso no dia a dia.
-          </div>
-        </div>
-
-        <div className="dashboard-card">
-          <div className="dashboard-card-label">Chamados</div>
-          <div className="dashboard-card-value">{chamados.length}</div>
-          <div className="dashboard-card-sub">
-            Abertos / pendentes: {chamadosAbertos}
-          </div>
-        </div>
-
-        <div className="dashboard-card">
-          <div className="dashboard-card-label">Reservas</div>
-          <div className="dashboard-card-value">{reservas.length}</div>
-          <div className="dashboard-card-sub">
-            Ativas / futuras: {reservasAtivas}
-          </div>
+        <div className="people-header-badges">
+          <span>Total de unidades: {unidades.length}</span>
         </div>
       </div>
 
-      {erro && <p className="error" style={{ marginTop: 8 }}>{erro}</p>}
+      <div className="people-layout">
+        <section className="people-form-card">
+          <h3>Nova unidade</h3>
+          <p className="people-form-sub">
+            Use tipo, código e nome para identificar cada unidade
+            (ex.: Bloco A, Ap 101).
+          </p>
+
+          <form onSubmit={salvarUnidade} className="form">
+            <div className="people-form-grid">
+              <label>
+                Tipo
+                <select
+                  value={tipo}
+                  onChange={(e) => setTipo(e.target.value)}
+                >
+                  <option value="Bloco">Bloco</option>
+                  <option value="Apartamento">Apartamento</option>
+                  <option value="Casa">Casa</option>
+                  <option value="Sala">Sala</option>
+                  <option value="Outro">Outro</option>
+                </select>
+              </label>
+              <label>
+                Código interno
+                <input
+                  value={codigoInterno}
+                  onChange={(e) => setCodigoInterno(e.target.value)}
+                  placeholder="Ex.: A, 101, A-101"
+                />
+              </label>
+            </div>
+
+            <label>
+              Nome da unidade
+              <input
+                value={nome}
+                onChange={(e) => setNome(e.target.value)}
+                placeholder="Ex.: Bloco A, Ap 101"
+                required
+              />
+            </label>
+
+            <button type="submit" disabled={loading || !nome.trim()}>
+              {loading ? "Salvando..." : "Salvar unidade"}
+            </button>
+
+            {erro && <p className="error">{erro}</p>}
+          </form>
+        </section>
+
+        <section className="people-list-card">
+          <div className="people-list-header">
+            <h3>Unidades cadastradas</h3>
+          </div>
+
+          {unidades.length === 0 ? (
+            <p className="org-empty">
+              Nenhuma unidade cadastrada ainda para esta organização.
+            </p>
+          ) : (
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Tipo</th>
+                  <th>Código</th>
+                  <th>Nome</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {unidades.map((u) => (
+                  <tr key={u.id}>
+                    <td>{u.tipo}</td>
+                    <td>{u.codigoInterno}</td>
+                    <td>{u.nome}</td>
+                    <td>{u.status}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </section>
+      </div>
     </div>
   );
 };
@@ -1056,6 +1243,7 @@ const PessoasView: React.FC<{ organizacao: Organizacao }> = ({
   );
 };
 
+
 const FinanceiroView: React.FC<{ organizacao: Organizacao }> = ({
   organizacao
 }) => {
@@ -1107,10 +1295,17 @@ const FinanceiroView: React.FC<{ organizacao: Organizacao }> = ({
   const [novoItemPermiteAlterar, setNovoItemPermiteAlterar] = useState(true);
   const [novoItemExigeReserva, setNovoItemExigeReserva] = useState(false);
   const [novoItemGeraCobrancaAuto, setNovoItemGeraCobrancaAuto] =
-    useState(true);
-  const [novoItemDescricao, setNovoItemDescricao] = useState("");
+  useState(true);
+const [novoItemDescricao, setNovoItemDescricao] = useState("");
 
-  const organizacaoId = organizacao.id;
+// Plano de contas (categorias financeiras)
+const [novaCategoriaCodigo, setNovaCategoriaCodigo] = useState("");
+const [novaCategoriaNome, setNovaCategoriaNome] = useState("");
+const [novaCategoriaTipo, setNovaCategoriaTipo] =
+  useState<"Receita" | "Despesa">("Receita");
+
+const organizacaoId = organizacao.id;
+
 
   const carregarContas = async () => {
     if (!token) return;
@@ -1667,7 +1862,7 @@ const FinanceiroView: React.FC<{ organizacao: Organizacao }> = ({
           }
           onClick={() => setAba("itensCobrados")}
         >
-          Itens cobrados
+          Itens de cobrança
         </button>
         <button
           type="button"
@@ -1677,7 +1872,7 @@ const FinanceiroView: React.FC<{ organizacao: Organizacao }> = ({
           }
           onClick={() => setAba("categorias")}
         >
-          Categorias financeiras
+          Cadastro de categorias
         </button>
         <button
           type="button"
@@ -2381,13 +2576,14 @@ const FinanceiroView: React.FC<{ organizacao: Organizacao }> = ({
               </button>
             </div>
 
-            {erro && <p className="error">{erro}</p>}
+                        {erro && <p className="error">{erro}</p>}
 
             <table className="table">
               <thead>
                 <tr>
                   <th>Nome</th>
                   <th>Tipo</th>
+                  <th>Categoria</th>
                   <th>Valor padrão</th>
                   <th>Ativo</th>
                   <th />
@@ -2398,6 +2594,11 @@ const FinanceiroView: React.FC<{ organizacao: Organizacao }> = ({
                   <tr key={item.id}>
                     <td>{item.nome}</td>
                     <td>{item.tipo}</td>
+                    <td>
+                      {item.financeCategoryId
+                        ? categoriasReceitaPorId[item.financeCategoryId] ?? "-"
+                        : "-"}
+                    </td>
                     <td>
                       {item.valorPadrao != null
                         ? item.valorPadrao.toLocaleString("pt-BR", {
@@ -2419,6 +2620,10 @@ const FinanceiroView: React.FC<{ organizacao: Organizacao }> = ({
                       </span>
                     </td>
                     <td>
+                      {/* aqui continuam os botões Editar / Ativar / Desativar
+                          exatamente como já estavam antes */}
+
+               
                       <button
                         type="button"
                         onClick={async () => {
@@ -2563,7 +2768,7 @@ const FinanceiroView: React.FC<{ organizacao: Organizacao }> = ({
         </div>
       )}
 
-      {aba === "categorias" && (
+           {aba === "categorias" && (
         <div className="finance-layout">
           <section className="finance-form-card">
             <h3>Nova categoria financeira</h3>
@@ -2576,36 +2781,30 @@ const FinanceiroView: React.FC<{ organizacao: Organizacao }> = ({
               onSubmit={async (e) => {
                 e.preventDefault();
                 if (!token) return;
-                const codigo = window.prompt(
-                  "Código da categoria (ex.: 1.01.01):"
-                );
-                const nome = window.prompt(
-                  "Nome da categoria (ex.: Receitas de condomínio):"
-                );
-                if (!codigo || !codigo.trim() || !nome || !nome.trim()) {
+                if (!novaCategoriaCodigo.trim() || !novaCategoriaNome.trim()) {
                   return;
                 }
-                const tipoEntrada =
-                  window.prompt(
-                    "Tipo da categoria (Receita ou Despesa):",
-                    "Receita"
-                  ) ?? "Receita";
-                const tipoNormalizado =
-                  tipoEntrada.trim().toLowerCase().startsWith("d")
-                    ? "Despesa"
-                    : "Receita";
 
                 try {
                   setErro(null);
                   setLoading(true);
                   const criada = await api.criarPlanoContas(token, {
                     organizacaoId: organizacao.id,
-                    codigo: codigo.trim(),
-                    nome: nome.trim(),
-                    tipo: tipoNormalizado,
+                    codigo: novaCategoriaCodigo.trim(),
+                    nome: novaCategoriaNome.trim(),
+                    tipo: novaCategoriaTipo,
                     nivel: 1
                   });
-                  setCategoriasReceita((prev) => [...prev, criada]);
+
+                  if (criada.tipo === "Receita") {
+                    setCategoriasReceita((prev) => [...prev, criada]);
+                  } else {
+                    setCategoriasDespesa((prev) => [...prev, criada]);
+                  }
+
+                  setNovaCategoriaCodigo("");
+                  setNovaCategoriaNome("");
+                  setNovaCategoriaTipo("Receita");
                 } catch (e: any) {
                   setErro(e.message || "Erro ao criar categoria financeira");
                 } finally {
@@ -2613,7 +2812,43 @@ const FinanceiroView: React.FC<{ organizacao: Organizacao }> = ({
                 }
               }}
             >
-              <p style={{ color: "#6b7280" }}>
+              <div className="finance-form-grid">
+                <label>
+                  Código
+                  <input
+                    value={novaCategoriaCodigo}
+                    onChange={(e) => setNovaCategoriaCodigo(e.target.value)}
+                    placeholder="Ex.: 1.01.01"
+                    required
+                  />
+                </label>
+                <label>
+                  Tipo
+                  <select
+                    value={novaCategoriaTipo}
+                    onChange={(e) =>
+                      setNovaCategoriaTipo(
+                        e.target.value === "Despesa" ? "Despesa" : "Receita"
+                      )
+                    }
+                  >
+                    <option value="Receita">Receita</option>
+                    <option value="Despesa">Despesa</option>
+                  </select>
+                </label>
+              </div>
+
+              <label>
+                Nome da categoria
+                <input
+                  value={novaCategoriaNome}
+                  onChange={(e) => setNovaCategoriaNome(e.target.value)}
+                  placeholder="Ex.: Receitas de condomínio"
+                  required
+                />
+              </label>
+
+              <p style={{ color: "#6b7280", marginTop: 8 }}>
                 Use o campo Código para organizar subcategorias (ex.: 1, 1.01,
                 1.01.01) e escolha o Tipo Receita ou Despesa conforme o uso.
               </p>
@@ -2639,11 +2874,12 @@ const FinanceiroView: React.FC<{ organizacao: Organizacao }> = ({
                   try {
                     setErro(null);
                     setLoading(true);
-                    const lista = await api.listarPlanosContas(
-                      token,
-                      organizacao.id
-                    );
-                    setCategoriasReceita(lista);
+                    const [receitas, despesas] = await Promise.all([
+                      api.listarPlanosContas(token, organizacao.id, "Receita"),
+                      api.listarPlanosContas(token, organizacao.id, "Despesa")
+                    ]);
+                    setCategoriasReceita(receitas);
+                    setCategoriasDespesa(despesas);
                   } catch (e: any) {
                     setErro(
                       e.message || "Erro ao carregar categorias financeiras"
@@ -2671,96 +2907,114 @@ const FinanceiroView: React.FC<{ organizacao: Organizacao }> = ({
                 </tr>
               </thead>
               <tbody>
-                {categoriasReceita.map((cat) => (
-                  <tr key={cat.id}>
-                    <td>{cat.codigo}</td>
-                    <td>{cat.nome}</td>
-                    <td>{cat.tipo}</td>
-                    <td>{cat.nivel}</td>
-                    <td>
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          if (!token) return;
-                          const novoNome = window.prompt(
-                            "Novo nome da categoria:",
-                            cat.nome
-                          );
-                          if (!novoNome || !novoNome.trim()) return;
-                          try {
-                            setErro(null);
-                            setLoading(true);
-                            const atualizada = await api.atualizarPlanoContas(
-                              token,
-                              cat.id,
-                              {
-                                codigo: cat.codigo,
-                                nome: novoNome.trim(),
-                                tipo: cat.tipo,
-                                nivel: cat.nivel,
-                                parentId: cat.parentId
+                {[...categoriasReceita, ...categoriasDespesa]
+                  .sort((a, b) => a.codigo.localeCompare(b.codigo))
+                  .map((cat) => (
+                    <tr key={cat.id}>
+                      <td>{cat.codigo}</td>
+                      <td>{cat.nome}</td>
+                      <td>{cat.tipo}</td>
+                      <td>{cat.nivel}</td>
+                      <td>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (!token) return;
+                            const novoNome = window.prompt(
+                              "Novo nome da categoria:",
+                              cat.nome
+                            );
+                            if (!novoNome || !novoNome.trim()) return;
+                            try {
+                              setErro(null);
+                              setLoading(true);
+                              const atualizada = await api.atualizarPlanoContas(
+                                token,
+                                cat.id,
+                                {
+                                  codigo: cat.codigo,
+                                  nome: novoNome.trim(),
+                                  tipo: cat.tipo,
+                                  nivel: cat.nivel,
+                                  parentId: cat.parentId
+                                }
+                              );
+
+                              if (atualizada.tipo === "Receita") {
+                                setCategoriasReceita((prev) =>
+                                  prev.map((c) =>
+                                    c.id === atualizada.id ? atualizada : c
+                                  )
+                                );
+                              } else {
+                                setCategoriasDespesa((prev) =>
+                                  prev.map((c) =>
+                                    c.id === atualizada.id ? atualizada : c
+                                  )
+                                );
                               }
-                            );
-                            setCategoriasReceita((prev) =>
-                              prev.map((c) =>
-                                c.id === atualizada.id ? atualizada : c
+                            } catch (e: any) {
+                              setErro(
+                                e.message ||
+                                  "Erro ao atualizar categoria financeira"
+                              );
+                            } finally {
+                              setLoading(false);
+                            }
+                          }}
+                          style={{
+                            marginRight: 8,
+                            backgroundColor: "#e5e7eb",
+                            color: "#111827"
+                          }}
+                        >
+                          Renomear
+                        </button>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (!token) return;
+                            if (
+                              !window.confirm(
+                                `Remover categoria "${cat.nome}"? (só é possível se não tiver lançamentos)`
                               )
-                            );
-                          } catch (e: any) {
-                            setErro(
-                              e.message ||
-                                "Erro ao atualizar categoria financeira"
-                            );
-                          } finally {
-                            setLoading(false);
-                          }
-                        }}
-                        style={{
-                          marginRight: 8,
-                          backgroundColor: "#e5e7eb",
-                          color: "#111827"
-                        }}
-                      >
-                        Renomear
-                      </button>
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          if (!token) return;
-                          if (
-                            !window.confirm(
-                              `Remover categoria "${cat.nome}"? (só é possível se não tiver lançamentos)`
-                            )
-                          ) {
-                            return;
-                          }
-                          try {
-                            setErro(null);
-                            setLoading(true);
-                            await api.removerPlanoContas(token, cat.id);
-                            setCategoriasReceita((prev) =>
-                              prev.filter((c) => c.id !== cat.id)
-                            );
-                          } catch (e: any) {
-                            setErro(
-                              e.message ||
-                                "Erro ao remover categoria financeira"
-                            );
-                          } finally {
-                            setLoading(false);
-                          }
-                        }}
-                        style={{
-                          backgroundColor: "#ef4444",
-                          color: "#ffffff"
-                        }}
-                      >
-                        Remover
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-                {categoriasReceita.length === 0 && (
+                            ) {
+                              return;
+                            }
+                            try {
+                              setErro(null);
+                              setLoading(true);
+                              await api.removerPlanoContas(token, cat.id);
+
+                              if (cat.tipo === "Receita") {
+                                setCategoriasReceita((prev) =>
+                                  prev.filter((c) => c.id !== cat.id)
+                                );
+                              } else {
+                                setCategoriasDespesa((prev) =>
+                                  prev.filter((c) => c.id !== cat.id)
+                                );
+                              }
+                            } catch (e: any) {
+                              setErro(
+                                e.message ||
+                                  "Erro ao remover categoria financeira"
+                              );
+                            } finally {
+                              setLoading(false);
+                            }
+                          }}
+                          style={{
+                            backgroundColor: "#ef4444",
+                            color: "#ffffff"
+                          }}
+                        >
+                          Remover
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                {categoriasReceita.length + categoriasDespesa.length === 0 && (
                   <tr>
                     <td colSpan={5} style={{ textAlign: "center" }}>
                       Nenhuma categoria cadastrada ainda.
@@ -2772,7 +3026,7 @@ const FinanceiroView: React.FC<{ organizacao: Organizacao }> = ({
           </section>
         </div>
       )}
-
+          
       {aba === "relatorios" && (
         <div className="finance-table-card" style={{ marginTop: 12 }}>
           <div className="finance-table-header">

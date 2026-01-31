@@ -428,9 +428,9 @@ public class FinanceiroController : ControllerBase
         return Ok(plano);
     }
 
-    [HttpDelete("planos-contas/{id:guid}")]
-    public async Task<IActionResult> RemoverPlanoContas(Guid id)
-    {
+      [HttpDelete("planos-contas/{id:guid}")]
+      public async Task<IActionResult> RemoverPlanoContas(Guid id)
+      {
         var plano = await _db.PlanosContas.FindAsync(id);
         if (plano is null)
         {
@@ -449,7 +449,86 @@ public class FinanceiroController : ControllerBase
         _db.PlanosContas.Remove(plano);
         await _db.SaveChangesAsync();
 
-        return NoContent();
+          return NoContent();
+      }
+
+    // ---------------------------
+    // Cotas condominiais
+    // ---------------------------
+
+    [HttpGet("cotas")]
+    public async Task<ActionResult<IEnumerable<CotaCondominial>>> ListarCotas(
+        [FromQuery] Guid organizacaoId)
+    {
+        if (organizacaoId == Guid.Empty)
+        {
+            return BadRequest("OrganizaÃ§Ã£o Ã© obrigatÃ³ria.");
+        }
+
+        var cotas = await _db.CotasCondominio
+            .AsNoTracking()
+            .Where(c => c.OrganizacaoId == organizacaoId && c.Ativo)
+            .OrderBy(c => c.CompetenciaInicio)
+            .ToListAsync();
+
+        return Ok(cotas);
+    }
+
+    public class CriarCotaCondominialRequest
+    {
+        public Guid OrganizacaoId { get; set; }
+        public Guid UnidadeOrganizacionalId { get; set; }
+        public Guid PlanoContasId { get; set; }
+        public decimal Valor { get; set; }
+        public string CompetenciaInicio { get; set; } = string.Empty; // yyyy-MM
+        public string? CompetenciaFim { get; set; } // yyyy-MM ou null
+    }
+
+    [HttpPost("cotas")]
+    public async Task<ActionResult<CotaCondominial>> CriarCotaCondominial(
+        CriarCotaCondominialRequest request)
+    {
+        if (request.OrganizacaoId == Guid.Empty)
+        {
+            return BadRequest("OrganizaÃ§Ã£o Ã© obrigatÃ³ria.");
+        }
+
+        if (request.UnidadeOrganizacionalId == Guid.Empty)
+        {
+            return BadRequest("Unidade Ã© obrigatÃ³ria.");
+        }
+
+        if (request.PlanoContasId == Guid.Empty)
+        {
+            return BadRequest("Categoria financeira Ã© obrigatÃ³ria.");
+        }
+
+        if (request.Valor <= 0)
+        {
+            return BadRequest("Valor da cota deve ser maior que zero.");
+        }
+
+        if (string.IsNullOrWhiteSpace(request.CompetenciaInicio))
+        {
+            return BadRequest("CompetÃªncia inicial Ã© obrigatÃ³ria.");
+        }
+
+        var cota = new CotaCondominial
+        {
+            Id = Guid.NewGuid(),
+            OrganizacaoId = request.OrganizacaoId,
+            UnidadeOrganizacionalId = request.UnidadeOrganizacionalId,
+            PlanoContasId = request.PlanoContasId,
+            Valor = request.Valor,
+            CompetenciaInicio = request.CompetenciaInicio,
+            CompetenciaFim = request.CompetenciaFim,
+            Ativo = true
+        };
+
+        _db.CotasCondominio.Add(cota);
+        await _db.SaveChangesAsync();
+
+        return CreatedAtAction(nameof(ListarCotas), new { organizacaoId = cota.OrganizacaoId }, cota);
     }
 
     // ---------------------------

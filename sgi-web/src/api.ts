@@ -53,6 +53,25 @@ export interface PlanoContas {
   parentId?: string;
 }
 
+export interface CotaCondominial {
+  id: string;
+  organizacaoId: string;
+  unidadeOrganizacionalId: string;
+  planoContasId: string;
+  valor: number;
+  competenciaInicio: string; // yyyy-MM
+  competenciaFim?: string | null; // yyyy-MM
+  ativo: boolean;
+}
+export interface UnidadeOrganizacional {
+  id: string;
+  organizacaoId: string;
+  tipo: string;
+  codigoInterno: string;
+  nome: string;
+  status: string;
+}
+
 export interface Chamado {
   id: string;
   titulo: string;
@@ -169,6 +188,39 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(dados)
     });
+  },
+  async listarUnidades(
+    token: string,
+    organizacaoId: string
+  ): Promise<UnidadeOrganizacional[]> {
+    const path = `/api/unidades?organizacaoId=${encodeURIComponent(
+      organizacaoId
+    )}`;
+    return request<UnidadeOrganizacional[]>(path, {}, token);
+  },
+
+  async criarUnidade(
+    token: string,
+    payload: {
+      organizacaoId: string;
+      tipo: string;
+      codigoInterno: string;
+      nome: string;
+    }
+  ): Promise<UnidadeOrganizacional> {
+    return request<UnidadeOrganizacional>(
+      "/api/unidades",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          organizacaoId: payload.organizacaoId,
+          tipo: payload.tipo,
+          codigoInterno: payload.codigoInterno,
+          nome: payload.nome
+        })
+      },
+      token
+    );
   },
 
   async listarPessoas(
@@ -403,10 +455,41 @@ export const api = {
     id: string
   ): Promise<void> {
     const path = `/api/financeiro/planos-contas/${encodeURIComponent(id)}`;
-    await request<void>(
-      path,
+      await request<void>(
+        path,
+        {
+          method: "DELETE"
+        },
+        token
+      );
+    },
+
+  async listarCotas(
+    token: string,
+    organizacaoId: string
+  ): Promise<CotaCondominial[]> {
+    const path = `/api/financeiro/cotas?organizacaoId=${encodeURIComponent(
+      organizacaoId
+    )}`;
+    return request<CotaCondominial[]>(path, {}, token);
+  },
+
+  async criarCota(
+    token: string,
+    payload: {
+      organizacaoId: string;
+      unidadeOrganizacionalId: string;
+      planoContasId: string;
+      valor: number;
+      competenciaInicio: string; // yyyy-MM
+      competenciaFim?: string | null;
+    }
+  ): Promise<CotaCondominial> {
+    return request<CotaCondominial>(
+      "/api/financeiro/cotas",
       {
-        method: "DELETE"
+        method: "POST",
+        body: JSON.stringify(payload)
       },
       token
     );
