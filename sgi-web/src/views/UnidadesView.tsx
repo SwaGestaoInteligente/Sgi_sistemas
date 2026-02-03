@@ -11,6 +11,7 @@ export default function UnidadesView({ organizacao }: UnidadesViewProps) {
   const [unidades, setUnidades] = useState<UnidadeOrganizacional[]>([]);
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  const [formAberto, setFormAberto] = useState(false);
 
   const [tipo, setTipo] = useState("Apartamento");
   const [codigoInterno, setCodigoInterno] = useState("");
@@ -122,63 +123,68 @@ export default function UnidadesView({ organizacao }: UnidadesViewProps) {
       <div className="people-header-row">
         <div>
           <h2>Unidades</h2>
-          <p className="people-header-sub">
-            Cadastre blocos, apartamentos, casas e outras unidades da
-            organização <strong>{organizacao.nome}</strong>.
-          </p>
         </div>
-        <div className="people-header-badges">
-          <span>Total de unidades: {unidades.length}</span>
+        <div className="people-header-actions">
+          <button
+            type="button"
+            className="button-secondary"
+            onClick={() => {
+              setNome("");
+              setCodigoInterno("");
+              setTipo("Apartamento");
+              setFormAberto(true);
+            }}
+          >
+            + Nova unidade
+          </button>
         </div>
       </div>
 
-      <div className="people-layout">
-        <section className="people-form-card">
-          <h3>Nova unidade</h3>
-          <p className="people-form-sub">
-            Use tipo, código e nome para identificar cada unidade (ex.: Bloco A,
-            Ap 101).
-          </p>
+      <div className={"people-layout" + (formAberto ? "" : " people-layout--single")}>
+        {formAberto && (
+          <section className="people-form-card">
+            <h3>Nova unidade</h3>
 
-          <form onSubmit={salvarUnidade} className="form">
-            <div className="people-form-grid">
+            <form onSubmit={salvarUnidade} className="form">
+              <div className="people-form-grid">
+                <label>
+                  Tipo
+                  <select value={tipo} onChange={(e) => setTipo(e.target.value)}>
+                    <option value="Bloco">Bloco</option>
+                    <option value="Apartamento">Apartamento</option>
+                    <option value="Casa">Casa</option>
+                    <option value="Sala">Sala</option>
+                    <option value="Outro">Outro</option>
+                  </select>
+                </label>
+                <label>
+                  Código interno
+                  <input
+                    value={codigoInterno}
+                    onChange={(e) => setCodigoInterno(e.target.value)}
+                    placeholder="Ex.: A, 101, A-101"
+                  />
+                </label>
+              </div>
+
               <label>
-                Tipo
-                <select value={tipo} onChange={(e) => setTipo(e.target.value)}>
-                  <option value="Bloco">Bloco</option>
-                  <option value="Apartamento">Apartamento</option>
-                  <option value="Casa">Casa</option>
-                  <option value="Sala">Sala</option>
-                  <option value="Outro">Outro</option>
-                </select>
-              </label>
-              <label>
-                Código interno
+                Nome da unidade
                 <input
-                  value={codigoInterno}
-                  onChange={(e) => setCodigoInterno(e.target.value)}
-                  placeholder="Ex.: A, 101, A-101"
+                  value={nome}
+                  onChange={(e) => setNome(e.target.value)}
+                  placeholder="Ex.: Bloco A, Ap 101"
+                  required
                 />
               </label>
-            </div>
 
-            <label>
-              Nome da unidade
-              <input
-                value={nome}
-                onChange={(e) => setNome(e.target.value)}
-                placeholder="Ex.: Bloco A, Ap 101"
-                required
-              />
-            </label>
+              <button type="submit" disabled={loading || !nome.trim()}>
+                {loading ? "Salvando..." : "Salvar unidade"}
+              </button>
 
-            <button type="submit" disabled={loading || !nome.trim()}>
-              {loading ? "Salvando..." : "Salvar unidade"}
-            </button>
-
-            {erro && <p className="error">{erro}</p>}
-          </form>
-        </section>
+              {erro && <p className="error">{erro}</p>}
+            </form>
+          </section>
+        )}
 
         <section className="people-list-card">
           <div className="people-list-header">
@@ -189,11 +195,6 @@ export default function UnidadesView({ organizacao }: UnidadesViewProps) {
             <div className="inline-edit-card">
               <div className="inline-edit-header">
                 <strong>Editar unidade</strong>
-                {unidades.length > 0 && (
-                  <span className="inline-edit-hint">
-                    Ajuste nome, código e tipo.
-                  </span>
-                )}
               </div>
               <div className="people-form-grid">
                 <label>
@@ -244,11 +245,7 @@ export default function UnidadesView({ organizacao }: UnidadesViewProps) {
             </div>
           )}
 
-          {unidades.length === 0 ? (
-            <p className="org-empty">
-              Nenhuma unidade cadastrada ainda para esta organização.
-            </p>
-          ) : (
+          {unidades.length > 0 && (
             <table className="table">
               <thead>
                 <tr>
@@ -291,29 +288,6 @@ export default function UnidadesView({ organizacao }: UnidadesViewProps) {
               </tbody>
             </table>
           )}
-
-          <div
-            style={{
-              marginTop: 16,
-              paddingTop: 12,
-              borderTop: "1px solid #e5e7eb"
-            }}
-          >
-            <h4 style={{ marginBottom: 4 }}>Moradores da unidade</h4>
-            {!unidadeSelecionada && (
-              <p style={{ fontSize: 13, color: "#6b7280" }}>
-                Selecione uma unidade na tabela acima para ver e, no futuro,
-                vincular moradores a ela.
-              </p>
-            )}
-            {unidadeSelecionada && (
-              <p style={{ fontSize: 13, color: "#6b7280" }}>
-                Em próximas etapas vamos mostrar aqui os moradores e
-                proprietários ligados à unidade{" "}
-                <strong>{unidadeSelecionada.nome}</strong>.
-              </p>
-            )}
-          </div>
         </section>
       </div>
     </div>

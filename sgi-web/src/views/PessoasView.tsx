@@ -79,6 +79,7 @@ const PessoasView: React.FC<PessoasViewProps> = ({
   const [erro, setErro] = useState<string | null>(null);
   const [filtro, setFiltro] = useState("");
   const [filtroPapel, setFiltroPapel] = useState<string>("");
+  const [formAberto, setFormAberto] = useState(false);
 
   const [pessoaSelecionadaId, setPessoaSelecionadaId] =
     useState<string | null>(null);
@@ -158,6 +159,7 @@ const PessoasView: React.FC<PessoasViewProps> = ({
 
   const selecionarPessoa = (p: Pessoa) => {
     setPessoaSelecionadaId(p.id);
+    setFormAberto(true);
     setNome(p.nome);
     setDocumento(p.documento ?? "");
     setEmail(p.email ?? "");
@@ -316,164 +318,163 @@ const PessoasView: React.FC<PessoasViewProps> = ({
       <div className="people-header-row">
         <div>
           <h2>{titulo ?? "Pessoas"}</h2>
-          <p className="people-header-sub">
-            {subTitulo ?? (
-              <>
-                Cadastre moradores, colaboradores e pessoas ligadas a{" "}
-                <strong>{organizacao.nome}</strong>.
-              </>
-            )}
-          </p>
         </div>
-        <div className="people-header-badges">
-          <span>Total: {pessoas.length}</span>
-          <span>Filtradas: {pessoasFiltradas.length}</span>
+        <div className="people-header-actions">
+          <button
+            type="button"
+            className="button-secondary"
+            onClick={() => {
+              limparFormulario();
+              setFormAberto(true);
+            }}
+          >
+            + Nova pessoa
+          </button>
         </div>
       </div>
 
-      <div className="people-layout">
+      <div className={"people-layout" + (formAberto ? "" : " people-layout--single")}>
         {/* Formulário */}
-        <section className="people-form-card">
-          <h3>{pessoaSelecionadaId ? "Editar pessoa" : "Nova pessoa"}</h3>
-          <p className="people-form-sub">
-            Informações básicas, papel na organização e dados de contato.
-          </p>
+        {formAberto && (
+          <section className="people-form-card">
+            <h3>{pessoaSelecionadaId ? "Editar pessoa" : "Nova pessoa"}</h3>
 
-          <form onSubmit={salvarPessoa} className="form">
-            <label>
-              Nome
-              <input
-                value={nome}
-                onChange={(e) => setNome(e.target.value)}
-                required
-              />
-            </label>
-
-            <div className="people-form-grid">
+            <form onSubmit={salvarPessoa} className="form">
               <label>
-                Papel na organização
-                <select
-                  value={papel}
-                  onChange={(e) => setPapel(e.target.value)}
-                  disabled={Boolean(papelFixo)}
-                >
-                  {papeisParaEstaOrganizacao.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Telefone
+                Nome
                 <input
-                  value={telefone}
-                  onChange={(e) => setTelefone(e.target.value)}
+                  value={nome}
+                  onChange={(e) => setNome(e.target.value)}
+                  required
                 />
               </label>
-            </div>
 
-            <div className="people-form-grid">
-              <label>
-                Documento (CPF/CNPJ)
-                <input
-                  value={documento}
-                  onChange={(e) => setDocumento(e.target.value)}
-                />
-              </label>
-              <label>
-                E-mail
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                />
-              </label>
-            </div>
-
-            <details className="people-more-details">
-              <summary>Mais dados (opcional)</summary>
-              <div className="people-more-content">
-                <div className="people-form-grid">
-                  <label>
-                    Tipo de pessoa
-                    <select
-                      value={tipo}
-                      onChange={(e) =>
-                        setTipo(e.target.value as "fisica" | "juridica")
-                      }
-                    >
-                      <option value="fisica">Pessoa física</option>
-                      <option value="juridica">Pessoa jurídica</option>
-                    </select>
-                  </label>
-                  <label>
-                    Logradouro
-                    <input
-                      value={logradouro}
-                      onChange={(e) => setLogradouro(e.target.value)}
-                    />
-                  </label>
-                </div>
-
-                <div className="people-form-grid">
-                  <label>
-                    Número
-                    <input
-                      value={numero}
-                      onChange={(e) => setNumero(e.target.value)}
-                    />
-                  </label>
-                  <label>
-                    Bairro
-                    <input
-                      value={bairro}
-                      onChange={(e) => setBairro(e.target.value)}
-                    />
-                  </label>
-                </div>
-
-                <div className="people-form-grid">
-                  <label>
-                    Cidade
-                    <input
-                      value={cidade}
-                      onChange={(e) => setCidade(e.target.value)}
-                    />
-                  </label>
-                  <label>
-                    Estado
-                    <input
-                      value={estado}
-                      onChange={(e) => setEstado(e.target.value)}
-                    />
-                  </label>
-                </div>
-
+              <div className="people-form-grid">
                 <label>
-                  CEP
-                  <input value={cep} onChange={(e) => setCep(e.target.value)} />
+                  Papel na organização
+                  <select
+                    value={papel}
+                    onChange={(e) => setPapel(e.target.value)}
+                    disabled={Boolean(papelFixo)}
+                  >
+                    {papeisParaEstaOrganizacao.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Telefone
+                  <input
+                    value={telefone}
+                    onChange={(e) => setTelefone(e.target.value)}
+                  />
                 </label>
               </div>
-            </details>
 
-            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-              <button type="submit" disabled={loading}>
-                {loading
-                  ? "Salvando..."
-                  : pessoaSelecionadaId
-                  ? "Atualizar pessoa"
-                  : "Salvar pessoa"}
-              </button>
-              {pessoaSelecionadaId && (
-                <button type="button" onClick={limparFormulario}>
-                  Nova pessoa
+              <div className="people-form-grid">
+                <label>
+                  Documento (CPF/CNPJ)
+                  <input
+                    value={documento}
+                    onChange={(e) => setDocumento(e.target.value)}
+                  />
+                </label>
+                <label>
+                  E-mail
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                  />
+                </label>
+              </div>
+
+              <details className="people-more-details">
+                <summary>Mais dados (opcional)</summary>
+                <div className="people-more-content">
+                  <div className="people-form-grid">
+                    <label>
+                      Tipo de pessoa
+                      <select
+                        value={tipo}
+                        onChange={(e) =>
+                          setTipo(e.target.value as "fisica" | "juridica")
+                        }
+                      >
+                        <option value="fisica">Pessoa física</option>
+                        <option value="juridica">Pessoa jurídica</option>
+                      </select>
+                    </label>
+                    <label>
+                      Logradouro
+                      <input
+                        value={logradouro}
+                        onChange={(e) => setLogradouro(e.target.value)}
+                      />
+                    </label>
+                  </div>
+
+                  <div className="people-form-grid">
+                    <label>
+                      Número
+                      <input
+                        value={numero}
+                        onChange={(e) => setNumero(e.target.value)}
+                      />
+                    </label>
+                    <label>
+                      Bairro
+                      <input
+                        value={bairro}
+                        onChange={(e) => setBairro(e.target.value)}
+                      />
+                    </label>
+                  </div>
+
+                  <div className="people-form-grid">
+                    <label>
+                      Cidade
+                      <input
+                        value={cidade}
+                        onChange={(e) => setCidade(e.target.value)}
+                      />
+                    </label>
+                    <label>
+                      Estado
+                      <input
+                        value={estado}
+                        onChange={(e) => setEstado(e.target.value)}
+                      />
+                    </label>
+                  </div>
+
+                  <label>
+                    CEP
+                    <input value={cep} onChange={(e) => setCep(e.target.value)} />
+                  </label>
+                </div>
+              </details>
+
+              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                <button type="submit" disabled={loading}>
+                  {loading
+                    ? "Salvando..."
+                    : pessoaSelecionadaId
+                    ? "Atualizar pessoa"
+                    : "Salvar pessoa"}
                 </button>
-              )}
-            </div>
-            {erro && <p className="error">{erro}</p>}
-          </form>
-        </section>
+                {pessoaSelecionadaId && (
+                  <button type="button" onClick={limparFormulario}>
+                    Nova pessoa
+                  </button>
+                )}
+              </div>
+              {erro && <p className="error">{erro}</p>}
+            </form>
+          </section>
+        )}
 
         {/* Lista */}
         <section className="people-list-card">
@@ -506,11 +507,7 @@ const PessoasView: React.FC<PessoasViewProps> = ({
             </div>
           </div>
 
-          {pessoasFiltradas.length === 0 ? (
-            <p className="org-empty">
-              Nenhuma pessoa encontrada para esta organização.
-            </p>
-          ) : (
+          {pessoasFiltradas.length > 0 && (
             <div className="person-list">
               {pessoasFiltradas.map((p) => (
                 <button

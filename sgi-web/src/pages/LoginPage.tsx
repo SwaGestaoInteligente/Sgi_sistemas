@@ -34,7 +34,6 @@ export const LoginPage: React.FC = () => {
           />
         </div>
         <h1 className="auth-title">Bem-vindo!</h1>
-        <p className="auth-subtitle">SWA – gestão & finanças inteligentes</p>
 
         <form onSubmit={handleSubmit} className="form">
           <label>
