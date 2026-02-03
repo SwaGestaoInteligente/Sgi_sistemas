@@ -1,0 +1,204 @@
+# STATUS GERAL DO PROJETO SGI (Resumo Completo)
+
+Este documento registra **tudo o que foi feito até agora**, **o que já existe em código**, **o que está ativo**, **o que está desativado (mas preservado)** e **o que ainda falta**, para garantir que **nada se perca** mesmo que a conversa seja interrompida.
+
+---
+
+## 1. VISÃO GERAL DO PROJETO
+
+**Nome do projeto:** SGI – Sistema de Gestão Inteligente
+**Objetivo:** Criar um sistema robusto, elegante e completo para gestão de condomínios (com expansão para empresas, igrejas e outros).
+**Perfil do projeto:** Profissional, escalável, modular (sem gambiarra).
+
+Arquitetura escolhida:
+
+* Frontend: React + TypeScript (Vite)
+* Backend: ASP.NET Core + Entity Framework + SQLite
+* Separação clara de responsabilidades (Views, API, Domínio)
+
+---
+
+## 2. ESTRUTURA ATUAL DO FRONTEND (sgi-web)
+
+```
+sgi-web/
+├─ src/
+│  ├─ hooks/
+│  │  └─ useAuth.tsx          (autenticação + estado global)
+│  ├─ pages/
+│  │  ├─ App.tsx              (orquestrador principal)
+│  │  └─ LoginPage.tsx        (login)
+│  ├─ views/
+│  │  ├─ PessoasView.tsx      (cadastro/listagem de pessoas)
+│  │  ├─ UnidadesView.tsx     (estrutura de unidades: bloco/apto)
+│  │  └─ FinanceiroView.tsx   (financeiro completo)
+│  ├─ api.ts                  (camada de acesso à API)
+│  ├─ main.tsx
+│  └─ styles.css
+```
+
+---
+
+## 3. PAPEL DO App.tsx (IMPORTANTE)
+
+O **App.tsx foi propositalmente deixado leve**.
+
+Ele é responsável **apenas por**:
+
+* Inicializar o AuthProvider
+* Verificar se o usuário está logado
+* Verificar se existe organização selecionada
+* Decidir qual *View* renderizar
+
+👉 **Ele NÃO contém mais regra de negócio.**
+
+Estado atual do App.tsx:
+
+* Login funcionando
+* Organização selecionada via `useAuth`
+* Apenas **PessoasView** está ligada no momento (por decisão consciente)
+
+Nada foi apagado — apenas **desacoplado**.
+
+---
+
+## 4. O QUE JÁ FOI IMPLEMENTADO (FUNCIONAL)
+
+### 4.1 PessoasView.tsx ✅
+
+Funcionalidades:
+
+* Listar pessoas da organização
+* Criar pessoa
+* Editar pessoa
+* Excluir pessoa
+* Filtros por nome, telefone e papel
+* Papéis (morador, proprietário, funcionário etc.)
+* Endereço vinculado à pessoa
+
+Status:
+
+* Código completo
+* Isolado em `src/views/PessoasView.tsx`
+* Ativo no App.tsx
+
+---
+
+### 4.2 FinanceiroView.tsx ✅ (CRIADO, MAS NÃO ATIVO)
+
+Funcionalidades já existentes em código:
+
+* Contas financeiras (banco, caixa, digital)
+* Contas a pagar
+* Contas a receber
+* Itens de cobrança (taxa condominial, multas, reservas)
+* Plano de contas (categorias)
+* Relatórios (balancete simples)
+* Totais (saldo inicial, pago, a pagar)
+
+Status:
+
+* Código existe
+* View criada em `src/views/FinanceiroView.tsx`
+* **Desativada no App.tsx** (de propósito)
+
+Nada foi perdido.
+
+---
+
+### 4.3 UnidadesView.tsx ✅ (CRIADO, MODELO INICIAL)
+
+Objetivo:
+
+* Representar a estrutura física do condomínio
+* Blocos
+* Apartamentos
+* Preparar vínculo com pessoas
+
+Status atual:
+
+* Arquivo criado: `src/views/UnidadesView.tsx`
+* Estrutura mínima (placeholder consciente)
+* Ainda **não ligado ao App.tsx**
+
+---
+
+## 5. BACKEND (SGI.Api lembra disso)
+
+Controllers existentes:
+
+* AuthController
+* OrganizacoesController
+* PessoasController
+* UnidadesOrganizacionaisController
+* FinanceiroController
+
+Banco:
+
+* SQLite (`sgi.db`)
+* Tabelas criadas e operacionais
+
+A API **continua intacta**.
+
+---
+
+## 6. O QUE FOI FEITO DE PROPÓSITO (DECISÕES IMPORTANTES)
+
+Nada disso foi erro:
+
+* Separar Pessoas / Unidades / Financeiro em views próprias
+* Tirar lógica pesada do App.tsx
+* Deixar funcionalidades **desativadas**, não apagadas
+* Criar estrutura pensando no crescimento (empresarial)
+
+Isso é arquitetura profissional.
+
+---
+
+## 7. O QUE AINDA FALTA (PLANO REALISTA)
+
+### Fase 1 — Estabilização (AGORA)
+
+* [ ] Ligar `UnidadesView` no App (sem remover Pessoas)
+* [ ] Criar navegação simples entre views
+* [ ] Ajustar visual (reduzir poluição)
+
+### Fase 2 — Modelo de domínio
+
+* [ ] Vínculo Pessoa ↔ Unidade
+* [ ] Responsável legal da unidade (histórico, troca por data)
+* [ ] Arquivamento (não exclusão) com permissões
+
+### Fase 3 — Financeiro avançado
+
+* [ ] Cobrança por unidade
+* [ ] Regra de virada de responsável por competência
+* [ ] Flexibilidade por condomínio
+
+---
+
+## 8. REGRA DE OURO DO PROJETO (ALINHAMENTO)
+
+* ❌ Não apagar código funcional
+* ❌ Não refazer do zero
+* ✅ Acrescentar
+* ✅ Desabilitar / habilitar
+* ✅ Um módulo por vez
+
+---
+
+## 9. ESTADO ATUAL DO PROJETO (RESUMO FINAL)
+
+✅ Sistema rodando
+✅ Pessoas funcionando
+✅ Financeiro preservado
+✅ Unidades iniciadas
+✅ Backend íntegro
+
+Nada foi perdido.
+
+---
+
+**Este arquivo é o registro oficial do estado do projeto.**
+
+Salve este documento. A partir daqui, seguimos com segurança.

@@ -1,0 +1,11 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const auth_1 = require("../middlewares/auth");
+const role_1 = require("../middlewares/role");
+const avisos_controller_1 = require("../controllers/avisos.controller");
+const asyncHandler_1 = require("../utils/asyncHandler");
+const router = (0, express_1.Router)();
+router.get("/", auth_1.auth, (0, asyncHandler_1.asyncHandler)(avisos_controller_1.listAvisos));
+router.post("/", auth_1.auth, (0, role_1.allowRoles)("SINDICO", "ADMINISTRADORA"), (0, asyncHandler_1.asyncHandler)(avisos_controller_1.createAviso));
+exports.default = router;

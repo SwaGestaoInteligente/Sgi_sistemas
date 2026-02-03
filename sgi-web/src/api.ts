@@ -223,6 +223,30 @@ export const api = {
     );
   },
 
+  async atualizarUnidade(
+    token: string,
+    id: string,
+    payload: {
+      nome: string;
+      codigoInterno?: string;
+      tipo?: string;
+    }
+  ): Promise<UnidadeOrganizacional> {
+    const path = `/api/unidades/${encodeURIComponent(id)}`;
+    return request<UnidadeOrganizacional>(
+      path,
+      {
+        method: "PUT",
+        body: JSON.stringify({
+          nome: payload.nome,
+          codigoInterno: payload.codigoInterno ?? "",
+          tipo: payload.tipo ?? ""
+        })
+      },
+      token
+    );
+  },
+
   async listarPessoas(
     token: string,
     organizacaoId: string

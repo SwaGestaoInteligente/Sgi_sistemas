@@ -28,7 +28,7 @@ export const LoginPage: React.FC = () => {
       <div className="auth-card">
         <div className="brand-wrapper">
           <img
-            src="/swa1.jpeg"
+            src={`${import.meta.env.BASE_URL}swa1.jpeg`}
             alt="Logo SWA"
             className="brand-logo"
           />

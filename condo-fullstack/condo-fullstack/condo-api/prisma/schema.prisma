@@ -1,0 +1,209 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  SINDICO
+  ADMINISTRADORA
+  MORADOR
+  PORTEIRO
+}
+
+model User {
+  id          String    @id @default(cuid())
+  nome        String
+  email       String    @unique
+  senhaHash   String
+  role        UserRole
+  apartamento String?
+  bloco       String?
+  unidadeId   String?
+  ativo       Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+
+  reservas    Reserva[]
+  cancelacoes Reserva[] @relation("ReservaCancelledBy")
+  visitanteRegistros VisitorLog[] @relation("VisitorCreatedBy")
+  entregasCriadas    Delivery[]   @relation("DeliveryCreatedBy")
+  entregasRecebidas  Delivery[]   @relation("DeliveryRecipient")
+  plantaoNotas       ShiftNote[]  @relation("ShiftNoteCreatedBy")
+  notificacoes       Notification[]
+  unidade            Unidade?     @relation(fields: [unidadeId], references: [id])
+}
+
+model AreaComum {
+  id           String   @id @default(cuid())
+  nome         String
+  descricao    String?
+  horarioInicio String? // simples por enquanto
+  horarioFim    String?
+  createdAt    DateTime @default(now())
+
+  reservas     Reserva[]
+}
+
+model Condominio {
+  id        String   @id @default(cuid())
+  nome      String
+  cnpj      String?
+  endereco  String?
+  createdAt DateTime @default(now())
+
+  blocos    Bloco[]
+  configuracoes ConfigReserva?
+}
+
+model Bloco {
+  id            String    @id @default(cuid())
+  nome          String
+  condominioId  String
+  condominio    Condominio @relation(fields: [condominioId], references: [id])
+  unidades      Unidade[]
+}
+
+model Unidade {
+  id        String   @id @default(cuid())
+  numero    String
+  blocoId   String
+  bloco     Bloco    @relation(fields: [blocoId], references: [id])
+  createdAt DateTime @default(now())
+
+  moradores User[]
+  cobrancas Cobranca[]
+}
+
+model ConfigReserva {
+  id             String   @id @default(cuid())
+  condominioId   String   @unique
+  limitePorMes   Int      @default(5)
+  antecedenciaDias Int    @default(30)
+  horarioInicio  String?  // ex: "08:00"
+  horarioFim     String?  // ex: "22:00"
+
+  condominio     Condominio @relation(fields: [condominioId], references: [id])
+}
+
+model Cobranca {
+  id           String   @id @default(cuid())
+  unidadeId    String
+  mesRef       String   // ex 2026-01
+  valor        Decimal   @default(0)
+  status       String   @default("PENDENTE") // PENDENTE, PAGO, ACORDO
+  vencimento   DateTime
+  boletoUrl    String?
+  linhaDigitavel String?
+  createdAt    DateTime @default(now())
+
+  unidade      Unidade  @relation(fields: [unidadeId], references: [id])
+  pagamentos   Pagamento[]
+}
+
+model Pagamento {
+  id         String   @id @default(cuid())
+  cobrancaId String
+  valor      Decimal   @default(0)
+  pagoEm     DateTime  @default(now())
+  comprovanteUrl String?
+
+  cobranca   Cobranca @relation(fields: [cobrancaId], references: [id])
+}
+
+model LogAuditoria {
+  id          String   @id @default(cuid())
+  acao        String
+  entidade    String
+  entidadeId  String?
+  before      String?
+  after       String?
+  userId      String?
+  createdAt   DateTime @default(now())
+}
+
+model Reserva {
+  id           String   @id @default(cuid())
+  data         DateTime
+  horarioInicio String
+  horarioFim    String
+  status       String   @default("PENDENTE")
+  cancelReason String?
+  cancelledById String?
+  createdAt    DateTime @default(now())
+
+  areaId       String
+  moradorId    String
+
+  area         AreaComum @relation(fields: [areaId], references: [id])
+  morador      User      @relation(fields: [moradorId], references: [id])
+  cancelledBy  User?     @relation("ReservaCancelledBy", fields: [cancelledById], references: [id])
+
+  @@index([data])
+}
+
+model VisitorLog {
+  id           String   @id @default(cuid())
+  nome         String
+  documento    String?
+  apartamento  String?
+  bloco        String?
+  dataEntrada  DateTime @default(now())
+  dataSaida    DateTime?
+  createdAt    DateTime @default(now())
+
+  createdById  String
+  createdBy    User     @relation("VisitorCreatedBy", fields: [createdById], references: [id])
+}
+
+model Delivery {
+  id             String   @id @default(cuid())
+  descricao      String
+  destinatarioEmail String?
+  fotoUrl        String?
+  assinaturaUrl  String?
+  status         String   @default("PENDENTE") // PENDENTE, ENTREGUE
+  chegouEm       DateTime @default(now())
+  entregueEm     DateTime?
+
+  createdById    String
+  destinatarioId String?
+
+  createdBy      User     @relation("DeliveryCreatedBy", fields: [createdById], references: [id])
+  destinatario   User?    @relation("DeliveryRecipient", fields: [destinatarioId], references: [id])
+  notificacoes   Notification[]
+
+  @@index([destinatarioId])
+}
+
+model ShiftNote {
+  id          String   @id @default(cuid())
+  texto       String
+  createdAt   DateTime @default(now())
+  createdById String
+
+  createdBy   User     @relation("ShiftNoteCreatedBy", fields: [createdById], references: [id])
+}
+
+model Notification {
+  id          String   @id @default(cuid())
+  titulo      String
+  mensagem    String
+  imageUrl    String?
+  lida        Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  userId      String
+  deliveryId  String?
+
+  user        User     @relation(fields: [userId], references: [id])
+  delivery    Delivery? @relation(fields: [deliveryId], references: [id])
+}
+
+model Aviso {
+  id         String   @id @default(cuid())
+  titulo     String
+  conteudo   String
+  createdAt  DateTime @default(now())
+}
