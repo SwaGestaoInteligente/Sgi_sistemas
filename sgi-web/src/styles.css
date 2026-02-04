@@ -16,9 +16,9 @@
   --primary-strong: #1d4ed8;
   --primary-soft: #eaf0ff;
   --border: #e2e8f0;
-  --shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
-  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
-  --shadow-md: 0 2px 6px rgba(15, 23, 42, 0.08);
+  --shadow: 0 10px 25px rgba(15, 23, 42, 0.08);
+  --shadow-sm: 0 6px 14px rgba(15, 23, 42, 0.08);
+  --shadow-md: 0 14px 30px rgba(15, 23, 42, 0.14);
   --radius-sm: 10px;
   --radius-md: 12px;
   --radius-lg: 16px;
@@ -34,14 +34,13 @@ body {
   max-width: 1200px;
   margin: 16px auto 0;
   padding: 8px 16px;
-  border-radius: 12px;
+  border-radius: 999px;
   background: #0f172a;
   color: #e5e7eb;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  box-shadow: none;
-  border: 1px solid #1f2937;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.25);
 }
 
 .app-header-left {
@@ -55,7 +54,7 @@ body {
   width: 32px;
   border-radius: 8px;
   object-fit: cover;
-  box-shadow: none;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.35);
 }
 
 .app-header-title {
@@ -77,16 +76,18 @@ body {
   cursor: pointer;
   background-color: rgba(248, 250, 252, 0.1);
   color: #e5e7eb;
-  transition: background-color 0.15s ease;
+  transition: background-color 0.15s ease, transform 0.1s ease,
+    box-shadow 0.15s ease;
 }
 
 .app-header-button:hover {
   background-color: rgba(248, 250, 252, 0.25);
+  transform: translateY(-1px);
 }
 
 .app-header-button--danger {
   background-color: #ef4444;
-  box-shadow: none;
+  box-shadow: 0 8px 16px rgba(239, 68, 68, 0.25);
 }
 
 .app-header-button--danger:hover {
@@ -98,17 +99,16 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--bg);
+  background: radial-gradient(circle at top, #e5edff 0, #f3f4f6 55%);
 }
 
 .auth-card {
   width: 100%;
   max-width: 420px;
   background: #ffffff;
-  border-radius: var(--radius-md);
+  border-radius: 18px;
   padding: 32px 40px 28px;
-  box-shadow: none;
-  border: 1px solid var(--border);
+  box-shadow: 0 22px 45px rgba(15, 23, 42, 0.15);
 }
 
 .brand-wrapper {
@@ -127,7 +127,7 @@ body {
   width: 52px;
   height: 52px;
   border-radius: 16px;
-  background: #1e40af;
+  background: linear-gradient(135deg, #4f46e5, #6366f1);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -157,7 +157,7 @@ body {
   background: var(--surface);
   border-radius: var(--radius-lg);
   border: 1px solid var(--border);
-  box-shadow: none;
+  box-shadow: var(--shadow-sm);
 }
 
 h1 {
@@ -217,7 +217,8 @@ button {
   font-weight: 600;
   cursor: pointer;
   box-shadow: none;
-  transition: background-color 0.15s ease;
+  transition: transform 0.1s ease, box-shadow 0.15s ease,
+    background-color 0.15s ease;
 }
 
 button:disabled {
@@ -226,11 +227,14 @@ button:disabled {
 }
 
 button:not(:disabled):hover {
+  transform: translateY(-1px);
   background-color: var(--primary-strong);
+  box-shadow: 0 10px 22px rgba(30, 64, 175, 0.18);
 }
 
 button:not(:disabled):active {
-  box-shadow: none;
+  transform: translateY(0);
+  box-shadow: 0 6px 14px rgba(30, 64, 175, 0.15);
 }
 
 .button-secondary {
@@ -301,10 +305,10 @@ button:not(:disabled):active {
 }
 
 .card {
-  background-color: #ffffff;
+  background-color: #eff6ff;
   border-radius: var(--radius-md);
   padding: 16px;
-  border: 1px solid var(--border);
+  border: 1px solid #bfdbfe;
 }
 
 .segment-grid {
@@ -323,8 +327,9 @@ button:not(:disabled):active {
   text-align: left;
   font-weight: 500;
   color: #111827;
-  box-shadow: none;
-  transition: background 0.15s ease, border-color 0.15s ease;
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.06);
+  transition: background 0.15s ease, border-color 0.15s ease,
+    box-shadow 0.15s ease, transform 0.1s ease;
   display: flex;
   align-items: flex-start;
   gap: 12px;
@@ -334,7 +339,9 @@ button:not(:disabled):active {
 
 .segment-card:hover {
   border-color: var(--primary);
-  background: #f8fafc;
+  background: var(--primary-soft);
+  box-shadow: 0 16px 32px rgba(37, 99, 235, 0.16);
+  transform: translateY(-2px);
 }
 
 .segment-icon {
@@ -385,7 +392,7 @@ button:not(:disabled):active {
 }
 
 .person-item {
-  background-color: #ffffff;
+  background-color: #f9fafb;
   border-radius: var(--radius-md);
   padding: 12px 16px;
   border: 1px solid #e5e7eb;
@@ -394,8 +401,9 @@ button:not(:disabled):active {
   gap: 4px;
   color: #111827;
   text-align: left;
-  box-shadow: none;
-  transition: border-color 0.15s ease, background-color 0.15s ease;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.04);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease,
+    background-color 0.15s ease, transform 0.05s ease;
 }
 
 .person-item--compact {
@@ -406,7 +414,8 @@ button:not(:disabled):active {
 .person-item:hover {
   border-color: var(--primary);
   background-color: #f1f5f9;
-  box-shadow: none;
+  box-shadow: 0 8px 20px rgba(37, 99, 235, 0.12);
+  transform: translateY(-1px);
 }
 
 .person-header {
@@ -480,7 +489,7 @@ button:not(:disabled):active {
 }
 
 .finance-card {
-  background-color: #ffffff;
+  background-color: #f9fafb;
   border-radius: var(--radius-md);
   padding: 12px 16px;
   border: 1px solid #e5e7eb;
@@ -671,7 +680,7 @@ button:not(:disabled):active {
   padding: 20px;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  box-shadow: none;
+  box-shadow: var(--shadow-sm);
 }
 
 .sidebar-header {
@@ -759,38 +768,6 @@ button:not(:disabled):active {
 .main-content {
   padding: 8px 0 24px;
 }
-
-.content-topbar {
-  position: sticky;
-  top: 0;
-  z-index: 3;
-  background: var(--bg);
-  padding-bottom: 8px;
-}
-
-.content-back {
-  background-color: #ffffff;
-  color: #111827;
-  border: 1px solid var(--border);
-  font-size: 13px;
-  padding: 6px 12px;
-  border-radius: 8px;
-}
-
-.content-back:hover {
-  background-color: #f3f4f6;
-}
-
-.dashboard-clean {
-  margin-top: 8px;
-}
-
-.dashboard-context {
-  font-size: 16px;
-  font-weight: 600;
-  color: #0f172a;
-  margin-top: 6px;
-}
 .finance-page {
   margin-top: 24px;
   display: flex;
@@ -833,10 +810,10 @@ button:not(:disabled):active {
 }
 
 .finance-summary-card {
-  background: #ffffff;
+  background: linear-gradient(135deg, #eff6ff, #e0f2fe);
   border-radius: var(--radius-md);
   padding: 14px 16px;
-  border: 1px solid var(--border);
+  border: 1px solid #bfdbfe;
   box-shadow: none;
 }
 
@@ -872,7 +849,7 @@ button:not(:disabled):active {
   border-radius: var(--radius-lg);
   padding: 16px 18px;
   border: 1px solid #e5e7eb;
-  box-shadow: none;
+  box-shadow: var(--shadow-sm);
 }
 
 .finance-form-card h3,
@@ -957,7 +934,7 @@ button:not(:disabled):active {
   border-radius: var(--radius-lg);
   padding: 16px 18px;
   border: 1px solid #e5e7eb;
-  box-shadow: none;
+  box-shadow: var(--shadow-sm);
 }
 
 .org-form-card h3,
@@ -1000,15 +977,18 @@ button:not(:disabled):active {
   border-radius: var(--radius-md);
   padding: 12px 14px;
   border: 1px solid #e5e7eb;
-  background-color: #ffffff;
+  background-color: #f9fafb;
   cursor: pointer;
   box-shadow: none;
-  transition: border-color 0.15s ease, background-color 0.15s ease;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease,
+    transform 0.05s ease, background-color 0.15s ease;
 }
 
 .org-card:hover {
   border-color: var(--primary);
-  background-color: #f8fafc;
+  background-color: var(--primary-soft);
+  box-shadow: 0 8px 24px rgba(37, 99, 235, 0.12);
+  transform: translateY(-1px);
 }
 
 .org-card-title {
@@ -1086,8 +1066,8 @@ button:not(:disabled):active {
 }
 
 .dashboard-card--primary {
-  background: #ffffff;
-  border-color: var(--border);
+  background: linear-gradient(135deg, #eff6ff, #dbeafe);
+  border-color: #bfdbfe;
 }
 
 .dashboard-card-label {
@@ -1122,12 +1102,6 @@ button:not(:disabled):active {
   align-items: center;
 }
 
-.people-header-actions {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
 .people-header-sub {
   margin-top: 4px;
   font-size: 14px;
@@ -1151,10 +1125,6 @@ button:not(:disabled):active {
   display: grid;
   grid-template-columns: minmax(0, 340px) minmax(0, 1fr);
   gap: 20px;
-}
-
-.people-layout--single {
-  grid-template-columns: 1fr;
 }
 
 .people-form-card,
@@ -1311,4 +1281,18 @@ button:not(:disabled):active {
     flex-direction: column;
     align-items: stretch;
   }
+}
+/* FIX: botões dentro da tabela não devem herdar o "button" global */
+.finance-table .action-primary,
+.finance-table .action-secondary,
+.finance-table summary {
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+.finance-table .action-primary:hover,
+.finance-table .action-secondary:hover,
+.finance-table summary:hover {
+  box-shadow: none !important;
+  transform: none !important;
 }

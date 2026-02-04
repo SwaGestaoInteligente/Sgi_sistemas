@@ -551,6 +551,10 @@ export default function FinanceiroView({
       <div className="finance-header-row">
         <div>
           <h2>Financeiro</h2>
+          <p className="people-header-sub">
+            Contas e lançamentos da organização{" "}
+            <strong>{organizacao.nome}</strong>.
+          </p>
         </div>
         <div className="finance-header-badges">
           <span>Contas: {totalContas}</span>
@@ -561,22 +565,31 @@ export default function FinanceiroView({
 
       <div className="finance-summary-grid">
         <div className="finance-summary-card">
-          <div className="finance-summary-label">Saldo inicial total</div>
-          <div className="finance-summary-value">
+          <p className="finance-summary-label">Saldo inicial total</p>
+          <p className="finance-summary-value">
             R$ {saldoInicialTotal.toFixed(2)}
-          </div>
+          </p>
+          <p className="finance-summary-sub">
+            Soma de todas as contas cadastradas.
+          </p>
         </div>
         <div className="finance-summary-card">
-          <div className="finance-summary-label">Total a pagar</div>
-          <div className="finance-summary-value">
+          <p className="finance-summary-label">Total a pagar</p>
+          <p className="finance-summary-value">
             R$ {totalAPagar.toFixed(2)}
-          </div>
+          </p>
+          <p className="finance-summary-sub">
+            Títulos pendentes da aba Contas a pagar.
+          </p>
         </div>
         <div className="finance-summary-card">
-          <div className="finance-summary-label">Total já pago</div>
-          <div className="finance-summary-value">
+          <p className="finance-summary-label">Total já pago</p>
+          <p className="finance-summary-value">
             R$ {totalPagas.toFixed(2)}
-          </div>
+          </p>
+          <p className="finance-summary-sub">
+            Lançamentos marcados como pagos.
+          </p>
         </div>
       </div>
 
@@ -648,6 +661,10 @@ export default function FinanceiroView({
           {/* Formulário de conta */}
           <section className="finance-form-card">
             <h3>Nova conta</h3>
+            <p className="finance-form-sub">
+              Cadastre contas bancárias, carteiras digitais ou caixa.
+            </p>
+
             <form onSubmit={criarConta} className="form">
               <label>
                 Nome da conta
@@ -729,6 +746,9 @@ export default function FinanceiroView({
             <div className="finance-table-header">
               <div>
                 <h3>Contas financeiras</h3>
+                <p>
+                  Contas bancárias, carteiras digitais e caixa da organização.
+                </p>
               </div>
             </div>
 
@@ -808,6 +828,13 @@ export default function FinanceiroView({
                     </td>
                   </tr>
                 ))}
+                {contas.length === 0 && (
+                  <tr>
+                    <td colSpan={8} style={{ textAlign: "center" }}>
+                      Nenhuma conta cadastrada ainda.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </section>
@@ -817,6 +844,10 @@ export default function FinanceiroView({
       {aba === "contasPagar" && (
         <div className="finance-table-card" style={{ marginTop: 12 }}>
           <h3>Contas a pagar</h3>
+          <p style={{ marginTop: 4, color: "#6b7280" }}>
+            Despesas com vencimento e valor definidos. Use para montar a visão
+            de fluxo de caixa.
+          </p>
 
           <form
             onSubmit={criarDespesa}
@@ -999,6 +1030,13 @@ export default function FinanceiroView({
                     </td>
                   </tr>
                 ))}
+              {despesas.length === 0 && (
+                <tr>
+                  <td colSpan={6} style={{ textAlign: "center" }}>
+                    Nenhuma despesa cadastrada ainda.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -1007,6 +1045,10 @@ export default function FinanceiroView({
       {aba === "contasReceber" && (
         <div className="finance-table-card" style={{ marginTop: 12 }}>
           <h3>Contas a receber</h3>
+          <p style={{ marginTop: 4, color: "#6b7280" }}>
+            Receitas com vencimento e valor definidos. Use para acompanhar quem
+            deve ao condomínio.
+          </p>
 
           <form
             onSubmit={criarReceita}
@@ -1195,6 +1237,13 @@ export default function FinanceiroView({
                   </td>
                 </tr>
               ))}
+              {receitas.length === 0 && (
+                <tr>
+                  <td colSpan={6} style={{ textAlign: "center" }}>
+                    Nenhuma receita cadastrada ainda.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -1204,6 +1253,10 @@ export default function FinanceiroView({
         <div className="finance-layout">
           <section className="finance-form-card">
             <h3>Novo item cobrado</h3>
+            <p className="finance-form-sub">
+              Cadastre itens como taxa de salão de festas, tags de acesso,
+              multas e outras receitas extras.
+            </p>
 
             <form
               className="form"
@@ -1303,6 +1356,10 @@ export default function FinanceiroView({
                     </option>
                   ))}
                 </select>
+                <small style={{ display: "block", marginTop: 4 }}>
+                  As categorias são configuradas na aba &quot;Categorias
+                  financeiras&quot;.
+                </small>
               </label>
 
               <label>
@@ -1362,6 +1419,10 @@ export default function FinanceiroView({
             <div className="finance-table-header">
               <div>
                 <h3>Itens cadastrados</h3>
+                <p>
+                  Tudo o que o condomínio pode cobrar: salão, tags,
+                  multas, outros.
+                </p>
               </div>
               <button
                 type="button"
@@ -1546,6 +1607,13 @@ export default function FinanceiroView({
                     </td>
                   </tr>
                 ))}
+                {itensCobrados.length === 0 && (
+                  <tr>
+                    <td colSpan={5} style={{ textAlign: "center" }}>
+                      Nenhum item cadastrado ainda.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </section>
@@ -1556,6 +1624,9 @@ export default function FinanceiroView({
         <div className="finance-layout">
           <section className="finance-form-card">
             <h3>Nova categoria financeira</h3>
+            <p className="finance-form-sub">
+              Organize seu plano de contas com categorias de receita e despesa.
+            </p>
 
             <form
               className="form"
@@ -1628,6 +1699,11 @@ export default function FinanceiroView({
                   required
                 />
               </label>
+
+              <p style={{ color: "#6b7280", marginTop: 8 }}>
+                Use o campo Código para organizar subcategorias (ex.: 1, 1.01,
+                1.01.01) e escolha o Tipo Receita ou Despesa conforme o uso.
+              </p>
               <button type="submit" disabled={loading || !token}>
                 {loading ? "Salvando..." : "Adicionar categoria"}
               </button>
@@ -1638,6 +1714,10 @@ export default function FinanceiroView({
             <div className="finance-table-header">
               <div>
                 <h3>Plano de contas</h3>
+                <p>
+                  Categorias financeiras usadas nas receitas, despesas e itens
+                  cobrados.
+                </p>
               </div>
               <button
                 type="button"
@@ -1786,6 +1866,13 @@ export default function FinanceiroView({
                       </td>
                     </tr>
                   ))}
+                {categoriasReceita.length + categoriasDespesa.length === 0 && (
+                  <tr>
+                    <td colSpan={5} style={{ textAlign: "center" }}>
+                      Nenhuma categoria cadastrada ainda.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </section>
@@ -1797,6 +1884,9 @@ export default function FinanceiroView({
           <div className="finance-table-header">
             <div>
               <h3>Relatorios - Balancete simples</h3>
+              <p style={{ marginTop: 4, color: "#6b7280" }}>
+                Totais por categoria com base nos lancamentos atuais.
+              </p>
             </div>
             <div className="finance-card-actions">
               <button type="button" onClick={() => void gerarRelatorioPdf()}>
@@ -1816,34 +1906,34 @@ export default function FinanceiroView({
               <div className="finance-card-header-row">
                 <strong>Total de receitas</strong>
               </div>
-              <div>
+              <p>
                 {totalReceitas.toLocaleString("pt-BR", {
                   style: "currency",
                   currency: "BRL"
                 })}
-              </div>
+              </p>
             </div>
             <div className="finance-card">
               <div className="finance-card-header-row">
                 <strong>Total de despesas</strong>
               </div>
-              <div>
+              <p>
                 {totalDespesas.toLocaleString("pt-BR", {
                   style: "currency",
                   currency: "BRL"
                 })}
-              </div>
+              </p>
             </div>
             <div className="finance-card">
               <div className="finance-card-header-row">
                 <strong>Saldo do periodo</strong>
               </div>
-              <div>
+              <p>
                 {saldoPeriodo.toLocaleString("pt-BR", {
                   style: "currency",
                   currency: "BRL"
                 })}
-              </div>
+              </p>
             </div>
           </div>
 
@@ -1869,6 +1959,13 @@ export default function FinanceiroView({
                       </td>
                     </tr>
                   )
+                )}
+                {Object.keys(totalReceitasPorCategoria).length === 0 && (
+                  <tr>
+                    <td colSpan={2} style={{ textAlign: "center" }}>
+                      Nenhuma receita cadastrada ainda.
+                    </td>
+                  </tr>
                 )}
               </tbody>
             </table>
@@ -1897,6 +1994,13 @@ export default function FinanceiroView({
                     </tr>
                   )
                 )}
+                {Object.keys(totalDespesasPorCategoria).length === 0 && (
+                  <tr>
+                    <td colSpan={2} style={{ textAlign: "center" }}>
+                      Nenhuma despesa cadastrada ainda.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
@@ -1905,4 +2009,3 @@ export default function FinanceiroView({
     </div>
   );
 }
-

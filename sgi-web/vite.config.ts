@@ -1,10 +1,11 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   plugins: [react()],
-  base: "/Sgi_sistemas/",
+  base: command === "serve" ? "/" : "/Sgi_sistemas/",
   server: {
-    port: 5173
+    port: 5173,
+    strictPort: true
   }
-});
+}));
