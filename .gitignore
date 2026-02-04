@@ -8,11 +8,20 @@ obj/
 sgi-web/node_modules/
 sgi-web/dist/
 
+# Projeto antigo (nao usado)
+condo-fullstack/
+
 # Banco de dados local
 src/Sgi.Api/sgi.db
 
 # Arquivos temporários
 temp_App_tsx.txt
+
+# Arquivos/dirs locais
+all-code.txt
+backup-local/
+sgi abri.txt
+teste/
 
 # Ambientes locais
 sgi-web/.env

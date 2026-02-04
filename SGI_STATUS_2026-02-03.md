@@ -133,3 +133,8 @@ E no App.tsx só mostra no menu o que estiver `true`.
 - [ ] `App.tsx` importa as 3 views e escolhe qual renderizar
 - [ ] `organizacaoSelecionada` está definido (estado no App ou no AuthProvider)
 - [ ] Corrigido: `setX((prev) => [...prev, novo])`
+
+## 8) Registro â€” GitHub (2026-02-04)
+- Pull precisou mover arquivos locais nÃ£o rastreados: `start-api.bat` e `start-web.bat` foram movidos para `backup-local/`.
+- Depois disso, `git pull --ff-only` concluiu normalmente.
+- A pasta `condo-fullstack/` voltou vinda do repositÃ³rio (mesmo tendo sido apagada localmente).
