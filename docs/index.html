@@ -2,13 +2,54 @@
 <html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
-    <title>SWA</title>
+    <title>SWA Gestão Inteligente – Sistema</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <script type="module" crossorigin src="/Sgi_sistemas/assets/index-gS3xg_ap.js"></script>
-    <link rel="stylesheet" crossorigin href="/Sgi_sistemas/assets/index-6DVCO002.css">
+
+    <!-- Ícone do sistema -->
+    <link rel="icon" type="image/jpeg" href="/Sgi_sistemas/swa1.jpeg" />
+
+    <style>
+      /* Botão flutuante para voltar ao site da SWA */
+      .swa-back-float {
+        position: fixed;
+        left: 16px;
+        bottom: 16px;
+        z-index: 50;
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto,
+          Helvetica, Arial, sans-serif;
+      }
+      .swa-back-float a {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 9px 16px;
+        border-radius: 999px;
+        border: 1px solid rgba(15, 23, 42, 0.65);
+        background: radial-gradient(circle at 0 0, #1e293b, #020617);
+        color: #e5e7eb;
+        font-size: 12px;
+        text-decoration: none;
+        box-shadow: 0 14px 30px rgba(15, 23, 42, 0.78);
+      }
+      .swa-back-float a:hover {
+        background: radial-gradient(circle at 0 0, #0f172a, #020617);
+      }
+    </style>
+    <script type="module" crossorigin src="/Sgi_sistemas/assets/index-BaiVgkBe.js"></script>
+    <link rel="stylesheet" crossorigin href="/Sgi_sistemas/assets/index-Cy15nk0r.css">
   </head>
+
   <body>
+    <!-- Aqui o React monta todo o sistema -->
     <div id="root"></div>
+
+    <!-- Botão flutuante visível em qualquer tela do sistema -->
+    <div class="swa-back-float">
+      <a href="https://swagestaointeligente.github.io/swa-site/">
+        ← Voltar para o site SWA
+      </a>
+    </div>
+
+    <!-- Entrada do Vite/React -->
   </body>
 </html>
-

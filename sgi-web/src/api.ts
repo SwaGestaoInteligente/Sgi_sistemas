@@ -144,6 +144,21 @@ export interface TransferenciaResponse {
   referencia: string;
 }
 
+export interface DocumentoCobranca {
+  id: string;
+  organizacaoId: string;
+  lancamentoFinanceiroId: string;
+  tipo: string;
+  identificadorExterno?: string;
+  linhaDigitavel?: string;
+  qrCode?: string;
+  urlPagamento?: string;
+  status: string;
+  dataEmissao: string;
+  dataVencimento: string;
+  dataBaixa?: string;
+}
+
 async function request<T>(
   path: string,
   options: RequestInit = {},
@@ -159,10 +174,23 @@ async function request<T>(
     headers.Authorization = `Bearer ${token}`;
   }
 
-  const res = await fetch(`${API_BASE_URL}${path}`, {
-    ...options,
-    headers
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}${path}`, {
+      ...options,
+      headers
+    });
+  } catch (error) {
+    const origemAtual =
+      typeof window !== "undefined" ? window.location.origin : "origem atual";
+    const detalhe =
+      error instanceof Error && error.message
+        ? ` Detalhe tecnico: ${error.message}.`
+        : "";
+    throw new Error(
+      `Nao foi possivel conectar com a API (${API_BASE_URL}). Verifique se o backend esta ativo e se o CORS permite ${origemAtual}.${detalhe}`
+    );
+  }
 
   if (!res.ok) {
     const text = await res.text();
@@ -541,6 +569,62 @@ export const api = {
       {
         method: "POST",
         body: JSON.stringify(payload)
+      },
+      token
+    );
+  },
+
+  async listarFaturas(
+    token: string,
+    organizacaoId: string,
+    status?: string
+  ): Promise<DocumentoCobranca[]> {
+    const searchParams = new URLSearchParams();
+    searchParams.set("organizacaoId", organizacaoId);
+    if (status) {
+      searchParams.set("status", status);
+    }
+    const path = `/api/financeiro/faturas?${searchParams.toString()}`;
+    return request<DocumentoCobranca[]>(path, {}, token);
+  },
+
+  async criarFatura(
+    token: string,
+    payload: {
+      organizacaoId: string;
+      lancamentoFinanceiroId: string;
+      tipo: string;
+      identificadorExterno?: string;
+      linhaDigitavel?: string;
+      qrCode?: string;
+      urlPagamento?: string;
+      dataVencimento?: string;
+    }
+  ): Promise<DocumentoCobranca> {
+    return request<DocumentoCobranca>(
+      "/api/financeiro/faturas",
+      {
+        method: "POST",
+        body: JSON.stringify(payload)
+      },
+      token
+    );
+  },
+
+  async atualizarStatusFatura(
+    token: string,
+    id: string,
+    status: string,
+    dataBaixa?: string
+  ): Promise<void> {
+    await request<void>(
+      `/api/financeiro/faturas/${encodeURIComponent(id)}/status`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          status,
+          dataBaixa: dataBaixa || undefined
+        })
       },
       token
     );

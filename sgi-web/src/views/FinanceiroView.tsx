@@ -6,6 +6,7 @@ import {
   api,
   ChargeItem,
   ContaFinanceira,
+  DocumentoCobranca,
   LancamentoFinanceiro,
   Organizacao,
   Pessoa,
@@ -15,21 +16,57 @@ import { useAuth } from "../hooks/useAuth";
 
 type FinanceiroViewProps = {
   organizacao: Organizacao;
+  abaSelecionada?: FinanceiroTab;
+  onAbaChange?: (aba: FinanceiroTab) => void;
+  exibirMenuAbas?: boolean;
 };
 
+export type FinanceiroTab =
+  | "categorias"
+  | "contas"
+  | "consumos"
+  | "receitasDespesas"
+  | "contasPagar"
+  | "contasReceber"
+  | "previsaoOrcamentaria"
+  | "transferencias"
+  | "abonos"
+  | "baixasManuais"
+  | "gruposRateio"
+  | "itensCobrados"
+  | "faturas"
+  | "inadimplentes"
+  | "conciliacaoBancaria"
+  | "livroPrestacaoContas"
+  | "relatorios";
+
+export const menuFinanceiro: Array<{ id: FinanceiroTab; label: string }> = [
+  { id: "categorias", label: "Categorias" },
+  { id: "contas", label: "Contas" },
+  { id: "consumos", label: "Consumos" },
+  { id: "receitasDespesas", label: "Receitas e despesas" },
+  { id: "contasPagar", label: "Contas a pagar" },
+  { id: "previsaoOrcamentaria", label: "Previsao orcamentaria" },
+  { id: "transferencias", label: "Transferencias" },
+  { id: "abonos", label: "Abonos" },
+  { id: "baixasManuais", label: "Baixas manuais" },
+  { id: "gruposRateio", label: "Grupos de rateio" },
+  { id: "itensCobrados", label: "Cobrancas" },
+  { id: "faturas", label: "Faturas" },
+  { id: "inadimplentes", label: "Inadimplentes" },
+  { id: "conciliacaoBancaria", label: "Conciliacao bancaria" },
+  { id: "livroPrestacaoContas", label: "Livro de prestacao de contas" },
+  { id: "relatorios", label: "Relatorios" }
+];
+
 export default function FinanceiroView({
-  organizacao
+  organizacao,
+  abaSelecionada,
+  onAbaChange,
+  exibirMenuAbas = true
 }: FinanceiroViewProps) {
   const { token } = useAuth();
-  const [aba, setAba] =
-    useState<
-      | "contas"
-      | "contasPagar"
-      | "contasReceber"
-      | "itensCobrados"
-      | "categorias"
-      | "relatorios"
-    >("contas");
+  const [aba, setAba] = useState<FinanceiroTab>("contas");
   const [contas, setContas] = useState<ContaFinanceira[]>([]);
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -79,6 +116,16 @@ export default function FinanceiroView({
     useState("pix");
   const [novaReceitaReferencia, setNovaReceitaReferencia] = useState("");
   const [pessoasFinanceiro, setPessoasFinanceiro] = useState<Pessoa[]>([]);
+
+  // Faturas
+  const [faturas, setFaturas] = useState<DocumentoCobranca[]>([]);
+  const [novaFaturaLancamentoId, setNovaFaturaLancamentoId] = useState("");
+  const [novaFaturaTipo, setNovaFaturaTipo] = useState("boleto");
+  const [novaFaturaVencimento, setNovaFaturaVencimento] = useState("");
+  const [novaFaturaLinhaDigitavel, setNovaFaturaLinhaDigitavel] = useState("");
+  const [novaFaturaQrCode, setNovaFaturaQrCode] = useState("");
+  const [novaFaturaUrlPagamento, setNovaFaturaUrlPagamento] = useState("");
+  const [novaFaturaIdentificador, setNovaFaturaIdentificador] = useState("");
 
   // Itens cobrados (salão, tags, multas, etc.)
   const [itensCobrados, setItensCobrados] = useState<ChargeItem[]>([]);
@@ -217,12 +264,25 @@ export default function FinanceiroView({
     void carregarContas();
     void carregarDespesas();
     void carregarReceitas();
+    void carregarFaturas();
     void carregarCategoriasReceita();
     void carregarCategoriasDespesa();
     void carregarPessoasFinanceiro();
     // Itens cobrados serão carregados sob demanda ao abrir a aba
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, organizacaoId]);
+
+  useEffect(() => {
+    if (abaSelecionada && abaSelecionada !== aba) {
+      setAba(abaSelecionada);
+    }
+  }, [abaSelecionada, aba]);
+
+  useEffect(() => {
+    if (onAbaChange) {
+      onAbaChange(aba);
+    }
+  }, [aba, onAbaChange]);
 
   const criarConta = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -297,6 +357,20 @@ export default function FinanceiroView({
       );
     } catch (e: any) {
       setErro(e.message || "Erro ao atualizar status da conta");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const carregarFaturas = async () => {
+    if (!token) return;
+    try {
+      setErro(null);
+      setLoading(true);
+      const data = await api.listarFaturas(token, organizacaoId);
+      setFaturas(data);
+    } catch (e: any) {
+      setErro(e.message || "Erro ao carregar faturas");
     } finally {
       setLoading(false);
     }
@@ -471,6 +545,54 @@ export default function FinanceiroView({
     }
   };
 
+  const criarFatura = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!token || !novaFaturaLancamentoId) return;
+    try {
+      setErro(null);
+      setLoading(true);
+      const criada = await api.criarFatura(token, {
+        organizacaoId,
+        lancamentoFinanceiroId: novaFaturaLancamentoId,
+        tipo: novaFaturaTipo,
+        identificadorExterno: novaFaturaIdentificador || undefined,
+        linhaDigitavel: novaFaturaLinhaDigitavel || undefined,
+        qrCode: novaFaturaQrCode || undefined,
+        urlPagamento: novaFaturaUrlPagamento || undefined,
+        dataVencimento: novaFaturaVencimento || undefined
+      });
+      setFaturas((prev) => [criada, ...prev]);
+      setNovaFaturaLancamentoId("");
+      setNovaFaturaTipo("boleto");
+      setNovaFaturaVencimento("");
+      setNovaFaturaLinhaDigitavel("");
+      setNovaFaturaQrCode("");
+      setNovaFaturaUrlPagamento("");
+      setNovaFaturaIdentificador("");
+    } catch (e: any) {
+      setErro(e.message || "Erro ao criar fatura");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const atualizarStatusFatura = async (
+    fatura: DocumentoCobranca,
+    status: "emitida" | "vencida" | "paga" | "cancelada"
+  ) => {
+    if (!token) return;
+    try {
+      setErro(null);
+      setLoading(true);
+      await api.atualizarStatusFatura(token, fatura.id, status);
+      await Promise.all([carregarFaturas(), carregarReceitas()]);
+    } catch (e: any) {
+      setErro(e.message || "Erro ao atualizar status da fatura");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const totalContas = contas.length;
   const contasAtivas = contas.filter((c) => c.status === "ativo").length;
   const contasInativas = contas.filter((c) => c.status === "inativo").length;
@@ -494,6 +616,7 @@ export default function FinanceiroView({
   const categoriasReceitaPorId = Object.fromEntries(
     categoriasReceita.map((c) => [c.id, `${c.codigo} - ${c.nome}`])
   );
+  const receitasPorId = Object.fromEntries(receitas.map((r) => [r.id, r]));
 
   const despesasValidas = despesas.filter(
     (d) => d.situacao !== "cancelado"
@@ -526,6 +649,161 @@ export default function FinanceiroView({
     0
   );
   const saldoPeriodo = totalReceitas - totalDespesas;
+  const hojeIso = new Date().toISOString().slice(0, 10);
+  const inadimplentes = receitas
+    .filter(
+      (r) =>
+        r.situacao !== "pago" &&
+        !!r.dataVencimento &&
+        r.dataVencimento.slice(0, 10) < hojeIso
+    )
+    .sort((a, b) =>
+      (a.dataVencimento ?? "").localeCompare(b.dataVencimento ?? "")
+    );
+  const totalInadimplencia = inadimplentes.reduce(
+    (sum, item) => sum + item.valor,
+    0
+  );
+  const pendentesParaBaixa = [...despesas, ...receitas].filter(
+    (l) => l.situacao === "pendente"
+  );
+  const ultimosLancamentos = [...despesasValidas, ...receitasValidas]
+    .sort((a, b) =>
+      (b.dataCompetencia ?? "").localeCompare(a.dataCompetencia ?? "")
+    )
+    .slice(0, 20);
+  const transferenciasLancadas = [...despesasValidas, ...receitasValidas]
+    .filter((l) => (l.formaPagamento ?? "").toLowerCase() === "transferencia")
+    .sort((a, b) =>
+      (b.dataCompetencia ?? "").localeCompare(a.dataCompetencia ?? "")
+    );
+  const faturasAbertas = faturas.filter(
+    (f) => f.status !== "paga" && f.status !== "cancelada"
+  );
+  const lancamentosReceberElegiveisFatura = receitas
+    .filter((r) => r.situacao !== "cancelado")
+    .filter(
+      (r) => !faturasAbertas.some((f) => f.lancamentoFinanceiroId === r.id)
+    )
+    .sort((a, b) =>
+      (a.dataVencimento ?? a.dataCompetencia).localeCompare(
+        b.dataVencimento ?? b.dataCompetencia
+      )
+    );
+
+  const renderModuloBase = (
+    titulo: string,
+    descricao: string,
+    passos: string[]
+  ) => (
+    <div className="finance-table-card" style={{ marginTop: 12 }}>
+      <div className="finance-table-header">
+        <div>
+          <h3>{titulo}</h3>
+          <p className="finance-form-sub">{descricao}</p>
+        </div>
+      </div>
+      <div className="finance-card-grid" style={{ marginTop: 8 }}>
+        {passos.map((passo, idx) => (
+          <div key={`${titulo}-${idx}`} className="finance-card">
+            <strong>{`Etapa ${idx + 1}`}</strong>
+            <p style={{ marginTop: 6 }}>{passo}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
+  const renderTransferenciaForm = () => (
+    <section className="finance-form-card">
+      <h3>Transferencia entre contas</h3>
+      <p className="finance-form-sub">
+        Registra saida na conta origem e entrada na conta destino.
+      </p>
+
+      <form onSubmit={transferirEntreContas} className="form">
+        <label>
+          Conta origem
+          <select
+            value={transferenciaOrigemId}
+            onChange={(e) => setTransferenciaOrigemId(e.target.value)}
+            required
+          >
+            <option value="">Selecione</option>
+            {contasTransferencia.map((conta) => (
+              <option key={conta.id} value={conta.id}>
+                {conta.nome}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label>
+          Conta destino
+          <select
+            value={transferenciaDestinoId}
+            onChange={(e) => setTransferenciaDestinoId(e.target.value)}
+            required
+          >
+            <option value="">Selecione</option>
+            {contasTransferencia.map((conta) => (
+              <option key={conta.id} value={conta.id}>
+                {conta.nome}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <div className="finance-form-grid">
+          <label>
+            Valor
+            <input
+              value={transferenciaValor}
+              onChange={(e) => setTransferenciaValor(e.target.value)}
+              placeholder="Ex.: 150,00"
+              required
+            />
+          </label>
+          <label>
+            Data
+            <input
+              type="date"
+              value={transferenciaData}
+              onChange={(e) => setTransferenciaData(e.target.value)}
+              required
+            />
+          </label>
+        </div>
+
+        <label>
+          Descricao
+          <input
+            value={transferenciaDescricao}
+            onChange={(e) => setTransferenciaDescricao(e.target.value)}
+            placeholder="Transferencia entre contas"
+          />
+        </label>
+
+        <label>
+          Referencia (opcional)
+          <input
+            value={transferenciaReferencia}
+            onChange={(e) => setTransferenciaReferencia(e.target.value)}
+            placeholder="Ex.: TRF-20260205-001"
+          />
+        </label>
+
+        <button type="submit" disabled={loading || contasTransferencia.length < 2}>
+          {loading ? "Transferindo..." : "Transferir"}
+        </button>
+        {contasTransferencia.length < 2 && (
+          <p className="finance-form-sub">
+            Cadastre pelo menos duas contas ativas para transferir.
+          </p>
+        )}
+      </form>
+    </section>
+  );
 
   const carregarLogoBase64 = async () => {
     try {
@@ -691,68 +969,20 @@ export default function FinanceiroView({
         </div>
       </div>
 
-      <div className="finance-tabs">
-        <button
-          type="button"
-          className={
-            "finance-tab" +
-            (aba === "contas" ? " finance-tab--active" : "")
-          }
-          onClick={() => setAba("contas")}
-        >
-          Contas
-        </button>
-        <button
-          type="button"
-          className={
-            "finance-tab" +
-            (aba === "contasPagar" ? " finance-tab--active" : "")
-          }
-          onClick={() => setAba("contasPagar")}
-        >
-          Contas a pagar
-        </button>
-        <button
-          type="button"
-          className={
-            "finance-tab" +
-            (aba === "contasReceber" ? " finance-tab--active" : "")
-          }
-          onClick={() => setAba("contasReceber")}
-        >
-          Contas a receber
-        </button>
-        <button
-          type="button"
-          className={
-            "finance-tab" +
-            (aba === "itensCobrados" ? " finance-tab--active" : "")
-          }
-          onClick={() => setAba("itensCobrados")}
-        >
-          Itens de cobrança
-        </button>
-        <button
-          type="button"
-          className={
-            "finance-tab" +
-            (aba === "categorias" ? " finance-tab--active" : "")
-          }
-          onClick={() => setAba("categorias")}
-        >
-          Cadastro de categorias
-        </button>
-        <button
-          type="button"
-          className={
-            "finance-tab" +
-            (aba === "relatorios" ? " finance-tab--active" : "")
-          }
-          onClick={() => setAba("relatorios")}
-        >
-          Relatorios
-        </button>
-      </div>
+      {exibirMenuAbas && (
+        <div className="finance-tabs">
+          {menuFinanceiro.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className={"finance-tab" + (aba === item.id ? " finance-tab--active" : "")}
+              onClick={() => setAba(item.id)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {aba === "contas" && (
         <div className="finance-layout">
@@ -837,97 +1067,7 @@ export default function FinanceiroView({
               </form>
             </section>
 
-            <section className="finance-form-card">
-              <h3>Transferência entre contas</h3>
-              <p className="finance-form-sub">
-                Registra saída na conta origem e entrada na conta destino.
-              </p>
-
-              <form onSubmit={transferirEntreContas} className="form">
-                <label>
-                  Conta origem
-                  <select
-                    value={transferenciaOrigemId}
-                    onChange={(e) => setTransferenciaOrigemId(e.target.value)}
-                    required
-                  >
-                    <option value="">Selecione</option>
-                    {contasTransferencia.map((conta) => (
-                      <option key={conta.id} value={conta.id}>
-                        {conta.nome}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label>
-                  Conta destino
-                  <select
-                    value={transferenciaDestinoId}
-                    onChange={(e) => setTransferenciaDestinoId(e.target.value)}
-                    required
-                  >
-                    <option value="">Selecione</option>
-                    {contasTransferencia.map((conta) => (
-                      <option key={conta.id} value={conta.id}>
-                        {conta.nome}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <div className="finance-form-grid">
-                  <label>
-                    Valor
-                    <input
-                      value={transferenciaValor}
-                      onChange={(e) => setTransferenciaValor(e.target.value)}
-                      placeholder="Ex.: 150,00"
-                      required
-                    />
-                  </label>
-                  <label>
-                    Data
-                    <input
-                      type="date"
-                      value={transferenciaData}
-                      onChange={(e) => setTransferenciaData(e.target.value)}
-                      required
-                    />
-                  </label>
-                </div>
-
-                <label>
-                  Descrição
-                  <input
-                    value={transferenciaDescricao}
-                    onChange={(e) => setTransferenciaDescricao(e.target.value)}
-                    placeholder="Transferencia entre contas"
-                  />
-                </label>
-
-                <label>
-                  Referência (opcional)
-                  <input
-                    value={transferenciaReferencia}
-                    onChange={(e) => setTransferenciaReferencia(e.target.value)}
-                    placeholder="Ex.: TRF-20260205-001"
-                  />
-                </label>
-
-                <button
-                  type="submit"
-                  disabled={loading || contasTransferencia.length < 2}
-                >
-                  {loading ? "Transferindo..." : "Transferir"}
-                </button>
-                {contasTransferencia.length < 2 && (
-                  <p className="finance-form-sub">
-                    Cadastre pelo menos duas contas ativas para transferir.
-                  </p>
-                )}
-              </form>
-            </section>
+            {renderTransferenciaForm()}
           </div>
 
           {/* Tabela de contas */}
@@ -1018,6 +1158,158 @@ export default function FinanceiroView({
                   <tr>
                     <td colSpan={8} style={{ textAlign: "center" }}>
                       Nenhuma conta cadastrada ainda.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </section>
+        </div>
+      )}
+
+      {aba === "consumos" &&
+        renderModuloBase(
+          "Consumos",
+          "MVP inicial para agua, gas, energia e medicoes por unidade.",
+          [
+            "Cadastrar medidores, unidade vinculada e tipo de consumo.",
+            "Importar leitura mensal (manual/CSV) e calcular variacao.",
+            "Gerar rateio automatico por unidade com historico."
+          ]
+        )}
+
+      {aba === "receitasDespesas" && (
+        <div className="finance-table-card" style={{ marginTop: 12 }}>
+          <div className="finance-table-header">
+            <div>
+              <h3>Receitas e despesas</h3>
+              <p className="finance-form-sub">
+                Visao consolidada para acompanhar entradas, saidas e saldo.
+              </p>
+            </div>
+            <div className="finance-card-actions">
+              <button type="button" onClick={() => setAba("contasPagar")}>
+                Ir para contas a pagar
+              </button>
+              <button type="button" onClick={() => setAba("contasReceber")}>
+                Ir para contas a receber
+              </button>
+            </div>
+          </div>
+
+          <div className="finance-card-grid" style={{ marginTop: 10 }}>
+            <div className="finance-card">
+              <strong>Receitas no periodo</strong>
+              <p>
+                {totalReceitas.toLocaleString("pt-BR", {
+                  style: "currency",
+                  currency: "BRL"
+                })}
+              </p>
+            </div>
+            <div className="finance-card">
+              <strong>Despesas no periodo</strong>
+              <p>
+                {totalDespesas.toLocaleString("pt-BR", {
+                  style: "currency",
+                  currency: "BRL"
+                })}
+              </p>
+            </div>
+            <div className="finance-card">
+              <strong>Saldo do periodo</strong>
+              <p>
+                {saldoPeriodo.toLocaleString("pt-BR", {
+                  style: "currency",
+                  currency: "BRL"
+                })}
+              </p>
+            </div>
+          </div>
+
+          <table className="table finance-table" style={{ marginTop: 12 }}>
+            <thead>
+              <tr>
+                <th>Tipo</th>
+                <th>Descricao</th>
+                <th>Vencimento</th>
+                <th className="finance-value-header">Valor</th>
+                <th>Situacao</th>
+              </tr>
+            </thead>
+            <tbody>
+              {ultimosLancamentos.map((lanc) => (
+                <tr key={lanc.id}>
+                  <td>{lanc.tipo === "pagar" ? "Despesa" : "Receita"}</td>
+                  <td>{lanc.descricao}</td>
+                  <td>
+                    {lanc.dataVencimento
+                      ? new Date(lanc.dataVencimento).toLocaleDateString("pt-BR")
+                      : "-"}
+                  </td>
+                  <td className="finance-value-cell">
+                    {lanc.valor.toLocaleString("pt-BR", {
+                      style: "currency",
+                      currency: "BRL"
+                    })}
+                  </td>
+                  <td>{lanc.situacao}</td>
+                </tr>
+              ))}
+              {ultimosLancamentos.length === 0 && (
+                <tr>
+                  <td colSpan={5} style={{ textAlign: "center" }}>
+                    Nenhum lancamento encontrado.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {aba === "transferencias" && (
+        <div className="finance-layout">
+          <div className="finance-side-column">{renderTransferenciaForm()}</div>
+          <section className="finance-table-card">
+            <div className="finance-table-header">
+              <div>
+                <h3>Historico de transferencias</h3>
+              </div>
+            </div>
+            <table className="table finance-table">
+              <thead>
+                <tr>
+                  <th>Tipo</th>
+                  <th>Descricao</th>
+                  <th>Data</th>
+                  <th className="finance-value-header">Valor</th>
+                  <th>Situacao</th>
+                </tr>
+              </thead>
+              <tbody>
+                {transferenciasLancadas.map((lanc) => (
+                  <tr key={lanc.id}>
+                    <td>{lanc.tipo === "pagar" ? "Saida" : "Entrada"}</td>
+                    <td>{lanc.descricao}</td>
+                    <td>
+                      {lanc.dataCompetencia
+                        ? new Date(lanc.dataCompetencia).toLocaleDateString("pt-BR")
+                        : "-"}
+                    </td>
+                    <td className="finance-value-cell">
+                      {lanc.valor.toLocaleString("pt-BR", {
+                        style: "currency",
+                        currency: "BRL"
+                      })}
+                    </td>
+                    <td>{lanc.situacao}</td>
+                  </tr>
+                ))}
+                {transferenciasLancadas.length === 0 && (
+                  <tr>
+                    <td colSpan={5} style={{ textAlign: "center" }}>
+                      Nenhuma transferencia registrada no periodo.
                     </td>
                   </tr>
                 )}
@@ -1535,6 +1827,90 @@ export default function FinanceiroView({
         </div>
       )}
 
+      {aba === "previsaoOrcamentaria" &&
+        renderModuloBase(
+          "Previsao orcamentaria",
+          "Base para planejar receitas, despesas e desvios por competencia.",
+          [
+            "Criar cenarios por ano e centro de custo.",
+            "Definir metas mensais de receita e limite de despesa.",
+            "Comparar previsto x realizado com alertas automaticos."
+          ]
+        )}
+
+      {aba === "abonos" &&
+        renderModuloBase(
+          "Abonos",
+          "MVP para registrar descontos/creditos em cobrancas e lancamentos.",
+          [
+            "Selecionar lancamento de origem e motivo do abono.",
+            "Aplicar percentual ou valor fixo com trilha de aprovacao.",
+            "Emitir comprovante de abono para morador/cliente."
+          ]
+        )}
+
+      {aba === "baixasManuais" && (
+        <div className="finance-table-card" style={{ marginTop: 12 }}>
+          <div className="finance-table-header">
+            <div>
+              <h3>Baixas manuais</h3>
+              <p className="finance-form-sub">
+                Base para baixa parcial, acerto por caixa e conciliacao manual.
+              </p>
+            </div>
+          </div>
+          <table className="table finance-table">
+            <thead>
+              <tr>
+                <th>Tipo</th>
+                <th>Descricao</th>
+                <th>Vencimento</th>
+                <th className="finance-value-header">Valor</th>
+                <th>Acao sugerida</th>
+              </tr>
+            </thead>
+            <tbody>
+              {pendentesParaBaixa.slice(0, 20).map((lanc) => (
+                <tr key={lanc.id}>
+                  <td>{lanc.tipo === "pagar" ? "Pagar" : "Receber"}</td>
+                  <td>{lanc.descricao}</td>
+                  <td>
+                    {lanc.dataVencimento
+                      ? new Date(lanc.dataVencimento).toLocaleDateString("pt-BR")
+                      : "-"}
+                  </td>
+                  <td className="finance-value-cell">
+                    {lanc.valor.toLocaleString("pt-BR", {
+                      style: "currency",
+                      currency: "BRL"
+                    })}
+                  </td>
+                  <td>Registrar baixa manual</td>
+                </tr>
+              ))}
+              {pendentesParaBaixa.length === 0 && (
+                <tr>
+                  <td colSpan={5} style={{ textAlign: "center" }}>
+                    Nenhum lancamento pendente para baixa manual.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {aba === "gruposRateio" &&
+        renderModuloBase(
+          "Grupos de rateio",
+          "MVP para distribuir custos por grupo, unidade ou fracao ideal.",
+          [
+            "Criar grupo de rateio com criterio (igual, fracao, consumo).",
+            "Vincular despesas recorrentes ao grupo de rateio.",
+            "Gerar lancamentos automaticamente por periodo."
+          ]
+        )}
+
       {aba === "itensCobrados" && (
         <div className="finance-layout">
           <section className="finance-form-card">
@@ -1897,6 +2273,280 @@ export default function FinanceiroView({
           </section>
         </div>
       )}
+
+      {aba === "faturas" && (
+        <div className="finance-layout">
+          <section className="finance-form-card">
+            <h3>Nova fatura</h3>
+            <p className="finance-form-sub">
+              Emite documento de cobranca para um lancamento de receber.
+            </p>
+
+            <form className="form" onSubmit={criarFatura}>
+              <label>
+                Lancamento (receber)
+                <select
+                  value={novaFaturaLancamentoId}
+                  onChange={(e) => setNovaFaturaLancamentoId(e.target.value)}
+                  required
+                >
+                  <option value="">Selecione</option>
+                  {lancamentosReceberElegiveisFatura.map((lanc) => (
+                    <option key={lanc.id} value={lanc.id}>
+                      {lanc.descricao} -{" "}
+                      {lanc.valor.toLocaleString("pt-BR", {
+                        style: "currency",
+                        currency: "BRL"
+                      })}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <div className="finance-form-grid">
+                <label>
+                  Tipo
+                  <select
+                    value={novaFaturaTipo}
+                    onChange={(e) => setNovaFaturaTipo(e.target.value)}
+                  >
+                    <option value="boleto">Boleto</option>
+                    <option value="pix">Pix</option>
+                    <option value="cartao">Cartao</option>
+                    <option value="link">Link de pagamento</option>
+                  </select>
+                </label>
+                <label>
+                  Vencimento
+                  <input
+                    type="date"
+                    value={novaFaturaVencimento}
+                    onChange={(e) => setNovaFaturaVencimento(e.target.value)}
+                  />
+                </label>
+              </div>
+
+              <label>
+                Identificador externo
+                <input
+                  value={novaFaturaIdentificador}
+                  onChange={(e) => setNovaFaturaIdentificador(e.target.value)}
+                  placeholder="Ex.: FAT-2026-0001"
+                />
+              </label>
+
+              <label>
+                Linha digitavel
+                <input
+                  value={novaFaturaLinhaDigitavel}
+                  onChange={(e) => setNovaFaturaLinhaDigitavel(e.target.value)}
+                  placeholder="Ex.: 00190.00009 01234.567891 23456.789012 3 98760000010000"
+                />
+              </label>
+
+              <label>
+                QR Code (texto)
+                <input
+                  value={novaFaturaQrCode}
+                  onChange={(e) => setNovaFaturaQrCode(e.target.value)}
+                  placeholder="Payload Pix copia e cola"
+                />
+              </label>
+
+              <label>
+                URL de pagamento
+                <input
+                  value={novaFaturaUrlPagamento}
+                  onChange={(e) => setNovaFaturaUrlPagamento(e.target.value)}
+                  placeholder="https://..."
+                />
+              </label>
+
+              <button type="submit" disabled={loading || !novaFaturaLancamentoId}>
+                {loading ? "Emitindo..." : "Emitir fatura"}
+              </button>
+            </form>
+          </section>
+
+          <section className="finance-table-card">
+            <div className="finance-table-header">
+              <div>
+                <h3>Faturas emitidas</h3>
+              </div>
+              <div className="finance-card-actions">
+                <button type="button" onClick={carregarFaturas} disabled={loading}>
+                  {loading ? "Carregando..." : "Atualizar lista"}
+                </button>
+              </div>
+            </div>
+
+            {erro && <p className="error">{erro}</p>}
+
+            <table className="table finance-table">
+              <thead>
+                <tr>
+                  <th>Tipo</th>
+                  <th>Lancamento</th>
+                  <th>Emissao</th>
+                  <th>Vencimento</th>
+                  <th>Status</th>
+                  <th>Acoes</th>
+                </tr>
+              </thead>
+              <tbody>
+                {faturas.map((fat) => (
+                  <tr key={fat.id}>
+                    <td>{fat.tipo}</td>
+                    <td>
+                      {receitasPorId[fat.lancamentoFinanceiroId]?.descricao ??
+                        fat.lancamentoFinanceiroId}
+                    </td>
+                    <td>{new Date(fat.dataEmissao).toLocaleDateString("pt-BR")}</td>
+                    <td>{new Date(fat.dataVencimento).toLocaleDateString("pt-BR")}</td>
+                    <td>{fat.status}</td>
+                    <td>
+                      <div className="table-actions">
+                        <button
+                          type="button"
+                          className="action-primary"
+                          disabled={loading || fat.status === "paga"}
+                          onClick={() => void atualizarStatusFatura(fat, "paga")}
+                        >
+                          Dar baixa
+                        </button>
+                        <details className="action-menu">
+                          <summary title="Mais acoes" aria-label="Mais acoes">
+                            ⋮
+                          </summary>
+                          <div className="action-menu-panel">
+                            <button
+                              type="button"
+                              className="action-secondary"
+                              disabled={loading || fat.status === "cancelada"}
+                              onClick={() => void atualizarStatusFatura(fat, "cancelada")}
+                            >
+                              Cancelar
+                            </button>
+                            <button
+                              type="button"
+                              className="action-secondary"
+                              disabled={loading || fat.status === "emitida"}
+                              onClick={() => void atualizarStatusFatura(fat, "emitida")}
+                            >
+                              Reabrir
+                            </button>
+                          </div>
+                        </details>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {faturas.length === 0 && (
+                  <tr>
+                    <td colSpan={6} style={{ textAlign: "center" }}>
+                      Nenhuma fatura emitida ainda.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </section>
+        </div>
+      )}
+
+      {aba === "inadimplentes" && (
+        <div className="finance-table-card" style={{ marginTop: 12 }}>
+          <div className="finance-table-header">
+            <div>
+              <h3>Inadimplentes</h3>
+              <p className="finance-form-sub">
+                Receitas vencidas e nao pagas com apoio para acao de cobranca.
+              </p>
+            </div>
+            <div className="finance-card-actions">
+              <span className="badge-status badge-status--pendente">
+                Total:{" "}
+                {totalInadimplencia.toLocaleString("pt-BR", {
+                  style: "currency",
+                  currency: "BRL"
+                })}
+              </span>
+            </div>
+          </div>
+
+          <table className="table finance-table">
+            <thead>
+              <tr>
+                <th>Descricao</th>
+                <th>Vencimento</th>
+                <th>Dias atraso</th>
+                <th className="finance-value-header">Valor</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {inadimplentes.map((lanc) => {
+                const venc = lanc.dataVencimento
+                  ? new Date(lanc.dataVencimento)
+                  : null;
+                const diasAtraso = venc
+                  ? Math.max(
+                      0,
+                      Math.floor((Date.now() - venc.getTime()) / 86400000)
+                    )
+                  : 0;
+                return (
+                  <tr key={lanc.id}>
+                    <td>{lanc.descricao}</td>
+                    <td>
+                      {lanc.dataVencimento
+                        ? new Date(lanc.dataVencimento).toLocaleDateString("pt-BR")
+                        : "-"}
+                    </td>
+                    <td>{diasAtraso}</td>
+                    <td className="finance-value-cell">
+                      {lanc.valor.toLocaleString("pt-BR", {
+                        style: "currency",
+                        currency: "BRL"
+                      })}
+                    </td>
+                    <td>{lanc.situacao}</td>
+                  </tr>
+                );
+              })}
+              {inadimplentes.length === 0 && (
+                <tr>
+                  <td colSpan={5} style={{ textAlign: "center" }}>
+                    Nenhum inadimplente encontrado.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {aba === "conciliacaoBancaria" &&
+        renderModuloBase(
+          "Conciliacao bancaria",
+          "Base para importar extrato e casar automaticamente com lancamentos.",
+          [
+            "Importar OFX/CSV do banco por conta e periodo.",
+            "Sugerir conciliacao por valor, data e referencia.",
+            "Apontar divergencias e gerar ajustes de conciliacao."
+          ]
+        )}
+
+      {aba === "livroPrestacaoContas" &&
+        renderModuloBase(
+          "Livro de prestacao de contas",
+          "Base para consolidar balancete, comprovantes e parecer por periodo.",
+          [
+            "Selecionar periodo de fechamento e dados obrigatorios.",
+            "Consolidar receitas, despesas, inadimplencia e saldos.",
+            "Exportar livro final em PDF para assembleia e auditoria."
+          ]
+        )}
 
       {aba === "categorias" && (
         <div className="finance-layout">

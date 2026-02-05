@@ -15,11 +15,29 @@ builder.Services.AddDbContext<SgiDbContext>(options =>
 builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
-        policy.WithOrigins(
-                "http://localhost:5173",
-                "http://localhost:5174",
-                "https://swagestaointeligente.github.io"
-            )
+        policy.SetIsOriginAllowed(origin =>
+            {
+                if (string.IsNullOrWhiteSpace(origin))
+                {
+                    return false;
+                }
+
+                if (string.Equals(origin, "https://swagestaointeligente.github.io", StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+
+                if (!Uri.TryCreate(origin, UriKind.Absolute, out var uri))
+                {
+                    return false;
+                }
+
+                var isLocalHost = string.Equals(uri.Host, "localhost", StringComparison.OrdinalIgnoreCase)
+                                  || string.Equals(uri.Host, "127.0.0.1", StringComparison.OrdinalIgnoreCase)
+                                  || string.Equals(uri.Host, "::1", StringComparison.OrdinalIgnoreCase);
+
+                return isLocalHost;
+            })
             .AllowAnyHeader()
             .AllowAnyMethod());
 });

@@ -662,6 +662,198 @@ public class FinanceiroController : ControllerBase
     }
 
     // ---------------------------
+    // Faturas (DocumentoCobranca)
+    // ---------------------------
+
+    public class CriarFaturaRequest
+    {
+        public Guid OrganizacaoId { get; set; }
+        public Guid LancamentoFinanceiroId { get; set; }
+        public string Tipo { get; set; } = "boleto";
+        public string? IdentificadorExterno { get; set; }
+        public string? LinhaDigitavel { get; set; }
+        public string? QrCode { get; set; }
+        public string? UrlPagamento { get; set; }
+        public DateTime? DataVencimento { get; set; }
+    }
+
+    public class AtualizarStatusFaturaRequest
+    {
+        public string Status { get; set; } = string.Empty;
+        public DateTime? DataBaixa { get; set; }
+    }
+
+    [HttpGet("faturas")]
+    public async Task<ActionResult<IEnumerable<DocumentoCobranca>>> ListarFaturas(
+        [FromQuery] Guid? organizacaoId,
+        [FromQuery] string? status)
+    {
+        var query = _db.DocumentosCobranca.AsNoTracking().AsQueryable();
+
+        if (organizacaoId.HasValue)
+        {
+            query = query.Where(f => f.OrganizacaoId == organizacaoId.Value);
+        }
+
+        if (!string.IsNullOrWhiteSpace(status))
+        {
+            var statusNormalizado = status.Trim().ToLowerInvariant();
+            query = query.Where(f => f.Status == statusNormalizado);
+        }
+
+        var itens = await query
+            .OrderByDescending(f => f.DataEmissao)
+            .ThenByDescending(f => f.DataVencimento)
+            .ToListAsync();
+
+        return Ok(itens);
+    }
+
+    [HttpGet("faturas/{id:guid}")]
+    public async Task<ActionResult<DocumentoCobranca>> ObterFatura(
+        Guid id,
+        [FromQuery] Guid? organizacaoId)
+    {
+        var item = await _db.DocumentosCobranca
+            .AsNoTracking()
+            .FirstOrDefaultAsync(f =>
+                f.Id == id &&
+                (!organizacaoId.HasValue || f.OrganizacaoId == organizacaoId.Value));
+
+        if (item is null)
+        {
+            return NotFound();
+        }
+
+        return Ok(item);
+    }
+
+    [HttpPost("faturas")]
+    public async Task<ActionResult<DocumentoCobranca>> CriarFatura(CriarFaturaRequest request)
+    {
+        if (request.OrganizacaoId == Guid.Empty)
+        {
+            return BadRequest("Organizacao e obrigatoria.");
+        }
+
+        if (request.LancamentoFinanceiroId == Guid.Empty)
+        {
+            return BadRequest("Lancamento financeiro e obrigatorio.");
+        }
+
+        var lancamento = await _db.LancamentosFinanceiros
+            .FirstOrDefaultAsync(l =>
+                l.Id == request.LancamentoFinanceiroId &&
+                l.OrganizacaoId == request.OrganizacaoId);
+
+        if (lancamento is null)
+        {
+            return NotFound("Lancamento financeiro nao encontrado.");
+        }
+
+        if (!string.Equals(lancamento.Tipo, "receber", StringComparison.OrdinalIgnoreCase))
+        {
+            return BadRequest("Faturas so podem ser geradas para lancamentos do tipo receber.");
+        }
+
+        var existeFaturaAtiva = await _db.DocumentosCobranca
+            .AsNoTracking()
+            .AnyAsync(f =>
+                f.LancamentoFinanceiroId == request.LancamentoFinanceiroId &&
+                f.Status != "cancelada");
+
+        if (existeFaturaAtiva)
+        {
+            return BadRequest("Ja existe fatura ativa para este lancamento.");
+        }
+
+        var dataVencimento = request.DataVencimento?.Date
+            ?? lancamento.DataVencimento?.Date
+            ?? DateTime.UtcNow.Date;
+
+        var statusInicial = string.Equals(lancamento.Situacao, "pago", StringComparison.OrdinalIgnoreCase)
+            ? "paga"
+            : (dataVencimento < DateTime.UtcNow.Date ? "vencida" : "emitida");
+
+        var fatura = new DocumentoCobranca
+        {
+            Id = Guid.NewGuid(),
+            OrganizacaoId = request.OrganizacaoId,
+            LancamentoFinanceiroId = request.LancamentoFinanceiroId,
+            Tipo = string.IsNullOrWhiteSpace(request.Tipo) ? "boleto" : request.Tipo.Trim().ToLowerInvariant(),
+            IdentificadorExterno = string.IsNullOrWhiteSpace(request.IdentificadorExterno)
+                ? null
+                : request.IdentificadorExterno.Trim(),
+            LinhaDigitavel = string.IsNullOrWhiteSpace(request.LinhaDigitavel)
+                ? null
+                : request.LinhaDigitavel.Trim(),
+            QrCode = string.IsNullOrWhiteSpace(request.QrCode) ? null : request.QrCode.Trim(),
+            UrlPagamento = string.IsNullOrWhiteSpace(request.UrlPagamento)
+                ? null
+                : request.UrlPagamento.Trim(),
+            Status = statusInicial,
+            DataEmissao = DateTime.UtcNow,
+            DataVencimento = dataVencimento,
+            DataBaixa = statusInicial == "paga"
+                ? (lancamento.DataPagamento ?? DateTime.UtcNow)
+                : null
+        };
+
+        _db.DocumentosCobranca.Add(fatura);
+        await _db.SaveChangesAsync();
+
+        return CreatedAtAction(nameof(ObterFatura), new { id = fatura.Id }, fatura);
+    }
+
+    [HttpPatch("faturas/{id:guid}/status")]
+    public async Task<IActionResult> AtualizarStatusFatura(Guid id, AtualizarStatusFaturaRequest request)
+    {
+        var fatura = await _db.DocumentosCobranca.FindAsync(id);
+        if (fatura is null)
+        {
+            return NotFound();
+        }
+
+        var status = request.Status?.Trim().ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(status))
+        {
+            return BadRequest("Status e obrigatorio.");
+        }
+
+        if (status is not ("emitida" or "vencida" or "paga" or "cancelada"))
+        {
+            return BadRequest("Status invalido. Use emitida, vencida, paga ou cancelada.");
+        }
+
+        if (status == "paga")
+        {
+            var dataBaixa = request.DataBaixa?.Date ?? DateTime.UtcNow;
+            var lancamento = await _db.LancamentosFinanceiros.FindAsync(fatura.LancamentoFinanceiroId);
+            if (lancamento is not null)
+            {
+                if (string.Equals(lancamento.Situacao, "cancelado", StringComparison.OrdinalIgnoreCase))
+                {
+                    return BadRequest("Nao e possivel dar baixa em fatura com lancamento cancelado.");
+                }
+
+                lancamento.Situacao = "pago";
+                lancamento.DataPagamento = dataBaixa;
+            }
+
+            fatura.DataBaixa = dataBaixa;
+        }
+        else
+        {
+            fatura.DataBaixa = null;
+        }
+
+        fatura.Status = status;
+        await _db.SaveChangesAsync();
+
+        return NoContent();
+    }
+
+    // ---------------------------
     // Itens cobrados (ChargeItem)
     // ---------------------------
 
