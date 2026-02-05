@@ -8,6 +8,7 @@ import {
   ContaFinanceira,
   LancamentoFinanceiro,
   Organizacao,
+  Pessoa,
   PlanoContas
 } from "../api";
 import { useAuth } from "../hooks/useAuth";
@@ -48,6 +49,11 @@ export default function FinanceiroView({
   const [novoVencimento, setNovoVencimento] = useState("");
   const [novoValor, setNovoValor] = useState("");
   const [novaDespesaCategoriaId, setNovaDespesaCategoriaId] = useState("");
+  const [novaDespesaContaId, setNovaDespesaContaId] = useState("");
+  const [novaDespesaPessoaId, setNovaDespesaPessoaId] = useState("");
+  const [novaDespesaFormaPagamento, setNovaDespesaFormaPagamento] =
+    useState("boleto");
+  const [novaDespesaReferencia, setNovaDespesaReferencia] = useState("");
 
   // Contas a receber (lançamentos)
   const [receitas, setReceitas] = useState<LancamentoFinanceiro[]>([]);
@@ -55,6 +61,12 @@ export default function FinanceiroView({
   const [novaReceitaVencimento, setNovaReceitaVencimento] = useState("");
   const [novaReceitaValor, setNovaReceitaValor] = useState("");
   const [novaReceitaCategoriaId, setNovaReceitaCategoriaId] = useState("");
+  const [novaReceitaContaId, setNovaReceitaContaId] = useState("");
+  const [novaReceitaPessoaId, setNovaReceitaPessoaId] = useState("");
+  const [novaReceitaFormaPagamento, setNovaReceitaFormaPagamento] =
+    useState("pix");
+  const [novaReceitaReferencia, setNovaReceitaReferencia] = useState("");
+  const [pessoasFinanceiro, setPessoasFinanceiro] = useState<Pessoa[]>([]);
 
   // Itens cobrados (salão, tags, multas, etc.)
   const [itensCobrados, setItensCobrados] = useState<ChargeItem[]>([]);
@@ -89,6 +101,17 @@ export default function FinanceiroView({
       setErro(e.message || "Erro ao carregar contas financeiras");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const carregarPessoasFinanceiro = async () => {
+    if (!token) return;
+    try {
+      setErro(null);
+      const lista = await api.listarPessoas(token, organizacaoId);
+      setPessoasFinanceiro(lista);
+    } catch (e: any) {
+      setErro(e.message || "Erro ao carregar pessoas para financeiro");
     }
   };
 
@@ -184,6 +207,7 @@ export default function FinanceiroView({
     void carregarReceitas();
     void carregarCategoriasReceita();
     void carregarCategoriasDespesa();
+    void carregarPessoasFinanceiro();
     // Itens cobrados serão carregados sob demanda ao abrir a aba
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, organizacaoId]);
@@ -278,7 +302,11 @@ export default function FinanceiroView({
       return;
     }
 
-    const conta = contas[0];
+    const conta =
+      contas.find((c) => c.id === novaDespesaContaId) ?? contas[0];
+    const pessoa =
+      pessoasFinanceiro.find((p) => p.id === novaDespesaPessoaId) ??
+      pessoasFinanceiro[0];
     try {
       setErro(null);
       setLoading(true);
@@ -289,16 +317,16 @@ export default function FinanceiroView({
         planoContasId: novaDespesaCategoriaId,
         centroCustoId: undefined,
         contaFinanceiraId: conta?.id,
-        pessoaId: "00000000-0000-0000-0000-000000000000",
+        pessoaId: pessoa?.id || "00000000-0000-0000-0000-000000000000",
         descricao: novaDescricao.trim(),
         valor: Number(novoValor.replace(/\./g, "").replace(",", ".")),
         dataCompetencia: novoVencimento,
         dataVencimento: novoVencimento,
         dataPagamento: undefined,
-        formaPagamento: "indefinido",
+        formaPagamento: novaDespesaFormaPagamento || "indefinido",
         parcelaNumero: undefined,
         parcelaTotal: undefined,
-        referencia: undefined
+        referencia: novaDespesaReferencia.trim() || undefined
       };
 
       const lanc = await api.criarLancamento(token, payload);
@@ -307,6 +335,10 @@ export default function FinanceiroView({
       setNovoVencimento("");
       setNovoValor("");
       setNovaDespesaCategoriaId("");
+      setNovaDespesaReferencia("");
+      setNovaDespesaContaId("");
+      setNovaDespesaPessoaId("");
+      setNovaDespesaFormaPagamento("boleto");
     } catch (e: any) {
       setErro(e.message || "Erro ao criar despesa");
     } finally {
@@ -326,7 +358,11 @@ export default function FinanceiroView({
       return;
     }
 
-    const conta = contas[0];
+    const conta =
+      contas.find((c) => c.id === novaReceitaContaId) ?? contas[0];
+    const pessoa =
+      pessoasFinanceiro.find((p) => p.id === novaReceitaPessoaId) ??
+      pessoasFinanceiro[0];
 
     try {
       setErro(null);
@@ -338,16 +374,16 @@ export default function FinanceiroView({
         planoContasId: novaReceitaCategoriaId,
         centroCustoId: undefined,
         contaFinanceiraId: conta?.id,
-        pessoaId: "00000000-0000-0000-0000-000000000000",
+        pessoaId: pessoa?.id || "00000000-0000-0000-0000-000000000000",
         descricao: novaReceitaDescricao.trim(),
         valor: Number(novaReceitaValor.replace(/\./g, "").replace(",", ".")),
         dataCompetencia: novaReceitaVencimento,
         dataVencimento: novaReceitaVencimento,
         dataPagamento: undefined,
-        formaPagamento: "indefinido",
+        formaPagamento: novaReceitaFormaPagamento || "indefinido",
         parcelaNumero: undefined,
         parcelaTotal: undefined,
-        referencia: undefined
+        referencia: novaReceitaReferencia.trim() || undefined
       };
 
       const lanc = await api.criarLancamento(token, payload);
@@ -356,6 +392,10 @@ export default function FinanceiroView({
       setNovaReceitaVencimento("");
       setNovaReceitaValor("");
       setNovaReceitaCategoriaId("");
+      setNovaReceitaReferencia("");
+      setNovaReceitaContaId("");
+      setNovaReceitaPessoaId("");
+      setNovaReceitaFormaPagamento("pix");
     } catch (e: any) {
       setErro(e.message || "Erro ao criar receita");
     } finally {
@@ -551,10 +591,6 @@ export default function FinanceiroView({
       <div className="finance-header-row">
         <div>
           <h2>Financeiro</h2>
-          <p className="people-header-sub">
-            Contas e lançamentos da organização{" "}
-            <strong>{organizacao.nome}</strong>.
-          </p>
         </div>
         <div className="finance-header-badges">
           <span>Contas: {totalContas}</span>
@@ -569,26 +605,17 @@ export default function FinanceiroView({
           <p className="finance-summary-value">
             R$ {saldoInicialTotal.toFixed(2)}
           </p>
-          <p className="finance-summary-sub">
-            Soma de todas as contas cadastradas.
-          </p>
         </div>
         <div className="finance-summary-card">
           <p className="finance-summary-label">Total a pagar</p>
           <p className="finance-summary-value">
             R$ {totalAPagar.toFixed(2)}
           </p>
-          <p className="finance-summary-sub">
-            Títulos pendentes da aba Contas a pagar.
-          </p>
         </div>
         <div className="finance-summary-card">
           <p className="finance-summary-label">Total já pago</p>
           <p className="finance-summary-value">
             R$ {totalPagas.toFixed(2)}
-          </p>
-          <p className="finance-summary-sub">
-            Lançamentos marcados como pagos.
           </p>
         </div>
       </div>
@@ -661,9 +688,6 @@ export default function FinanceiroView({
           {/* Formulário de conta */}
           <section className="finance-form-card">
             <h3>Nova conta</h3>
-            <p className="finance-form-sub">
-              Cadastre contas bancárias, carteiras digitais ou caixa.
-            </p>
 
             <form onSubmit={criarConta} className="form">
               <label>
@@ -746,9 +770,6 @@ export default function FinanceiroView({
             <div className="finance-table-header">
               <div>
                 <h3>Contas financeiras</h3>
-                <p>
-                  Contas bancárias, carteiras digitais e caixa da organização.
-                </p>
               </div>
             </div>
 
@@ -844,10 +865,6 @@ export default function FinanceiroView({
       {aba === "contasPagar" && (
         <div className="finance-table-card" style={{ marginTop: 12 }}>
           <h3>Contas a pagar</h3>
-          <p style={{ marginTop: 4, color: "#6b7280" }}>
-            Despesas com vencimento e valor definidos. Use para montar a visão
-            de fluxo de caixa.
-          </p>
 
           <form
             onSubmit={criarDespesa}
@@ -895,6 +912,60 @@ export default function FinanceiroView({
                 ))}
               </select>
             </label>
+            <div className="finance-form-grid">
+              <label>
+                Conta financeira
+                <select
+                  value={novaDespesaContaId}
+                  onChange={(e) => setNovaDespesaContaId(e.target.value)}
+                >
+                  <option value="">Selecionar automaticamente</option>
+                  {contas.map((conta) => (
+                    <option key={conta.id} value={conta.id}>
+                      {conta.nome}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Fornecedor / Favorecido
+                <select
+                  value={novaDespesaPessoaId}
+                  onChange={(e) => setNovaDespesaPessoaId(e.target.value)}
+                >
+                  <option value="">Selecionar automaticamente</option>
+                  {pessoasFinanceiro.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.nome}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <div className="finance-form-grid">
+              <label>
+                Forma de pagamento
+                <select
+                  value={novaDespesaFormaPagamento}
+                  onChange={(e) => setNovaDespesaFormaPagamento(e.target.value)}
+                >
+                  <option value="boleto">Boleto</option>
+                  <option value="pix">Pix</option>
+                  <option value="transferencia">Transferência</option>
+                  <option value="cartao">Cartão</option>
+                  <option value="dinheiro">Dinheiro</option>
+                  <option value="indefinido">Indefinido</option>
+                </select>
+              </label>
+              <label>
+                Referência
+                <input
+                  value={novaDespesaReferencia}
+                  onChange={(e) => setNovaDespesaReferencia(e.target.value)}
+                  placeholder="Ex.: NF 12345 / Fevereiro"
+                />
+              </label>
+            </div>
             <button
               type="submit"
               disabled={
@@ -1045,10 +1116,6 @@ export default function FinanceiroView({
       {aba === "contasReceber" && (
         <div className="finance-table-card" style={{ marginTop: 12 }}>
           <h3>Contas a receber</h3>
-          <p style={{ marginTop: 4, color: "#6b7280" }}>
-            Receitas com vencimento e valor definidos. Use para acompanhar quem
-            deve ao condomínio.
-          </p>
 
           <form
             onSubmit={criarReceita}
@@ -1102,6 +1169,60 @@ export default function FinanceiroView({
                 ))}
               </select>
             </label>
+            <div className="finance-form-grid">
+              <label>
+                Conta financeira
+                <select
+                  value={novaReceitaContaId}
+                  onChange={(e) => setNovaReceitaContaId(e.target.value)}
+                >
+                  <option value="">Selecionar automaticamente</option>
+                  {contas.map((conta) => (
+                    <option key={conta.id} value={conta.id}>
+                      {conta.nome}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Pagador / Cliente
+                <select
+                  value={novaReceitaPessoaId}
+                  onChange={(e) => setNovaReceitaPessoaId(e.target.value)}
+                >
+                  <option value="">Selecionar automaticamente</option>
+                  {pessoasFinanceiro.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.nome}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <div className="finance-form-grid">
+              <label>
+                Forma de recebimento
+                <select
+                  value={novaReceitaFormaPagamento}
+                  onChange={(e) => setNovaReceitaFormaPagamento(e.target.value)}
+                >
+                  <option value="pix">Pix</option>
+                  <option value="boleto">Boleto</option>
+                  <option value="transferencia">Transferência</option>
+                  <option value="cartao">Cartão</option>
+                  <option value="dinheiro">Dinheiro</option>
+                  <option value="indefinido">Indefinido</option>
+                </select>
+              </label>
+              <label>
+                Referência
+                <input
+                  value={novaReceitaReferencia}
+                  onChange={(e) => setNovaReceitaReferencia(e.target.value)}
+                  placeholder="Ex.: Cota Março / Unidade 101"
+                />
+              </label>
+            </div>
             <button
               type="submit"
               disabled={
@@ -1253,10 +1374,6 @@ export default function FinanceiroView({
         <div className="finance-layout">
           <section className="finance-form-card">
             <h3>Novo item cobrado</h3>
-            <p className="finance-form-sub">
-              Cadastre itens como taxa de salão de festas, tags de acesso,
-              multas e outras receitas extras.
-            </p>
 
             <form
               className="form"
@@ -1419,10 +1536,6 @@ export default function FinanceiroView({
             <div className="finance-table-header">
               <div>
                 <h3>Itens cadastrados</h3>
-                <p>
-                  Tudo o que o condomínio pode cobrar: salão, tags,
-                  multas, outros.
-                </p>
               </div>
               <button
                 type="button"
@@ -1624,9 +1737,6 @@ export default function FinanceiroView({
         <div className="finance-layout">
           <section className="finance-form-card">
             <h3>Nova categoria financeira</h3>
-            <p className="finance-form-sub">
-              Organize seu plano de contas com categorias de receita e despesa.
-            </p>
 
             <form
               className="form"
@@ -1699,11 +1809,6 @@ export default function FinanceiroView({
                   required
                 />
               </label>
-
-              <p style={{ color: "#6b7280", marginTop: 8 }}>
-                Use o campo Código para organizar subcategorias (ex.: 1, 1.01,
-                1.01.01) e escolha o Tipo Receita ou Despesa conforme o uso.
-              </p>
               <button type="submit" disabled={loading || !token}>
                 {loading ? "Salvando..." : "Adicionar categoria"}
               </button>
@@ -1714,10 +1819,6 @@ export default function FinanceiroView({
             <div className="finance-table-header">
               <div>
                 <h3>Plano de contas</h3>
-                <p>
-                  Categorias financeiras usadas nas receitas, despesas e itens
-                  cobrados.
-                </p>
               </div>
               <button
                 type="button"
@@ -1884,9 +1985,6 @@ export default function FinanceiroView({
           <div className="finance-table-header">
             <div>
               <h3>Relatorios - Balancete simples</h3>
-              <p style={{ marginTop: 4, color: "#6b7280" }}>
-                Totais por categoria com base nos lancamentos atuais.
-              </p>
             </div>
             <div className="finance-card-actions">
               <button type="button" onClick={() => void gerarRelatorioPdf()}>

@@ -24,6 +24,8 @@ export default function UnidadesView({ organizacao }: UnidadesViewProps) {
   const [editCodigoInterno, setEditCodigoInterno] = useState("");
   const [editTipo, setEditTipo] = useState("");
   const [salvandoEdicao, setSalvandoEdicao] = useState(false);
+  const [busca, setBusca] = useState("");
+  const [filtroTipo, setFiltroTipo] = useState("todos");
 
   const carregarUnidades = async () => {
     if (!token || !organizacao) return;
@@ -47,7 +49,10 @@ export default function UnidadesView({ organizacao }: UnidadesViewProps) {
   const salvarUnidade = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!token || !organizacao) return;
-    if (!nome.trim()) return;
+    if (!nome.trim() || !codigoInterno.trim()) {
+      setErro("Preencha nome e código interno da unidade.");
+      return;
+    }
 
     try {
       setErro(null);
@@ -117,6 +122,16 @@ export default function UnidadesView({ organizacao }: UnidadesViewProps) {
     unidadeSelecionadaId != null
       ? unidades.find((u) => u.id === unidadeSelecionadaId) ?? null
       : null;
+
+  const unidadesFiltradas = unidades.filter((u) => {
+    const textoBusca = busca.trim().toLowerCase();
+    const textoUnidade = `${u.nome} ${u.codigoInterno} ${u.tipo}`.toLowerCase();
+    const okBusca = !textoBusca || textoUnidade.includes(textoBusca);
+    const okTipo = filtroTipo === "todos" || u.tipo === filtroTipo;
+    return okBusca && okTipo;
+  });
+
+  const tiposDisponiveis = Array.from(new Set(unidades.map((u) => u.tipo))).sort();
 
   return (
     <div className="people-page">
@@ -190,6 +205,27 @@ export default function UnidadesView({ organizacao }: UnidadesViewProps) {
           <div className="people-list-header">
             <h3>Unidades cadastradas</h3>
           </div>
+          <div className="people-search-row">
+            <input
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+              placeholder="Buscar por nome, código ou tipo"
+            />
+            <select
+              value={filtroTipo}
+              onChange={(e) => setFiltroTipo(e.target.value)}
+            >
+              <option value="todos">Todos os tipos</option>
+              {tiposDisponiveis.map((tipoItem) => (
+                <option key={tipoItem} value={tipoItem}>
+                  {tipoItem}
+                </option>
+              ))}
+            </select>
+            <button type="button" onClick={() => void carregarUnidades()} disabled={loading}>
+              {loading ? "Atualizando..." : "Atualizar lista"}
+            </button>
+          </div>
 
           {editandoId && (
             <div className="inline-edit-card">
@@ -229,7 +265,7 @@ export default function UnidadesView({ organizacao }: UnidadesViewProps) {
                 <button
                   type="button"
                   onClick={() => void salvarEdicao()}
-                  disabled={salvandoEdicao}
+                  disabled={salvandoEdicao || !editNome.trim() || !editCodigoInterno.trim()}
                 >
                   {salvandoEdicao ? "Salvando..." : "Salvar"}
                 </button>
@@ -245,7 +281,7 @@ export default function UnidadesView({ organizacao }: UnidadesViewProps) {
             </div>
           )}
 
-          {unidades.length > 0 && (
+          {unidadesFiltradas.length > 0 && (
             <table className="table">
               <thead>
                 <tr>
@@ -257,7 +293,7 @@ export default function UnidadesView({ organizacao }: UnidadesViewProps) {
                 </tr>
               </thead>
               <tbody>
-                {unidades.map((u) => (
+                {unidadesFiltradas.map((u) => (
                   <tr
                     key={u.id}
                     onClick={() => setUnidadeSelecionadaId(u.id)}
@@ -287,6 +323,11 @@ export default function UnidadesView({ organizacao }: UnidadesViewProps) {
                 ))}
               </tbody>
             </table>
+          )}
+          {!loading && unidadesFiltradas.length === 0 && (
+            <p className="error" style={{ color: "#64748b" }}>
+              Nenhuma unidade encontrada com os filtros atuais.
+            </p>
           )}
         </section>
       </div>
