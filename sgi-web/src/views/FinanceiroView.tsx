@@ -42,6 +42,18 @@ export default function FinanceiroView({
   const [numeroConta, setNumeroConta] = useState("");
   const [saldoInicial, setSaldoInicial] = useState("");
   const [moeda, setMoeda] = useState("BRL");
+  const [transferenciaOrigemId, setTransferenciaOrigemId] = useState("");
+  const [transferenciaDestinoId, setTransferenciaDestinoId] = useState("");
+  const [transferenciaValor, setTransferenciaValor] = useState("");
+  const [transferenciaData, setTransferenciaData] = useState(() => {
+    const agora = new Date();
+    const local = new Date(agora.getTime() - agora.getTimezoneOffset() * 60000);
+    return local.toISOString().slice(0, 10);
+  });
+  const [transferenciaDescricao, setTransferenciaDescricao] = useState(
+    "Transferencia entre contas"
+  );
+  const [transferenciaReferencia, setTransferenciaReferencia] = useState("");
 
   // Contas a pagar (lançamentos)
   const [despesas, setDespesas] = useState<LancamentoFinanceiro[]>([]);
@@ -290,6 +302,62 @@ export default function FinanceiroView({
     }
   };
 
+  const transferirEntreContas = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!token) return;
+
+    if (!transferenciaOrigemId || !transferenciaDestinoId) {
+      setErro("Selecione conta de origem e destino.");
+      return;
+    }
+
+    if (transferenciaOrigemId === transferenciaDestinoId) {
+      setErro("Conta de origem e destino devem ser diferentes.");
+      return;
+    }
+
+    const valorNumero = Number(
+      transferenciaValor.replace(/\./g, "").replace(",", ".")
+    );
+
+    if (!Number.isFinite(valorNumero) || valorNumero <= 0) {
+      setErro("Informe um valor de transferencia valido.");
+      return;
+    }
+
+    try {
+      setErro(null);
+      setLoading(true);
+
+      await api.transferirEntreContas(token, {
+        organizacaoId,
+        contaOrigemId: transferenciaOrigemId,
+        contaDestinoId: transferenciaDestinoId,
+        valor: valorNumero,
+        dataTransferencia: transferenciaData || undefined,
+        descricao: transferenciaDescricao.trim() || undefined,
+        referencia: transferenciaReferencia.trim() || undefined,
+        formaPagamento: "transferencia"
+      });
+
+      const [despesasAtualizadas, receitasAtualizadas] = await Promise.all([
+        api.listarLancamentos(token, organizacaoId, { tipo: "pagar" }),
+        api.listarLancamentos(token, organizacaoId, { tipo: "receber" })
+      ]);
+
+      setDespesas(despesasAtualizadas);
+      setReceitas(receitasAtualizadas);
+      setTransferenciaValor("");
+      setTransferenciaReferencia("");
+      setTransferenciaOrigemId("");
+      setTransferenciaDestinoId("");
+    } catch (e: any) {
+      setErro(e.message || "Erro ao transferir entre contas");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const criarDespesa = async (e: React.FormEvent) => {
     e.preventDefault();
     if (
@@ -406,6 +474,9 @@ export default function FinanceiroView({
   const totalContas = contas.length;
   const contasAtivas = contas.filter((c) => c.status === "ativo").length;
   const contasInativas = contas.filter((c) => c.status === "inativo").length;
+  const contasTransferencia = contas.filter(
+    (c) => (c.status ?? "ativo").toLowerCase() === "ativo"
+  );
   const saldoInicialTotal = contas.reduce(
     (sum, c) => sum + (c.saldoInicial ?? 0),
     0
@@ -685,85 +756,179 @@ export default function FinanceiroView({
 
       {aba === "contas" && (
         <div className="finance-layout">
-          {/* Formulário de conta */}
-          <section className="finance-form-card">
-            <h3>Nova conta</h3>
+          <div className="finance-side-column">
+            {/* Formulário de conta */}
+            <section className="finance-form-card">
+              <h3>Nova conta</h3>
 
-            <form onSubmit={criarConta} className="form">
-              <label>
-                Nome da conta
-                <input
-                  value={nomeConta}
-                  onChange={(e) => setNomeConta(e.target.value)}
-                  required
-                />
-              </label>
-              <label>
-                Tipo de conta
-                <select
-                  value={tipoConta}
-                  onChange={(e) => setTipoConta(e.target.value)}
+              <form onSubmit={criarConta} className="form">
+                <label>
+                  Nome da conta
+                  <input
+                    value={nomeConta}
+                    onChange={(e) => setNomeConta(e.target.value)}
+                    required
+                  />
+                </label>
+                <label>
+                  Tipo de conta
+                  <select
+                    value={tipoConta}
+                    onChange={(e) => setTipoConta(e.target.value)}
+                  >
+                    <option value="Bancária">Bancária</option>
+                    <option value="Caixa">Caixa</option>
+                    <option value="Digital">Conta digital</option>
+                    <option value="Outros">Outros</option>
+                  </select>
+                </label>
+
+                <div className="finance-form-grid">
+                  <label>
+                    Banco
+                    <input
+                      value={banco}
+                      onChange={(e) => setBanco(e.target.value)}
+                    />
+                  </label>
+                  <label>
+                    Agência
+                    <input
+                      value={agencia}
+                      onChange={(e) => setAgencia(e.target.value)}
+                    />
+                  </label>
+                </div>
+
+                <div className="finance-form-grid">
+                  <label>
+                    Número da conta
+                    <input
+                      value={numeroConta}
+                      onChange={(e) => setNumeroConta(e.target.value)}
+                    />
+                  </label>
+                  <label>
+                    Saldo inicial
+                    <input
+                      value={saldoInicial}
+                      onChange={(e) => setSaldoInicial(e.target.value)}
+                      placeholder="Ex.: 0,00"
+                    />
+                  </label>
+                </div>
+
+                <label>
+                  Moeda
+                  <select
+                    value={moeda}
+                    onChange={(e) => setMoeda(e.target.value)}
+                  >
+                    <option value="BRL">Real (BRL)</option>
+                    <option value="USD">Dólar (USD)</option>
+                    <option value="EUR">Euro (EUR)</option>
+                  </select>
+                </label>
+
+                <button type="submit" disabled={loading}>
+                  {loading ? "Salvando..." : "Adicionar conta"}
+                </button>
+                {erro && <p className="error">{erro}</p>}
+              </form>
+            </section>
+
+            <section className="finance-form-card">
+              <h3>Transferência entre contas</h3>
+              <p className="finance-form-sub">
+                Registra saída na conta origem e entrada na conta destino.
+              </p>
+
+              <form onSubmit={transferirEntreContas} className="form">
+                <label>
+                  Conta origem
+                  <select
+                    value={transferenciaOrigemId}
+                    onChange={(e) => setTransferenciaOrigemId(e.target.value)}
+                    required
+                  >
+                    <option value="">Selecione</option>
+                    {contasTransferencia.map((conta) => (
+                      <option key={conta.id} value={conta.id}>
+                        {conta.nome}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label>
+                  Conta destino
+                  <select
+                    value={transferenciaDestinoId}
+                    onChange={(e) => setTransferenciaDestinoId(e.target.value)}
+                    required
+                  >
+                    <option value="">Selecione</option>
+                    {contasTransferencia.map((conta) => (
+                      <option key={conta.id} value={conta.id}>
+                        {conta.nome}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <div className="finance-form-grid">
+                  <label>
+                    Valor
+                    <input
+                      value={transferenciaValor}
+                      onChange={(e) => setTransferenciaValor(e.target.value)}
+                      placeholder="Ex.: 150,00"
+                      required
+                    />
+                  </label>
+                  <label>
+                    Data
+                    <input
+                      type="date"
+                      value={transferenciaData}
+                      onChange={(e) => setTransferenciaData(e.target.value)}
+                      required
+                    />
+                  </label>
+                </div>
+
+                <label>
+                  Descrição
+                  <input
+                    value={transferenciaDescricao}
+                    onChange={(e) => setTransferenciaDescricao(e.target.value)}
+                    placeholder="Transferencia entre contas"
+                  />
+                </label>
+
+                <label>
+                  Referência (opcional)
+                  <input
+                    value={transferenciaReferencia}
+                    onChange={(e) => setTransferenciaReferencia(e.target.value)}
+                    placeholder="Ex.: TRF-20260205-001"
+                  />
+                </label>
+
+                <button
+                  type="submit"
+                  disabled={loading || contasTransferencia.length < 2}
                 >
-                  <option value="Bancária">Bancária</option>
-                  <option value="Caixa">Caixa</option>
-                  <option value="Digital">Conta digital</option>
-                  <option value="Outros">Outros</option>
-                </select>
-              </label>
-
-              <div className="finance-form-grid">
-                <label>
-                  Banco
-                  <input
-                    value={banco}
-                    onChange={(e) => setBanco(e.target.value)}
-                  />
-                </label>
-                <label>
-                  Agência
-                  <input
-                    value={agencia}
-                    onChange={(e) => setAgencia(e.target.value)}
-                  />
-                </label>
-              </div>
-
-              <div className="finance-form-grid">
-                <label>
-                  Número da conta
-                  <input
-                    value={numeroConta}
-                    onChange={(e) => setNumeroConta(e.target.value)}
-                  />
-                </label>
-                <label>
-                  Saldo inicial
-                  <input
-                    value={saldoInicial}
-                    onChange={(e) => setSaldoInicial(e.target.value)}
-                    placeholder="Ex.: 0,00"
-                  />
-                </label>
-              </div>
-
-              <label>
-                Moeda
-                <select
-                  value={moeda}
-                  onChange={(e) => setMoeda(e.target.value)}
-                >
-                  <option value="BRL">Real (BRL)</option>
-                  <option value="USD">Dólar (USD)</option>
-                  <option value="EUR">Euro (EUR)</option>
-                </select>
-              </label>
-
-              <button type="submit" disabled={loading}>
-                {loading ? "Salvando..." : "Adicionar conta"}
-              </button>
-              {erro && <p className="error">{erro}</p>}
-            </form>
-          </section>
+                  {loading ? "Transferindo..." : "Transferir"}
+                </button>
+                {contasTransferencia.length < 2 && (
+                  <p className="finance-form-sub">
+                    Cadastre pelo menos duas contas ativas para transferir.
+                  </p>
+                )}
+              </form>
+            </section>
+          </div>
 
           {/* Tabela de contas */}
           <section className="finance-table-card">

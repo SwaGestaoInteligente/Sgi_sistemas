@@ -908,6 +908,12 @@ button:not(:disabled):active {
   margin-top: 12px;
 }
 
+.finance-side-column {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
 .finance-form-card,
 .finance-table-card {
   background-color: #ffffff;
@@ -1402,6 +1408,14 @@ button:not(:disabled):active {
   .people-search-row {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .finance-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .finance-form-grid {
+    grid-template-columns: 1fr;
   }
 }
 /* FIX: botões dentro da tabela não devem herdar o "button" global */

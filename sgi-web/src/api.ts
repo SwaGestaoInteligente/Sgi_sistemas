@@ -1,6 +1,26 @@
 const rawApiBaseUrl =
   import.meta.env.VITE_API_BASE_URL ?? "http://localhost:7000";
 export const API_BASE_URL = rawApiBaseUrl.trim().replace(/\/+$/, "");
+export const AUTH_STORAGE_KEY = "swa_sgi_token";
+export const AUTH_UNAUTHORIZED_EVENT = "swa:auth-unauthorized";
+
+function handleUnauthorizedResponse() {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(AUTH_STORAGE_KEY);
+  } catch {
+    // Ignora indisponibilidade do localStorage
+  }
+  window.dispatchEvent(new Event(AUTH_UNAUTHORIZED_EVENT));
+}
+
+function throwHttpError(status: number, text: string): never {
+  if (status === 401) {
+    handleUnauthorizedResponse();
+    throw new Error("Sessao expirada. Faca login novamente.");
+  }
+  throw new Error(text || `Erro HTTP ${status}`);
+}
 
 export interface LoginResponse {
   accessToken: string;
@@ -118,6 +138,12 @@ export interface LancamentoFinanceiro {
   referencia?: string;
 }
 
+export interface TransferenciaResponse {
+  lancamentoSaidaId: string;
+  lancamentoEntradaId: string;
+  referencia: string;
+}
+
 async function request<T>(
   path: string,
   options: RequestInit = {},
@@ -140,7 +166,7 @@ async function request<T>(
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(text || `Erro HTTP ${res.status}`);
+    throwHttpError(res.status, text);
   }
 
   // Algumas rotas (ex.: PATCH/POST sem corpo) retornam 204 ou corpo vazio.
@@ -342,7 +368,7 @@ export const api = {
 
     if (!res.ok) {
       const text = await res.text();
-      throw new Error(text || `Erro HTTP ${res.status}`);
+      throwHttpError(res.status, text);
     }
   },
 
@@ -682,6 +708,29 @@ export const api = {
     );
   },
 
+  async transferirEntreContas(
+    token: string,
+    payload: {
+      organizacaoId: string;
+      contaOrigemId: string;
+      contaDestinoId: string;
+      valor: number;
+      dataTransferencia?: string;
+      descricao?: string;
+      referencia?: string;
+      formaPagamento?: string;
+    }
+  ): Promise<TransferenciaResponse> {
+    return request<TransferenciaResponse>(
+      "/api/financeiro/transferencias",
+      {
+        method: "POST",
+        body: JSON.stringify(payload)
+      },
+      token
+    );
+  },
+
   async removerContaFinanceira(
     token: string,
     id: string
@@ -705,7 +754,7 @@ export const api = {
 
     if (!res.ok) {
       const text = await res.text();
-      throw new Error(text || `Erro HTTP ${res.status}`);
+      throwHttpError(res.status, text);
     }
   },
 
@@ -736,7 +785,7 @@ export const api = {
 
     if (!res.ok) {
       const text = await res.text();
-      throw new Error(text || `Erro HTTP ${res.status}`);
+      throwHttpError(res.status, text);
     }
   }
 };

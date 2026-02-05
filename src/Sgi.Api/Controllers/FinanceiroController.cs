@@ -88,6 +88,136 @@ public class FinanceiroController : ControllerBase
         return NoContent();
     }
 
+    public class CriarTransferenciaRequest
+    {
+        public Guid OrganizacaoId { get; set; }
+        public Guid ContaOrigemId { get; set; }
+        public Guid ContaDestinoId { get; set; }
+        public decimal Valor { get; set; }
+        public DateTime? DataTransferencia { get; set; }
+        public string? Descricao { get; set; }
+        public string? Referencia { get; set; }
+        public string? FormaPagamento { get; set; }
+    }
+
+    public record TransferenciaResponse(
+        Guid LancamentoSaidaId,
+        Guid LancamentoEntradaId,
+        string Referencia);
+
+    [HttpPost("transferencias")]
+    public async Task<ActionResult<TransferenciaResponse>> TransferirEntreContas(CriarTransferenciaRequest request)
+    {
+        if (request.OrganizacaoId == Guid.Empty)
+        {
+            return BadRequest("Organizacao e obrigatoria.");
+        }
+
+        if (request.ContaOrigemId == Guid.Empty || request.ContaDestinoId == Guid.Empty)
+        {
+            return BadRequest("Conta de origem e destino sao obrigatorias.");
+        }
+
+        if (request.ContaOrigemId == request.ContaDestinoId)
+        {
+            return BadRequest("Conta de origem e destino devem ser diferentes.");
+        }
+
+        if (request.Valor <= 0)
+        {
+            return BadRequest("Valor da transferencia deve ser maior que zero.");
+        }
+
+        var contas = await _db.ContasFinanceiras
+            .Where(c => c.Id == request.ContaOrigemId || c.Id == request.ContaDestinoId)
+            .ToListAsync();
+
+        var contaOrigem = contas.FirstOrDefault(c => c.Id == request.ContaOrigemId);
+        if (contaOrigem is null)
+        {
+            return NotFound("Conta de origem nao encontrada.");
+        }
+
+        var contaDestino = contas.FirstOrDefault(c => c.Id == request.ContaDestinoId);
+        if (contaDestino is null)
+        {
+            return NotFound("Conta de destino nao encontrada.");
+        }
+
+        if (contaOrigem.OrganizacaoId != request.OrganizacaoId || contaDestino.OrganizacaoId != request.OrganizacaoId)
+        {
+            return BadRequest("As contas informadas nao pertencem a organizacao.");
+        }
+
+        if (!string.Equals(contaOrigem.Status, "ativo", StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(contaDestino.Status, "ativo", StringComparison.OrdinalIgnoreCase))
+        {
+            return BadRequest("Transferencia permitida apenas entre contas ativas.");
+        }
+
+        var dataTransferencia = request.DataTransferencia?.Date ?? DateTime.UtcNow.Date;
+        var referencia = string.IsNullOrWhiteSpace(request.Referencia)
+            ? $"TRF-{DateTime.UtcNow:yyyyMMddHHmmssfff}-{Guid.NewGuid():N}"[..30]
+            : request.Referencia.Trim();
+        var descricaoBase = string.IsNullOrWhiteSpace(request.Descricao)
+            ? "Transferencia entre contas"
+            : request.Descricao.Trim();
+        var formaPagamento = string.IsNullOrWhiteSpace(request.FormaPagamento)
+            ? "transferencia"
+            : request.FormaPagamento.Trim();
+
+        var lancamentoSaida = new LancamentoFinanceiro
+        {
+            Id = Guid.NewGuid(),
+            OrganizacaoId = request.OrganizacaoId,
+            Tipo = "pagar",
+            Situacao = "pago",
+            PlanoContasId = Guid.Empty,
+            CentroCustoId = null,
+            ContaFinanceiraId = contaOrigem.Id,
+            PessoaId = Guid.Empty,
+            Descricao = $"{descricaoBase}: {contaOrigem.Nome} -> {contaDestino.Nome}",
+            Valor = request.Valor,
+            DataCompetencia = dataTransferencia,
+            DataVencimento = dataTransferencia,
+            DataPagamento = dataTransferencia,
+            FormaPagamento = formaPagamento,
+            ParcelaNumero = null,
+            ParcelaTotal = null,
+            Referencia = referencia
+        };
+
+        var lancamentoEntrada = new LancamentoFinanceiro
+        {
+            Id = Guid.NewGuid(),
+            OrganizacaoId = request.OrganizacaoId,
+            Tipo = "receber",
+            Situacao = "pago",
+            PlanoContasId = Guid.Empty,
+            CentroCustoId = null,
+            ContaFinanceiraId = contaDestino.Id,
+            PessoaId = Guid.Empty,
+            Descricao = $"{descricaoBase}: {contaOrigem.Nome} -> {contaDestino.Nome}",
+            Valor = request.Valor,
+            DataCompetencia = dataTransferencia,
+            DataVencimento = dataTransferencia,
+            DataPagamento = dataTransferencia,
+            FormaPagamento = formaPagamento,
+            ParcelaNumero = null,
+            ParcelaTotal = null,
+            Referencia = referencia
+        };
+
+        _db.LancamentosFinanceiros.Add(lancamentoSaida);
+        _db.LancamentosFinanceiros.Add(lancamentoEntrada);
+        await _db.SaveChangesAsync();
+
+        return Ok(new TransferenciaResponse(
+            lancamentoSaida.Id,
+            lancamentoEntrada.Id,
+            referencia));
+    }
+
     [HttpGet("lancamentos")]
     public async Task<ActionResult<IEnumerable<LancamentoFinanceiro>>> ListarLancamentos(
         [FromQuery] Guid? organizacaoId,
