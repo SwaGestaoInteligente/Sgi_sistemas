@@ -1,5 +1,7 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Sgi.Api.Auth;
 using Sgi.Domain.Core;
 using Sgi.Infrastructure.Data;
 
@@ -7,6 +9,7 @@ namespace Sgi.Api.Controllers;
 
 [ApiController]
 [Route("api/unidades")]
+[Authorize]
 public class UnidadesOrganizacionaisController : ControllerBase
 {
     private readonly SgiDbContext _db;
@@ -23,12 +26,33 @@ public class UnidadesOrganizacionaisController : ControllerBase
     {
         if (organizacaoId == Guid.Empty)
         {
-            return BadRequest("Organização é obrigatória.");
+            return BadRequest("Organizacao e obrigatoria.");
         }
 
-        var unidades = await _db.UnidadesOrganizacionais
+        var auth = await Authz.EnsureMembershipAsync(
+            _db,
+            User,
+            organizacaoId,
+            UserRole.CONDO_ADMIN,
+            UserRole.CONDO_STAFF,
+            UserRole.RESIDENT);
+        if (auth.Error is not null)
+        {
+            return auth.Error;
+        }
+
+        var query = _db.UnidadesOrganizacionais
             .AsNoTracking()
-            .Where(u => u.OrganizacaoId == organizacaoId && u.Status == "ativo")
+            .Where(u => u.OrganizacaoId == organizacaoId && u.Status == "ativo");
+
+        if (!auth.IsPlatformAdmin &&
+            auth.Membership?.Role == UserRole.RESIDENT &&
+            auth.Membership.UnidadeOrganizacionalId.HasValue)
+        {
+            query = query.Where(u => u.Id == auth.Membership.UnidadeOrganizacionalId.Value);
+        }
+
+        var unidades = await query
             .OrderBy(u => u.CodigoInterno)
             .ThenBy(u => u.Nome)
             .ToListAsync();
@@ -50,12 +74,22 @@ public class UnidadesOrganizacionaisController : ControllerBase
     {
         if (request.OrganizacaoId == Guid.Empty)
         {
-            return BadRequest("Organização é obrigatória.");
+            return BadRequest("Organizacao e obrigatoria.");
+        }
+
+        var auth = await Authz.EnsureMembershipAsync(
+            _db,
+            User,
+            request.OrganizacaoId,
+            UserRole.CONDO_ADMIN);
+        if (auth.Error is not null)
+        {
+            return auth.Error;
         }
 
         if (string.IsNullOrWhiteSpace(request.Nome))
         {
-            return BadRequest("Nome da unidade é obrigatório.");
+            return BadRequest("Nome da unidade e obrigatorio.");
         }
 
         var unidade = new UnidadeOrganizacional
@@ -100,6 +134,16 @@ public class UnidadesOrganizacionaisController : ControllerBase
             return NotFound("Unidade nao encontrada.");
         }
 
+        var auth = await Authz.EnsureMembershipAsync(
+            _db,
+            User,
+            unidade.OrganizacaoId,
+            UserRole.CONDO_ADMIN);
+        if (auth.Error is not null)
+        {
+            return auth.Error;
+        }
+
         unidade.Nome = request.Nome.Trim();
         unidade.CodigoInterno = request.CodigoInterno?.Trim() ?? string.Empty;
         unidade.Tipo = request.Tipo?.Trim() ?? string.Empty;
@@ -118,12 +162,22 @@ public class UnidadesOrganizacionaisController : ControllerBase
 
         if (unidade == null)
         {
-            return NotFound("Unidade não encontrada.");
+            return NotFound("Unidade nao encontrada.");
+        }
+
+        var auth = await Authz.EnsureMembershipAsync(
+            _db,
+            User,
+            unidade.OrganizacaoId,
+            UserRole.CONDO_ADMIN);
+        if (auth.Error is not null)
+        {
+            return auth.Error;
         }
 
         if (unidade.Status == "arquivado")
         {
-            return Ok(); // já está arquivada
+            return Ok();
         }
 
         unidade.Status = "arquivado";

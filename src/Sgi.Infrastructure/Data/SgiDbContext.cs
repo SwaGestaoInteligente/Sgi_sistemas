@@ -15,6 +15,7 @@ public class SgiDbContext : DbContext
     public DbSet<UnidadeOrganizacional> UnidadesOrganizacionais => Set<UnidadeOrganizacional>();
     public DbSet<Pessoa> Pessoas => Set<Pessoa>();
     public DbSet<Usuario> Usuarios => Set<Usuario>();
+    public DbSet<UserCondoMembership> UserCondoMemberships => Set<UserCondoMembership>();
     public DbSet<VinculoPessoaOrganizacao> VinculosPessoaOrganizacao => Set<VinculoPessoaOrganizacao>();
     public DbSet<Papel> Papeis => Set<Papel>();
     public DbSet<Permissao> Permissoes => Set<Permissao>();
@@ -45,6 +46,7 @@ public class SgiDbContext : DbContext
         modelBuilder.Entity<UnidadeOrganizacional>().ToTable("UnidadesOrganizacionais");
         modelBuilder.Entity<Pessoa>().ToTable("Pessoas");
         modelBuilder.Entity<Usuario>().ToTable("Usuarios");
+        modelBuilder.Entity<UserCondoMembership>().ToTable("UserCondoMemberships");
         modelBuilder.Entity<VinculoPessoaOrganizacao>().ToTable("VinculosPessoaOrganizacao");
         modelBuilder.Entity<Papel>().ToTable("Papeis");
         modelBuilder.Entity<Permissao>().ToTable("Permissoes");
@@ -52,6 +54,9 @@ public class SgiDbContext : DbContext
             .HasKey(pp => new { pp.PapelId, pp.PermissaoId });
         modelBuilder.Entity<UsuarioPapelOrganizacao>().ToTable("UsuariosPapeisOrganizacao")
             .HasKey(up => new { up.UsuarioId, up.OrganizacaoId, up.PapelId });
+        modelBuilder.Entity<UserCondoMembership>()
+            .Property(m => m.Role)
+            .HasConversion<string>();
         modelBuilder.Entity<Endereco>().ToTable("Enderecos");
         modelBuilder.Entity<LogAuditoria>().ToTable("LogsAuditoria");
 

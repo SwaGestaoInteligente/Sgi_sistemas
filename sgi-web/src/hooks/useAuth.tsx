@@ -1,9 +1,23 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
-import { AUTH_STORAGE_KEY, AUTH_UNAUTHORIZED_EVENT } from "../api";
+import {
+  AUTH_SESSION_KEY,
+  AUTH_STORAGE_KEY,
+  AUTH_UNAUTHORIZED_EVENT,
+  Membership
+} from "../api";
 
 interface AuthContextValue {
   token: string | null;
   setToken: (token: string | null) => void;
+  session: AuthSession | null;
+  setSession: (session: AuthSession | null) => void;
+}
+
+export interface AuthSession {
+  userId: string;
+  pessoaId: string;
+  isPlatformAdmin: boolean;
+  memberships: Membership[];
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -32,6 +46,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   children
 }) => {
   const [token, setTokenState] = useState<string | null>(null);
+  const [session, setSessionState] = useState<AuthSession | null>(null);
 
   // Load saved token on startup and drop it if already expired.
   useEffect(() => {
@@ -45,6 +60,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       }
 
       setTokenState(stored);
+      const storedSession = window.localStorage.getItem(AUTH_SESSION_KEY);
+      if (storedSession) {
+        setSessionState(JSON.parse(storedSession) as AuthSession);
+      }
     } catch {
       // Ignore localStorage failures
     }
@@ -53,8 +72,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   useEffect(() => {
     const onUnauthorized = () => {
       setTokenState(null);
+      setSessionState(null);
       try {
         window.localStorage.removeItem(AUTH_STORAGE_KEY);
+        window.localStorage.removeItem(AUTH_SESSION_KEY);
       } catch {
         // Ignore localStorage failures
       }
@@ -79,8 +100,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
+  const setSession = (value: AuthSession | null) => {
+    setSessionState(value);
+    try {
+      if (value) {
+        window.localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(value));
+      } else {
+        window.localStorage.removeItem(AUTH_SESSION_KEY);
+      }
+    } catch {
+      // Ignore localStorage failures
+    }
+  };
+
   return (
-    <AuthContext.Provider value={{ token, setToken }}>
+    <AuthContext.Provider value={{ token, setToken, session, setSession }}>
       {children}
     </AuthContext.Provider>
   );

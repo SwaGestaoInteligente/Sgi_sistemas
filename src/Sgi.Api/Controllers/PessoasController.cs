@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Sgi.Api.Auth;
 using Sgi.Domain.Core;
 using Sgi.Infrastructure.Data;
 
@@ -37,7 +38,7 @@ public class PessoasController : ControllerBase
         public string? Telefone { get; set; }
         public string? Papel { get; set; }
 
-        // Endereço principal
+        // Endereco principal
         public string? Logradouro { get; set; }
         public string? Numero { get; set; }
         public string? Bairro { get; set; }
@@ -51,7 +52,18 @@ public class PessoasController : ControllerBase
     {
         if (organizacaoId == Guid.Empty)
         {
-            return BadRequest("organizacaoId é obrigatório.");
+            return BadRequest("organizacaoId e obrigatorio.");
+        }
+
+        var auth = await Authz.EnsureMembershipAsync(
+            _db,
+            User,
+            organizacaoId,
+            UserRole.CONDO_ADMIN,
+            UserRole.CONDO_STAFF);
+        if (auth.Error is not null)
+        {
+            return auth.Error;
         }
 
         var query =
@@ -81,7 +93,17 @@ public class PessoasController : ControllerBase
     {
         if (request.OrganizacaoId == Guid.Empty)
         {
-            return BadRequest("OrganizacaoId é obrigatório.");
+            return BadRequest("OrganizacaoId e obrigatorio.");
+        }
+
+        var auth = await Authz.EnsureMembershipAsync(
+            _db,
+            User,
+            request.OrganizacaoId,
+            UserRole.CONDO_ADMIN);
+        if (auth.Error is not null)
+        {
+            return auth.Error;
         }
 
         var pessoa = new Pessoa
@@ -181,7 +203,17 @@ public class PessoasController : ControllerBase
 
         if (vinculo is null)
         {
-            return BadRequest("Vínculo da pessoa com a organização não encontrado.");
+            return BadRequest("Vinculo da pessoa com a organizacao nao encontrado.");
+        }
+
+        var auth = await Authz.EnsureMembershipAsync(
+            _db,
+            User,
+            organizacaoId,
+            UserRole.CONDO_ADMIN);
+        if (auth.Error is not null)
+        {
+            return auth.Error;
         }
 
         pessoa.Nome = request.Nome;
@@ -242,13 +274,21 @@ public class PessoasController : ControllerBase
             return NotFound();
         }
 
-        // Vínculos da pessoa com a organização (ou todas, se organizacaoId não vier)
+        var auth = await Authz.EnsureMembershipAsync(
+            _db,
+            User,
+            organizacaoId,
+            UserRole.CONDO_ADMIN);
+        if (auth.Error is not null)
+        {
+            return auth.Error;
+        }
+
         var vinculos = await _db.VinculosPessoaOrganizacao
             .Where(v => v.PessoaId == id &&
                         (organizacaoId == Guid.Empty || v.OrganizacaoId == organizacaoId))
             .ToListAsync();
 
-        // Endereços da pessoa nessa organização
         var enderecos = await _db.Enderecos
             .Where(e => e.PessoaId == id &&
                         (organizacaoId == Guid.Empty || e.OrganizacaoId == organizacaoId))
@@ -257,7 +297,6 @@ public class PessoasController : ControllerBase
         _db.VinculosPessoaOrganizacao.RemoveRange(vinculos);
         _db.Enderecos.RemoveRange(enderecos);
 
-        // Se não restarem vínculos com nenhuma organização, removemos a pessoa.
         var aindaTemVinculos = await _db.VinculosPessoaOrganizacao
             .AnyAsync(v => v.PessoaId == id);
 

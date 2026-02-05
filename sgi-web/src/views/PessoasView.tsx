@@ -8,6 +8,7 @@ type PessoasViewProps = {
   papelFixo?: string;
   titulo?: string;
   subTitulo?: React.ReactNode;
+  readOnly?: boolean;
 };
 
 type PapelOption = { value: string; label: string };
@@ -71,7 +72,8 @@ const PessoasView: React.FC<PessoasViewProps> = ({
   organizacao,
   papelFixo,
   titulo,
-  subTitulo
+  subTitulo,
+  readOnly = false
 }) => {
   const { token } = useAuth();
   const [pessoas, setPessoas] = useState<Pessoa[]>([]);
@@ -110,6 +112,12 @@ const PessoasView: React.FC<PessoasViewProps> = ({
       }
     >
   >({});
+
+  useEffect(() => {
+    if (readOnly && formAberto) {
+      setFormAberto(false);
+    }
+  }, [formAberto, readOnly]);
 
   const carregarPessoas = async () => {
     if (!token) return;
@@ -320,22 +328,24 @@ const PessoasView: React.FC<PessoasViewProps> = ({
           <h2>{titulo ?? "Pessoas"}</h2>
         </div>
         <div className="people-header-actions">
-          <button
-            type="button"
-            className="button-secondary"
-            onClick={() => {
-              limparFormulario();
-              setFormAberto(true);
-            }}
-          >
-            + Nova pessoa
-          </button>
+          {!readOnly && (
+            <button
+              type="button"
+              className="button-secondary"
+              onClick={() => {
+                limparFormulario();
+                setFormAberto(true);
+              }}
+            >
+              + Nova pessoa
+            </button>
+          )}
         </div>
       </div>
 
       <div className={"people-layout" + (formAberto ? "" : " people-layout--single")}>
         {/* Formulário */}
-        {formAberto && (
+        {formAberto && !readOnly && (
           <section className="people-form-card">
             <h3>{pessoaSelecionadaId ? "Editar pessoa" : "Nova pessoa"}</h3>
 
@@ -538,7 +548,7 @@ const PessoasView: React.FC<PessoasViewProps> = ({
             </div>
           )}
 
-          {pessoaSelecionada && (
+          {pessoaSelecionada && !readOnly && (
             <button
               type="button"
               disabled={loading}

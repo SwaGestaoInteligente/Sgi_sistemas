@@ -2,12 +2,14 @@ const rawApiBaseUrl =
   import.meta.env.VITE_API_BASE_URL ?? "http://localhost:7000";
 export const API_BASE_URL = rawApiBaseUrl.trim().replace(/\/+$/, "");
 export const AUTH_STORAGE_KEY = "swa_sgi_token";
+export const AUTH_SESSION_KEY = "swa_sgi_session";
 export const AUTH_UNAUTHORIZED_EVENT = "swa:auth-unauthorized";
 
 function handleUnauthorizedResponse() {
   if (typeof window === "undefined") return;
   try {
     window.localStorage.removeItem(AUTH_STORAGE_KEY);
+    window.localStorage.removeItem(AUTH_SESSION_KEY);
   } catch {
     // Ignora indisponibilidade do localStorage
   }
@@ -25,6 +27,24 @@ function throwHttpError(status: number, text: string): never {
 export interface LoginResponse {
   accessToken: string;
   expiresAt: string;
+  userId: string;
+  pessoaId: string;
+  isPlatformAdmin: boolean;
+  memberships: Membership[];
+}
+
+export type UserRole =
+  | "PLATFORM_ADMIN"
+  | "CONDO_ADMIN"
+  | "CONDO_STAFF"
+  | "RESIDENT";
+
+export interface Membership {
+  id: string;
+  condoId?: string | null;
+  unidadeOrganizacionalId?: string | null;
+  role: UserRole;
+  isActive: boolean;
 }
 
 export interface Organizacao {
@@ -95,13 +115,27 @@ export interface UnidadeOrganizacional {
 
 export interface Chamado {
   id: string;
+  organizacaoId: string;
+  unidadeOrganizacionalId?: string | null;
+  pessoaSolicitanteId: string;
+  categoria: string;
   titulo: string;
+  descricao: string;
   status: string;
+  prioridade?: string | null;
+  dataAbertura?: string;
 }
 
 export interface Reserva {
   id: string;
+  organizacaoId: string;
+  recursoReservavelId: string;
+  pessoaSolicitanteId: string;
+  unidadeOrganizacionalId?: string | null;
+  dataInicio: string;
+  dataFim: string;
   status: string;
+  valorTotal?: number | null;
 }
 
 export interface ChargeItem {
@@ -214,11 +248,15 @@ export const api = {
     });
   },
 
-  async listarOrganizacoes(): Promise<Organizacao[]> {
-    return request<Organizacao[]>("/api/Organizacoes");
+  async listarOrganizacoes(token: string): Promise<Organizacao[]> {
+    return request<Organizacao[]>("/api/Organizacoes", {}, token);
   },
 
-  async criarOrganizacao(dados: {
+  async listarMinhasOrganizacoes(token: string): Promise<Organizacao[]> {
+    return request<Organizacao[]>("/api/Organizacoes/minhas", {}, token);
+  },
+
+  async criarOrganizacao(token: string, dados: {
     nome: string;
     tipo?: string;
     modulosAtivos?: string;
@@ -226,10 +264,11 @@ export const api = {
     return request<Organizacao>("/api/Organizacoes", {
       method: "POST",
       body: JSON.stringify(dados)
-    });
+    }, token);
   },
 
   async atualizarOrganizacao(
+    token: string,
     id: string,
     dados: {
       nome: string;
@@ -242,7 +281,7 @@ export const api = {
     return request<Organizacao>(path, {
       method: "PUT",
       body: JSON.stringify(dados)
-    });
+    }, token);
   },
   async listarUnidades(
     token: string,
@@ -446,6 +485,17 @@ export const api = {
     return request<Chamado[]>(`/api/operacao/chamados${suffix}`, {}, token);
   },
 
+  async criarChamado(token: string, payload: Chamado): Promise<Chamado> {
+    return request<Chamado>(
+      "/api/operacao/chamados",
+      {
+        method: "POST",
+        body: JSON.stringify(payload)
+      },
+      token
+    );
+  },
+
   async listarReservas(
     token: string,
     organizacaoId?: string
@@ -454,6 +504,17 @@ export const api = {
       ? `?organizacaoId=${encodeURIComponent(organizacaoId)}`
       : "";
     return request<Reserva[]>(`/api/operacao/reservas${suffix}`, {}, token);
+  },
+
+  async criarReserva(token: string, payload: Reserva): Promise<Reserva> {
+    return request<Reserva>(
+      "/api/operacao/reservas",
+      {
+        method: "POST",
+        body: JSON.stringify(payload)
+      },
+      token
+    );
   },
 
   async listarPlanosContas(

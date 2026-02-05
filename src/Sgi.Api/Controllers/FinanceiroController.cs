@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Sgi.Api.Auth;
 using Sgi.Domain.Financeiro;
 using Sgi.Infrastructure.Data;
 
@@ -9,6 +10,7 @@ namespace Sgi.Api.Controllers;
 [ApiController]
 [Route("api/[controller]")]
 [Authorize]
+[ServiceFilter(typeof(FinanceiroAccessFilter))]
 public class FinanceiroController : ControllerBase
 {
     private readonly SgiDbContext _db;

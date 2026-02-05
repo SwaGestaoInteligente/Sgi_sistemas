@@ -3,7 +3,7 @@ import { api } from "../api";
 import { useAuth } from "../hooks/useAuth";
 
 export const LoginPage: React.FC = () => {
-  const { setToken } = useAuth();
+  const { setToken, setSession } = useAuth();
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
   const [loading, setLoading] = useState(false);
@@ -16,6 +16,12 @@ export const LoginPage: React.FC = () => {
     try {
       const res = await api.login(email, senha);
       setToken(res.accessToken);
+      setSession({
+        userId: res.userId,
+        pessoaId: res.pessoaId,
+        isPlatformAdmin: res.isPlatformAdmin,
+        memberships: res.memberships
+      });
     } catch (err: any) {
       setErro(err.message || "Falha no login");
     } finally {

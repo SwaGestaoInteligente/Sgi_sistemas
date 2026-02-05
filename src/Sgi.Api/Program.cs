@@ -2,6 +2,7 @@ using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Sgi.Api.Auth;
 using Sgi.Infrastructure.Data;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -71,6 +72,7 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 builder.Services.AddControllers();
+builder.Services.AddScoped<FinanceiroAccessFilter>();
 
 var app = builder.Build();
 
@@ -79,6 +81,18 @@ using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<SgiDbContext>();
     db.Database.EnsureCreated();
+    db.Database.ExecuteSqlRaw("""
+        CREATE TABLE IF NOT EXISTS UserCondoMemberships (
+            Id TEXT NOT NULL PRIMARY KEY,
+            UsuarioId TEXT NOT NULL,
+            OrganizacaoId TEXT NULL,
+            UnidadeOrganizacionalId TEXT NULL,
+            Role TEXT NOT NULL,
+            IsActive INTEGER NOT NULL DEFAULT 1,
+            CreatedAt TEXT NOT NULL,
+            UpdatedAt TEXT NOT NULL
+        );
+        """);
 }
 
 if (app.Environment.IsDevelopment())

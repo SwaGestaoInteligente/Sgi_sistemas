@@ -1,5 +1,7 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Sgi.Api.Auth;
 using Sgi.Domain.Core;
 using Sgi.Infrastructure.Data;
 
@@ -7,6 +9,7 @@ namespace Sgi.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 public class OrganizacoesController : ControllerBase
 {
     private readonly SgiDbContext _db;
@@ -19,13 +22,76 @@ public class OrganizacoesController : ControllerBase
     [HttpGet]
     public async Task<ActionResult<IEnumerable<Organizacao>>> GetAll()
     {
-        var items = await _db.Organizacoes.AsNoTracking().ToListAsync();
-        return Ok(items);
+        var userId = Authz.GetUserId(User);
+        if (!userId.HasValue)
+        {
+            return Unauthorized();
+        }
+
+        var memberships = await _db.UserCondoMemberships
+            .AsNoTracking()
+            .Where(m => m.UsuarioId == userId.Value && m.IsActive)
+            .ToListAsync();
+
+        if (memberships.Any(m => m.Role == UserRole.PLATFORM_ADMIN))
+        {
+            var items = await _db.Organizacoes.AsNoTracking().ToListAsync();
+            return Ok(items);
+        }
+
+        var orgIds = memberships
+            .Where(m => m.OrganizacaoId.HasValue)
+            .Select(m => m.OrganizacaoId!.Value)
+            .Distinct()
+            .ToList();
+
+        var lista = await _db.Organizacoes.AsNoTracking()
+            .Where(o => orgIds.Contains(o.Id))
+            .ToListAsync();
+        return Ok(lista);
+    }
+
+    [HttpGet("minhas")]
+    public async Task<ActionResult<IEnumerable<Organizacao>>> GetMinhas()
+    {
+        var userId = Authz.GetUserId(User);
+        if (!userId.HasValue)
+        {
+            return Unauthorized();
+        }
+
+        var memberships = await _db.UserCondoMemberships
+            .AsNoTracking()
+            .Where(m => m.UsuarioId == userId.Value && m.IsActive)
+            .ToListAsync();
+
+        if (memberships.Any(m => m.Role == UserRole.PLATFORM_ADMIN))
+        {
+            var items = await _db.Organizacoes.AsNoTracking().ToListAsync();
+            return Ok(items);
+        }
+
+        var orgIds = memberships
+            .Where(m => m.OrganizacaoId.HasValue)
+            .Select(m => m.OrganizacaoId!.Value)
+            .Distinct()
+            .ToList();
+
+        var lista = await _db.Organizacoes.AsNoTracking()
+            .Where(o => orgIds.Contains(o.Id))
+            .ToListAsync();
+        return Ok(lista);
     }
 
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<Organizacao>> GetById(Guid id)
     {
+        var auth = await Authz.EnsureMembershipAsync(_db, User, id, UserRole.CONDO_ADMIN, UserRole.CONDO_STAFF, UserRole.RESIDENT);
+        if (auth.Error is not null)
+        {
+            return auth.Error;
+        }
+
         var item = await _db.Organizacoes.FindAsync(id);
         if (item == null)
         {
@@ -38,6 +104,20 @@ public class OrganizacoesController : ControllerBase
     [HttpPost]
     public async Task<ActionResult<Organizacao>> Create(Organizacao model)
     {
+        var userId = Authz.GetUserId(User);
+        if (!userId.HasValue)
+        {
+            return Unauthorized();
+        }
+
+        var isPlatformAdmin = await _db.UserCondoMemberships
+            .AsNoTracking()
+            .AnyAsync(m => m.UsuarioId == userId.Value && m.Role == UserRole.PLATFORM_ADMIN && m.IsActive);
+        if (!isPlatformAdmin)
+        {
+            return Forbid();
+        }
+
         model.Id = Guid.NewGuid();
         _db.Organizacoes.Add(model);
         await _db.SaveChangesAsync();
@@ -56,6 +136,20 @@ public class OrganizacoesController : ControllerBase
     [HttpPut("{id:guid}")]
     public async Task<ActionResult<Organizacao>> Update(Guid id, AtualizarOrganizacaoRequest request)
     {
+        var userId = Authz.GetUserId(User);
+        if (!userId.HasValue)
+        {
+            return Unauthorized();
+        }
+
+        var isPlatformAdmin = await _db.UserCondoMemberships
+            .AsNoTracking()
+            .AnyAsync(m => m.UsuarioId == userId.Value && m.Role == UserRole.PLATFORM_ADMIN && m.IsActive);
+        if (!isPlatformAdmin)
+        {
+            return Forbid();
+        }
+
         var item = await _db.Organizacoes.FindAsync(id);
         if (item == null)
         {

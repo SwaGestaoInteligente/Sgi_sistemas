@@ -1,12 +1,13 @@
-﻿import React, { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { api, Organizacao, UnidadeOrganizacional } from "../api";
 import { useAuth } from "../hooks/useAuth";
 
 type UnidadesViewProps = {
   organizacao: Organizacao;
+  readOnly?: boolean;
 };
 
-export default function UnidadesView({ organizacao }: UnidadesViewProps) {
+export default function UnidadesView({ organizacao, readOnly = false }: UnidadesViewProps) {
   const { token } = useAuth();
   const [unidades, setUnidades] = useState<UnidadeOrganizacional[]>([]);
   const [loading, setLoading] = useState(false);
@@ -46,11 +47,17 @@ export default function UnidadesView({ organizacao }: UnidadesViewProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, organizacao?.id]);
 
+  useEffect(() => {
+    if (readOnly && formAberto) {
+      setFormAberto(false);
+    }
+  }, [formAberto, readOnly]);
+
   const salvarUnidade = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!token || !organizacao) return;
     if (!nome.trim() || !codigoInterno.trim()) {
-      setErro("Preencha nome e código interno da unidade.");
+      setErro("Preencha nome e codigo interno da unidade.");
       return;
     }
 
@@ -91,7 +98,7 @@ export default function UnidadesView({ organizacao }: UnidadesViewProps) {
   const salvarEdicao = async () => {
     if (!token || !organizacao || !editandoId) return;
     if (!editNome.trim()) {
-      setErro("Nome da unidade é obrigatório.");
+      setErro("Nome da unidade e obrigatorio.");
       return;
     }
 
@@ -118,121 +125,123 @@ export default function UnidadesView({ organizacao }: UnidadesViewProps) {
     return null;
   }
 
-  const unidadeSelecionada =
-    unidadeSelecionadaId != null
-      ? unidades.find((u) => u.id === unidadeSelecionadaId) ?? null
-      : null;
-
   const unidadesFiltradas = unidades.filter((u) => {
-    const textoBusca = busca.trim().toLowerCase();
-    const textoUnidade = `${u.nome} ${u.codigoInterno} ${u.tipo}`.toLowerCase();
-    const okBusca = !textoBusca || textoUnidade.includes(textoBusca);
-    const okTipo = filtroTipo === "todos" || u.tipo === filtroTipo;
-    return okBusca && okTipo;
+    const termo = busca.trim().toLowerCase();
+    if (termo) {
+      const texto = `${u.nome} ${u.codigoInterno}`.toLowerCase();
+      if (!texto.includes(termo)) return false;
+    }
+    if (filtroTipo !== "todos" && u.tipo !== filtroTipo) return false;
+    return true;
   });
-
-  const tiposDisponiveis = Array.from(new Set(unidades.map((u) => u.tipo))).sort();
 
   return (
     <div className="people-page">
-      <div className="people-header-row">
-        <div>
-          <h2>Unidades</h2>
-        </div>
-        <div className="people-header-actions">
-          <button
-            type="button"
-            className="button-secondary"
-            onClick={() => {
-              setNome("");
-              setCodigoInterno("");
-              setTipo("Apartamento");
-              setFormAberto(true);
-            }}
-          >
-            + Nova unidade
-          </button>
-        </div>
-      </div>
-
       <div className={"people-layout" + (formAberto ? "" : " people-layout--single")}>
-        {formAberto && (
-          <section className="people-form-card">
-            <h3>Nova unidade</h3>
-
-            <form onSubmit={salvarUnidade} className="form">
-              <div className="people-form-grid">
-                <label>
-                  Tipo
-                  <select value={tipo} onChange={(e) => setTipo(e.target.value)}>
-                    <option value="Bloco">Bloco</option>
-                    <option value="Apartamento">Apartamento</option>
-                    <option value="Casa">Casa</option>
-                    <option value="Sala">Sala</option>
-                    <option value="Outro">Outro</option>
-                  </select>
-                </label>
-                <label>
-                  Código interno
-                  <input
-                    value={codigoInterno}
-                    onChange={(e) => setCodigoInterno(e.target.value)}
-                    placeholder="Ex.: A, 101, A-101"
-                  />
-                </label>
-              </div>
-
-              <label>
-                Nome da unidade
-                <input
-                  value={nome}
-                  onChange={(e) => setNome(e.target.value)}
-                  placeholder="Ex.: Bloco A, Ap 101"
-                  required
-                />
-              </label>
-
-              <button type="submit" disabled={loading || !nome.trim()}>
-                {loading ? "Salvando..." : "Salvar unidade"}
-              </button>
-
-              {erro && <p className="error">{erro}</p>}
-            </form>
-          </section>
-        )}
-
         <section className="people-list-card">
-          <div className="people-list-header">
-            <h3>Unidades cadastradas</h3>
+          <div className="people-header-row">
+            <div>
+              <h2>Unidades</h2>
+            </div>
+            <div className="people-header-actions">
+              {!readOnly && (
+                <button
+                  type="button"
+                  className="button-secondary"
+                  onClick={() => setFormAberto((prev) => !prev)}
+                >
+                  {formAberto ? "Ocultar formulario" : "Nova unidade"}
+                </button>
+              )}
+            </div>
           </div>
-          <div className="people-search-row">
+
+          <div className="people-filter-row">
             <input
+              type="search"
+              placeholder="Buscar por nome ou codigo interno"
               value={busca}
               onChange={(e) => setBusca(e.target.value)}
-              placeholder="Buscar por nome, código ou tipo"
             />
-            <select
-              value={filtroTipo}
-              onChange={(e) => setFiltroTipo(e.target.value)}
-            >
+            <select value={filtroTipo} onChange={(e) => setFiltroTipo(e.target.value)}>
               <option value="todos">Todos os tipos</option>
-              {tiposDisponiveis.map((tipoItem) => (
+              {[...new Set(unidades.map((u) => u.tipo))].map((tipoItem) => (
                 <option key={tipoItem} value={tipoItem}>
                   {tipoItem}
                 </option>
               ))}
             </select>
-            <button type="button" onClick={() => void carregarUnidades()} disabled={loading}>
-              {loading ? "Atualizando..." : "Atualizar lista"}
-            </button>
           </div>
 
-          {editandoId && (
-            <div className="inline-edit-card">
-              <div className="inline-edit-header">
-                <strong>Editar unidade</strong>
-              </div>
-              <div className="people-form-grid">
+          {erro && <p className="error">{erro}</p>}
+
+          <div className="people-list">
+            {unidadesFiltradas.map((unidade) => (
+              <button
+                key={unidade.id}
+                type="button"
+                className={
+                  "person-card" +
+                  (unidadeSelecionadaId === unidade.id ? " person-card--active" : "")
+                }
+                onClick={() => setUnidadeSelecionadaId(unidade.id)}
+              >
+                <div className="person-header">
+                  <span className="person-name">{unidade.nome}</span>
+                </div>
+                <div className="person-meta">
+                  {unidade.tipo} • {unidade.codigoInterno}
+                </div>
+                {!readOnly && (
+                  <div className="person-actions">
+                    <button
+                      type="button"
+                      className="button-secondary"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        iniciarEdicao(unidade);
+                        setFormAberto(true);
+                      }}
+                    >
+                      Editar
+                    </button>
+                  </div>
+                )}
+              </button>
+            ))}
+            {!loading && unidadesFiltradas.length === 0 && (
+              <p className="empty">Nenhuma unidade encontrada.</p>
+            )}
+          </div>
+        </section>
+
+        {formAberto && !readOnly && (
+          <section className="people-form-card">
+            <h3>Nova unidade</h3>
+            <form onSubmit={salvarUnidade} className="form">
+              <label>
+                Tipo
+                <input value={tipo} onChange={(e) => setTipo(e.target.value)} />
+              </label>
+              <label>
+                Codigo interno
+                <input
+                  value={codigoInterno}
+                  onChange={(e) => setCodigoInterno(e.target.value)}
+                />
+              </label>
+              <label>
+                Nome
+                <input value={nome} onChange={(e) => setNome(e.target.value)} />
+              </label>
+              <button type="submit" disabled={loading}>
+                {loading ? "Salvando..." : "Salvar"}
+              </button>
+            </form>
+
+            {editandoId && (
+              <div style={{ marginTop: 12 }}>
+                <h4>Editar unidade</h4>
                 <label>
                   Nome
                   <input
@@ -241,97 +250,36 @@ export default function UnidadesView({ organizacao }: UnidadesViewProps) {
                   />
                 </label>
                 <label>
-                  Código interno
+                  Codigo interno
                   <input
                     value={editCodigoInterno}
                     onChange={(e) => setEditCodigoInterno(e.target.value)}
                   />
                 </label>
-              </div>
-              <label>
-                Tipo
-                <select
-                  value={editTipo}
-                  onChange={(e) => setEditTipo(e.target.value)}
-                >
-                  <option value="Bloco">Bloco</option>
-                  <option value="Apartamento">Apartamento</option>
-                  <option value="Casa">Casa</option>
-                  <option value="Sala">Sala</option>
-                  <option value="Outro">Outro</option>
-                </select>
-              </label>
-              <div className="inline-edit-actions">
-                <button
-                  type="button"
-                  onClick={() => void salvarEdicao()}
-                  disabled={salvandoEdicao || !editNome.trim() || !editCodigoInterno.trim()}
-                >
-                  {salvandoEdicao ? "Salvando..." : "Salvar"}
-                </button>
-                <button
-                  type="button"
-                  className="button-secondary"
-                  onClick={cancelarEdicao}
-                  disabled={salvandoEdicao}
-                >
-                  Cancelar
-                </button>
-              </div>
-            </div>
-          )}
-
-          {unidadesFiltradas.length > 0 && (
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Tipo</th>
-                  <th>Código</th>
-                  <th>Nome</th>
-                  <th>Status</th>
-                  <th>Ações</th>
-                </tr>
-              </thead>
-              <tbody>
-                {unidadesFiltradas.map((u) => (
-                  <tr
-                    key={u.id}
-                    onClick={() => setUnidadeSelecionadaId(u.id)}
-                    style={{
-                      cursor: "pointer",
-                      backgroundColor:
-                        unidadeSelecionadaId === u.id ? "#eff6ff" : "transparent"
-                    }}
+                <label>
+                  Tipo
+                  <input
+                    value={editTipo}
+                    onChange={(e) => setEditTipo(e.target.value)}
+                  />
+                </label>
+                <div className="form-actions">
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    onClick={cancelarEdicao}
                   >
-                    <td>{u.tipo}</td>
-                    <td>{u.codigoInterno}</td>
-                    <td>{u.nome}</td>
-                    <td>{u.status}</td>
-                    <td>
-                      <button
-                        type="button"
-                        className="table-action"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          iniciarEdicao(u);
-                        }}
-                      >
-                        ✏️ Editar
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-          {!loading && unidadesFiltradas.length === 0 && (
-            <p className="error" style={{ color: "#64748b" }}>
-              Nenhuma unidade encontrada com os filtros atuais.
-            </p>
-          )}
-        </section>
+                    Cancelar
+                  </button>
+                  <button type="button" onClick={() => void salvarEdicao()}>
+                    {salvandoEdicao ? "Salvando..." : "Salvar edicao"}
+                  </button>
+                </div>
+              </div>
+            )}
+          </section>
+        )}
       </div>
     </div>
   );
 }
-

@@ -1,0 +1,136 @@
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Filters;
+using Microsoft.EntityFrameworkCore;
+using Sgi.Domain.Core;
+using Sgi.Infrastructure.Data;
+
+namespace Sgi.Api.Auth;
+
+public class FinanceiroAccessFilter : IAsyncActionFilter
+{
+    private readonly SgiDbContext _db;
+
+    public FinanceiroAccessFilter(SgiDbContext db)
+    {
+        _db = db;
+    }
+
+    public async Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
+    {
+        var user = context.HttpContext.User;
+        var userId = Authz.GetUserId(user);
+        if (!userId.HasValue)
+        {
+            context.Result = new UnauthorizedResult();
+            return;
+        }
+
+        var orgId = ExtractOrganizacaoId(context);
+        if (!orgId.HasValue || orgId.Value == Guid.Empty)
+        {
+            orgId = await TryResolveOrganizacaoIdByRoute(context);
+        }
+
+        if (!orgId.HasValue || orgId.Value == Guid.Empty)
+        {
+            context.Result = new BadRequestObjectResult("OrganizacaoId e obrigatorio.");
+            return;
+        }
+
+        var auth = await Authz.EnsureMembershipAsync(_db, user, orgId.Value, UserRole.CONDO_ADMIN);
+        if (auth.Error is not null)
+        {
+            context.Result = auth.Error;
+            return;
+        }
+
+        await next();
+    }
+
+    private static Guid? ExtractOrganizacaoId(ActionExecutingContext context)
+    {
+        foreach (var pair in context.ActionArguments)
+        {
+            if (pair.Key.Contains("organizacao", StringComparison.OrdinalIgnoreCase))
+            {
+                if (pair.Value != null &&
+                    Guid.TryParse(pair.Value.ToString(), out var parsedValue))
+                {
+                    return parsedValue;
+                }
+            }
+
+            if (pair.Value is null)
+            {
+                continue;
+            }
+
+            var prop = pair.Value.GetType().GetProperty("OrganizacaoId");
+            if (prop is null)
+            {
+                continue;
+            }
+
+            var propValue = prop.GetValue(pair.Value);
+            if (propValue != null &&
+                Guid.TryParse(propValue.ToString(), out var parsedPropValue))
+            {
+                return parsedPropValue;
+            }
+        }
+
+        var query = context.HttpContext.Request.Query;
+        if (query.TryGetValue("organizacaoId", out var raw) && Guid.TryParse(raw, out var parsed))
+        {
+            return parsed;
+        }
+
+        return null;
+    }
+
+    private async Task<Guid?> TryResolveOrganizacaoIdByRoute(ActionExecutingContext context)
+    {
+        if (!context.ActionArguments.TryGetValue("id", out var idValue))
+        {
+            return null;
+        }
+
+        if (idValue is not Guid id || id == Guid.Empty)
+        {
+            return null;
+        }
+
+        var action = context.ActionDescriptor.RouteValues.TryGetValue("action", out var actionName)
+            ? actionName ?? string.Empty
+            : string.Empty;
+        return action switch
+        {
+            nameof(Controllers.FinanceiroController.RemoverConta) =>
+                await _db.ContasFinanceiras.AsNoTracking()
+                    .Where(c => c.Id == id)
+                    .Select(c => (Guid?)c.OrganizacaoId)
+                    .FirstOrDefaultAsync(),
+            nameof(Controllers.FinanceiroController.AtualizarStatusConta) =>
+                await _db.ContasFinanceiras.AsNoTracking()
+                    .Where(c => c.Id == id)
+                    .Select(c => (Guid?)c.OrganizacaoId)
+                    .FirstOrDefaultAsync(),
+            nameof(Controllers.FinanceiroController.RemoverPlanoContas) =>
+                await _db.PlanosContas.AsNoTracking()
+                    .Where(p => p.Id == id)
+                    .Select(p => (Guid?)p.OrganizacaoId)
+                    .FirstOrDefaultAsync(),
+            nameof(Controllers.FinanceiroController.AtualizarStatusFatura) =>
+                await _db.DocumentosCobranca.AsNoTracking()
+                    .Where(d => d.Id == id)
+                    .Select(d => (Guid?)d.OrganizacaoId)
+                    .FirstOrDefaultAsync(),
+            nameof(Controllers.FinanceiroController.AtualizarStatusItemCobrado) =>
+                await _db.ItensCobrados.AsNoTracking()
+                    .Where(i => i.Id == id)
+                    .Select(i => (Guid?)i.OrganizacaoId)
+                    .FirstOrDefaultAsync(),
+            _ => null
+        };
+    }
+}

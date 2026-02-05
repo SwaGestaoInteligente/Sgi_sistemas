@@ -4,7 +4,6 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using Sgi.Domain.Core;
 using Sgi.Infrastructure.Data;
@@ -21,7 +20,20 @@ public class JwtSettings
 
 public record LoginRequest(string Email, string Senha);
 
-public record LoginResponse(string AccessToken, DateTime ExpiresAt);
+public record MembershipDto(
+    Guid Id,
+    Guid? CondoId,
+    Guid? UnidadeOrganizacionalId,
+    UserRole Role,
+    bool IsActive);
+
+public record LoginResponse(
+    string AccessToken,
+    DateTime ExpiresAt,
+    Guid UserId,
+    Guid PessoaId,
+    bool IsPlatformAdmin,
+    IEnumerable<MembershipDto> Memberships);
 
 [ApiController]
 [Route("api/[controller]")]
@@ -56,11 +68,48 @@ public class AuthController : ControllerBase
         var tokenHandler = new JwtSecurityTokenHandler();
         var key = Encoding.UTF8.GetBytes(_jwtSettings.Key);
 
+        var memberships = await _db.UserCondoMemberships
+            .Where(m => m.UsuarioId == usuario.Id && m.IsActive)
+            .ToListAsync();
+
+        if (!memberships.Any() &&
+            string.Equals(usuario.EmailLogin, "admin@teste.com", StringComparison.OrdinalIgnoreCase))
+        {
+            var adminMembership = new UserCondoMembership
+            {
+                Id = Guid.NewGuid(),
+                UsuarioId = usuario.Id,
+                OrganizacaoId = null,
+                UnidadeOrganizacionalId = null,
+                Role = UserRole.PLATFORM_ADMIN,
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+            _db.UserCondoMemberships.Add(adminMembership);
+            await _db.SaveChangesAsync();
+            memberships.Add(adminMembership);
+        }
+
+        var isPlatformAdmin = memberships.Any(m => m.Role == UserRole.PLATFORM_ADMIN);
+
+        var membershipDtos = memberships
+            .Select(m => new MembershipDto(
+                m.Id,
+                m.OrganizacaoId,
+                m.UnidadeOrganizacionalId,
+                m.Role,
+                m.IsActive))
+            .ToList();
+
         var claims = new List<Claim>
         {
             new(JwtRegisteredClaimNames.Sub, usuario.Id.ToString()),
             new(JwtRegisteredClaimNames.Email, usuario.EmailLogin),
-            new("uid", usuario.Id.ToString())
+            new("uid", usuario.Id.ToString()),
+            new("pid", usuario.PessoaId.ToString()),
+            new("isPlatformAdmin", isPlatformAdmin ? "true" : "false"),
+            new("memberships", System.Text.Json.JsonSerializer.Serialize(membershipDtos))
         };
 
         var expires = DateTime.UtcNow.AddMinutes(_jwtSettings.ExpiresInMinutes);
@@ -79,7 +128,7 @@ public class AuthController : ControllerBase
         var token = tokenHandler.CreateToken(tokenDescriptor);
         var tokenString = tokenHandler.WriteToken(token);
 
-        return Ok(new LoginResponse(tokenString, expires));
+        return Ok(new LoginResponse(tokenString, expires, usuario.Id, usuario.PessoaId, isPlatformAdmin, membershipDtos));
     }
 
     // Utilização simples de hash com SHA256 apenas para ambiente de desenvolvimento.
@@ -96,4 +145,3 @@ public class AuthController : ControllerBase
         return hashOfInput == storedHash;
     }
 }
-

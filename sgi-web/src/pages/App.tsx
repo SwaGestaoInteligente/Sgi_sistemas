@@ -1,6 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { AuthProvider, useAuth } from "../hooks/useAuth";
-import { api, ContaFinanceira, Organizacao } from "../api";
+import {
+  api,
+  ContaFinanceira,
+  Membership,
+  Organizacao,
+  UserRole
+} from "../api";
 import { LoginPage } from "./LoginPage";
 import PessoasView from "../views/PessoasView";
 import UnidadesView from "../views/UnidadesView";
@@ -17,7 +23,10 @@ type AppView =
   | "funcionarios"
   | "fornecedores"
   | "veiculos"
-  | "pets";
+  | "pets"
+  | "chamados"
+  | "reservas"
+  | "minhaUnidade";
 
 type Segmento = {
   id: string;
@@ -99,6 +108,18 @@ const viewMeta: Record<AppView, { title: string; subtitle: string }> = {
   pets: {
     title: "Pets",
     subtitle: "Cadastro de animais e registros."
+  },
+  chamados: {
+    title: "Chamados",
+    subtitle: "Solicitacoes, atendimento e acompanhamento."
+  },
+  reservas: {
+    title: "Reservas",
+    subtitle: "Controle de reservas e uso de recursos."
+  },
+  minhaUnidade: {
+    title: "Minha unidade",
+    subtitle: "Informacoes e dados da sua unidade."
   }
 };
 
@@ -129,9 +150,31 @@ const normalizeText = (value?: string | null) =>
     .toLowerCase()
     .trim();
 
-const Dashboard: React.FC<{ organizacao: Organizacao | null }> = ({
-  organizacao
-}) => {
+const getActiveMembership = (
+  memberships: Membership[] | null | undefined,
+  orgId?: string | null
+) => {
+  if (!memberships || !orgId) return null;
+  return (
+    memberships.find(
+      (m) => m.isActive && m.condoId && m.condoId === orgId
+    ) ?? null
+  );
+};
+
+const canAccessFinanceiro = (role: UserRole) =>
+  role === "PLATFORM_ADMIN" || role === "CONDO_ADMIN";
+
+const canEditarCadastros = (role: UserRole) =>
+  role === "PLATFORM_ADMIN" || role === "CONDO_ADMIN";
+
+const canVerCadastros = (role: UserRole) =>
+  role === "PLATFORM_ADMIN" || role === "CONDO_ADMIN" || role === "CONDO_STAFF";
+
+const Dashboard: React.FC<{
+  organizacao: Organizacao | null;
+  mostrarFinanceiro?: boolean;
+}> = ({ organizacao, mostrarFinanceiro = true }) => {
   const { token } = useAuth();
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -144,11 +187,18 @@ const Dashboard: React.FC<{ organizacao: Organizacao | null }> = ({
     try {
       setErro(null);
       setLoading(true);
-      const [contasRes, chamadosRes, reservasRes] = await Promise.allSettled([
-        api.listarContas(token, organizacao.id),
-        api.listarChamados(token, organizacao.id),
-        api.listarReservas(token, organizacao.id)
-      ]);
+      const promises: Promise<any>[] = [];
+      if (mostrarFinanceiro) {
+        promises.push(api.listarContas(token, organizacao.id));
+      } else {
+        promises.push(Promise.resolve([]));
+      }
+      promises.push(api.listarChamados(token, organizacao.id));
+      promises.push(api.listarReservas(token, organizacao.id));
+
+      const [contasRes, chamadosRes, reservasRes] = await Promise.allSettled(
+        promises
+      );
 
       if (contasRes.status === "fulfilled") {
         setContas(contasRes.value);
@@ -210,7 +260,7 @@ const Dashboard: React.FC<{ organizacao: Organizacao | null }> = ({
             <span>Saldo inicial total</span>
           </div>
           <div className="dashboard-card-value">
-            R$ {saldoInicialTotal.toFixed(2)}
+            {mostrarFinanceiro ? `R$ ${saldoInicialTotal.toFixed(2)}` : "—"}
           </div>
           <div className="dashboard-card-sub">
             Base consolidada das contas financeiras.
@@ -251,8 +301,308 @@ const Dashboard: React.FC<{ organizacao: Organizacao | null }> = ({
   );
 };
 
+const NoAccessPage: React.FC<{ mensagem?: string; onSair?: () => void }> = ({
+  mensagem,
+  onSair
+}) => (
+  <div className="container" style={{ maxWidth: 720 }}>
+    <div className="org-form-card">
+      <h2>Sem acesso</h2>
+      <p>{mensagem ?? "Sem vinculo ativo com condominio. Contate a administracao."}</p>
+      {onSair && (
+        <button type="button" className="primary-button" onClick={onSair}>
+          Sair
+        </button>
+      )}
+    </div>
+  </div>
+);
+
+const MinhaUnidadeView: React.FC<{
+  organizacao: Organizacao;
+  unidadeId?: string | null;
+}> = ({ organizacao, unidadeId }) => {
+  const { token } = useAuth();
+  const [unidade, setUnidade] = useState<any | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+
+  useEffect(() => {
+    const carregar = async () => {
+      if (!token || !unidadeId) return;
+      try {
+        const lista = await api.listarUnidades(token, organizacao.id);
+        setUnidade(lista.find((u) => u.id === unidadeId) ?? null);
+      } catch (e: any) {
+        setErro(e.message || "Erro ao carregar unidade");
+      }
+    };
+    void carregar();
+  }, [token, organizacao.id, unidadeId]);
+
+  if (!unidadeId) {
+    return <p className="error">Unidade nao vinculada.</p>;
+  }
+
+  if (erro) {
+    return <p className="error">{erro}</p>;
+  }
+
+  if (!unidade) {
+    return <p>Carregando unidade...</p>;
+  }
+
+  return (
+    <div className="finance-table-card">
+      <h3>{unidade.nome}</h3>
+      <p>Tipo: {unidade.tipo}</p>
+      <p>Codigo interno: {unidade.codigoInterno}</p>
+      <p>Status: {unidade.status}</p>
+    </div>
+  );
+};
+
+const ChamadosView: React.FC<{
+  organizacao: Organizacao;
+  pessoaId: string;
+  unidadeId?: string | null;
+}> = ({ organizacao, pessoaId, unidadeId }) => {
+  const { token } = useAuth();
+  const [chamados, setChamados] = useState<any[]>([]);
+  const [titulo, setTitulo] = useState("");
+  const [descricao, setDescricao] = useState("");
+  const [categoria, setCategoria] = useState("geral");
+  const [loading, setLoading] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+
+  const carregar = async () => {
+    if (!token) return;
+    try {
+      setLoading(true);
+      const lista = await api.listarChamados(token, organizacao.id);
+      setChamados(lista);
+    } catch (e: any) {
+      setErro(e.message || "Erro ao carregar chamados");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void carregar();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, organizacao.id]);
+
+  const criarChamado = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!token) return;
+    try {
+      setErro(null);
+      setLoading(true);
+      const criado = await api.criarChamado(token, {
+        id: crypto.randomUUID(),
+        organizacaoId: organizacao.id,
+        unidadeOrganizacionalId: unidadeId ?? null,
+        pessoaSolicitanteId: pessoaId,
+        categoria,
+        titulo,
+        descricao,
+        status: "aberto"
+      });
+      setChamados((prev) => [criado, ...prev]);
+      setTitulo("");
+      setDescricao("");
+    } catch (e: any) {
+      setErro(e.message || "Erro ao criar chamado");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="finance-layout">
+      <section className="finance-form-card">
+        <h3>Novo chamado</h3>
+        <form onSubmit={criarChamado} className="form">
+          <label>
+            Categoria
+            <input value={categoria} onChange={(e) => setCategoria(e.target.value)} />
+          </label>
+          <label>
+            Titulo
+            <input value={titulo} onChange={(e) => setTitulo(e.target.value)} />
+          </label>
+          <label>
+            Descricao
+            <textarea value={descricao} onChange={(e) => setDescricao(e.target.value)} />
+          </label>
+          <button type="submit" disabled={loading}>
+            {loading ? "Enviando..." : "Criar chamado"}
+          </button>
+        </form>
+        {erro && <p className="error">{erro}</p>}
+      </section>
+      <section className="finance-table-card">
+        <div className="finance-table-header">
+          <h3>Chamados</h3>
+          <button type="button" onClick={carregar} disabled={loading}>
+            Atualizar
+          </button>
+        </div>
+        <table className="table finance-table">
+          <thead>
+            <tr>
+              <th>Titulo</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {chamados.map((c) => (
+              <tr key={c.id}>
+                <td>{c.titulo}</td>
+                <td>{c.status}</td>
+              </tr>
+            ))}
+            {chamados.length === 0 && (
+              <tr>
+                <td colSpan={2} style={{ textAlign: "center" }}>
+                  Nenhum chamado encontrado.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </section>
+    </div>
+  );
+};
+
+const ReservasView: React.FC<{
+  organizacao: Organizacao;
+  pessoaId: string;
+  unidadeId?: string | null;
+}> = ({ organizacao, pessoaId, unidadeId }) => {
+  const { token } = useAuth();
+  const [reservas, setReservas] = useState<any[]>([]);
+  const [dataInicio, setDataInicio] = useState("");
+  const [dataFim, setDataFim] = useState("");
+  const [status, setStatus] = useState("solicitada");
+  const [loading, setLoading] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+
+  const carregar = async () => {
+    if (!token) return;
+    try {
+      setLoading(true);
+      const lista = await api.listarReservas(token, organizacao.id);
+      setReservas(lista);
+    } catch (e: any) {
+      setErro(e.message || "Erro ao carregar reservas");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void carregar();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, organizacao.id]);
+
+  const criarReserva = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!token) return;
+    try {
+      setErro(null);
+      setLoading(true);
+      const criado = await api.criarReserva(token, {
+        id: crypto.randomUUID(),
+        organizacaoId: organizacao.id,
+        recursoReservavelId: crypto.randomUUID(),
+        pessoaSolicitanteId: pessoaId,
+        unidadeOrganizacionalId: unidadeId ?? null,
+        dataInicio,
+        dataFim,
+        status
+      });
+      setReservas((prev) => [criado, ...prev]);
+      setDataInicio("");
+      setDataFim("");
+    } catch (e: any) {
+      setErro(e.message || "Erro ao criar reserva");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="finance-layout">
+      <section className="finance-form-card">
+        <h3>Nova reserva</h3>
+        <form onSubmit={criarReserva} className="form">
+          <label>
+            Data inicio
+            <input
+              type="datetime-local"
+              value={dataInicio}
+              onChange={(e) => setDataInicio(e.target.value)}
+            />
+          </label>
+          <label>
+            Data fim
+            <input
+              type="datetime-local"
+              value={dataFim}
+              onChange={(e) => setDataFim(e.target.value)}
+            />
+          </label>
+          <label>
+            Status
+            <input value={status} onChange={(e) => setStatus(e.target.value)} />
+          </label>
+          <button type="submit" disabled={loading}>
+            {loading ? "Enviando..." : "Criar reserva"}
+          </button>
+        </form>
+        {erro && <p className="error">{erro}</p>}
+      </section>
+      <section className="finance-table-card">
+        <div className="finance-table-header">
+          <h3>Reservas</h3>
+          <button type="button" onClick={carregar} disabled={loading}>
+            Atualizar
+          </button>
+        </div>
+        <table className="table finance-table">
+          <thead>
+            <tr>
+              <th>Inicio</th>
+              <th>Fim</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {reservas.map((r) => (
+              <tr key={r.id}>
+                <td>{r.dataInicio}</td>
+                <td>{r.dataFim}</td>
+                <td>{r.status}</td>
+              </tr>
+            ))}
+            {reservas.length === 0 && (
+              <tr>
+                <td colSpan={3} style={{ textAlign: "center" }}>
+                  Nenhuma reserva encontrada.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </section>
+    </div>
+  );
+};
+
 const InnerApp: React.FC = () => {
-  const { token, setToken } = useAuth();
+  const { token, setToken, session, setSession } = useAuth();
 
   const [segmentoSelecionado, setSegmentoSelecionado] = useState<string | null>(
     null
@@ -273,24 +623,86 @@ const InnerApp: React.FC = () => {
     try {
       setErro(null);
       setLoadingOrgs(true);
-      const data = await api.listarOrganizacoes();
+      if (!token) return;
+      const data = await api.listarOrganizacoes(token);
       setOrganizacoes(data);
     } catch (e: any) {
       setErro(e.message || "Erro ao carregar organizacoes");
     } finally {
       setLoadingOrgs(false);
     }
-  }, []);
+  }, [token]);
+
+  const carregarOrganizacoesUsuario = useCallback(async () => {
+    try {
+      setErro(null);
+      setLoadingOrgs(true);
+      if (!token) return;
+      const data = await api.listarMinhasOrganizacoes(token);
+      setOrganizacoes(data);
+    } catch (e: any) {
+      setErro(e.message || "Erro ao carregar condominios");
+    } finally {
+      setLoadingOrgs(false);
+    }
+  }, [token]);
+
+  const isPlatformAdmin = session?.isPlatformAdmin ?? false;
 
   useEffect(() => {
-    if (!token || !segmentoSelecionado || organizacoes.length > 0) return;
-    void carregarOrganizacoes();
-  }, [carregarOrganizacoes, organizacoes.length, segmentoSelecionado, token]);
+    if (!token || !session) return;
+    if (isPlatformAdmin) {
+      if (!segmentoSelecionado || organizacoes.length > 0) return;
+      void carregarOrganizacoes();
+      return;
+    }
 
-  const segmentoAtual = useMemo(
-    () => segmentos.find((seg) => seg.id === segmentoSelecionado) ?? null,
-    [segmentoSelecionado]
+    if (organizacoes.length > 0) return;
+    void carregarOrganizacoesUsuario();
+  }, [
+    carregarOrganizacoes,
+    carregarOrganizacoesUsuario,
+    isPlatformAdmin,
+    organizacoes.length,
+    segmentoSelecionado,
+    session,
+    token
+  ]);
+
+  const activeMemberships = useMemo(
+    () =>
+      (session?.memberships ?? []).filter(
+        (m) => m.isActive && m.role !== "PLATFORM_ADMIN"
+      ),
+    [session?.memberships]
   );
+
+  useEffect(() => {
+    if (isPlatformAdmin || !session) return;
+    if (organizacaoSelecionada) return;
+
+    const orgIds = Array.from(
+      new Set(
+        activeMemberships
+          .map((m) => m.condoId)
+          .filter((id): id is string => Boolean(id))
+      )
+    );
+
+    if (orgIds.length === 1 && organizacoes.length > 0) {
+      const org = organizacoes.find((item) => item.id === orgIds[0]);
+      if (org) {
+        setOrganizacaoSelecionada(org);
+        setView("dashboard");
+        setErro(null);
+      }
+    }
+  }, [activeMemberships, isPlatformAdmin, organizacaoSelecionada, organizacoes, session]);
+
+  const segmentoAtual = useMemo(() => {
+    if (!isPlatformAdmin) return null;
+    return segmentos.find((seg) => seg.id === segmentoSelecionado) ?? null;
+  }, [isPlatformAdmin, segmentoSelecionado]);
 
   const organizacoesDoSegmento = useMemo(() => {
     if (!segmentoAtual) return organizacoes;
@@ -309,6 +721,20 @@ const InnerApp: React.FC = () => {
     return Array.from(map.values()).sort((a, b) => a.nome.localeCompare(b.nome));
   }, [organizacaoSelecionada, organizacoesDoSegmento]);
 
+  const membershipAtual = getActiveMembership(
+    session?.memberships,
+    organizacaoSelecionada?.id
+  );
+
+  const roleAtual: UserRole | null = isPlatformAdmin
+    ? "PLATFORM_ADMIN"
+    : membershipAtual?.role ?? null;
+
+  const podeFinanceiro = roleAtual ? canAccessFinanceiro(roleAtual) : false;
+  const podeVerCadastros = roleAtual ? canVerCadastros(roleAtual) : false;
+  const podeEditarCadastros = roleAtual ? canEditarCadastros(roleAtual) : false;
+  const isResident = roleAtual === "RESIDENT";
+
   const irParaInicio = () => {
     setOrganizacaoSelecionada(null);
     setSegmentoSelecionado(null);
@@ -320,6 +746,7 @@ const InnerApp: React.FC = () => {
 
   const sairDoSistema = () => {
     setToken(null);
+    setSession(null);
     setOrganizacaoSelecionada(null);
     setSegmentoSelecionado(null);
     setOrganizacoes([]);
@@ -345,7 +772,8 @@ const InnerApp: React.FC = () => {
 
     try {
       setErro(null);
-      const atualizado = await api.atualizarOrganizacao(organizacaoAlvo.id, {
+      if (!token) return;
+      const atualizado = await api.atualizarOrganizacao(token, organizacaoAlvo.id, {
         nome: novoNome.trim(),
         tipo: organizacaoAlvo.tipo,
         modulosAtivos: organizacaoAlvo.modulosAtivos,
@@ -364,7 +792,15 @@ const InnerApp: React.FC = () => {
   };
 
   const executarAcaoRapida = (acao: "lancamento" | "chamado" | "reserva") => {
+    if (!roleAtual) {
+      setErro("Sem acesso para executar acoes rapidas.");
+      return;
+    }
     if (acao === "lancamento") {
+      if (!canAccessFinanceiro(roleAtual)) {
+        setErro("Sem acesso ao financeiro.");
+        return;
+      }
       setView("financeiro");
       setFinanceiroAba("contasPagar");
       setErro(null);
@@ -372,11 +808,13 @@ const InnerApp: React.FC = () => {
     }
 
     if (acao === "chamado") {
-      setErro("Modulo de chamados sera liberado em breve.");
+      setView("chamados");
+      setErro(null);
       return;
     }
 
-    setErro("Modulo de reservas sera liberado em breve.");
+    setView("reservas");
+    setErro(null);
   };
 
   useEffect(() => {
@@ -384,6 +822,12 @@ const InnerApp: React.FC = () => {
       setSidebarFinanceiroOpen(false);
     }
   }, [sidebarFinanceiroOpen, view]);
+
+  useEffect(() => {
+    if (!podeFinanceiro && view === "financeiro") {
+      setView("dashboard");
+    }
+  }, [podeFinanceiro, view]);
 
   const topBar = (
     <header className="app-header">
@@ -426,15 +870,17 @@ const InnerApp: React.FC = () => {
       </div>
 
       <div className="app-header-right">
-        {organizacaoSelecionada && (
+        {organizacaoSelecionada && roleAtual && (
           <div className="app-header-quick">
-            <button
-              type="button"
-              className="app-header-button app-header-button--ghost"
-              onClick={() => executarAcaoRapida("lancamento")}
-            >
-              Novo lancamento
-            </button>
+            {canAccessFinanceiro(roleAtual) && (
+              <button
+                type="button"
+                className="app-header-button app-header-button--ghost"
+                onClick={() => executarAcaoRapida("lancamento")}
+              >
+                Novo lancamento
+              </button>
+            )}
             <button
               type="button"
               className="app-header-button app-header-button--ghost"
@@ -490,7 +936,70 @@ const InnerApp: React.FC = () => {
     return <LoginPage />;
   }
 
-  if (!segmentoSelecionado) {
+  if (!session) {
+    return (
+      <NoAccessPage
+        mensagem="Sessao incompleta. Faca login novamente."
+        onSair={sairDoSistema}
+      />
+    );
+  }
+
+  if (!isPlatformAdmin) {
+    if (activeMemberships.length === 0) {
+      return (
+        <NoAccessPage
+          mensagem="Sem vinculo ativo com condominio. Contate a administracao."
+          onSair={sairDoSistema}
+        />
+      );
+    }
+
+    if (!organizacaoSelecionada) {
+      return (
+        <>
+          {topBar}
+          <div className="container org-page">
+            <div className="org-header-row">
+              <div>
+                <h1>Selecione um condominio</h1>
+              </div>
+            </div>
+
+            <section className="org-list-card">
+              <div className="org-list-header">
+                <h3>Condominios vinculados</h3>
+              </div>
+              {loadingOrgs && <p>Carregando...</p>}
+              {!loadingOrgs && organizacoes.length === 0 && (
+                <p className="org-empty">Nenhum condominio disponivel.</p>
+              )}
+              <div className="org-list-grid">
+                {organizacoes.map((org) => (
+                  <div key={org.id} className="org-card">
+                    <button
+                      type="button"
+                      className="org-card-main"
+                      onClick={() => {
+                        setOrganizacaoSelecionada(org);
+                        setView("dashboard");
+                        setErro(null);
+                      }}
+                    >
+                      <div className="org-card-title">{org.nome}</div>
+                      {org.tipo && <div className="org-card-sub">{org.tipo}</div>}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </section>
+          </div>
+        </>
+      );
+    }
+  }
+
+  if (isPlatformAdmin && !segmentoSelecionado) {
     return (
       <>
         {topBar}
@@ -515,7 +1024,7 @@ const InnerApp: React.FC = () => {
     );
   }
 
-  if (!organizacaoSelecionada) {
+  if (isPlatformAdmin && !organizacaoSelecionada) {
     return (
       <>
         {topBar}
@@ -554,7 +1063,8 @@ const InnerApp: React.FC = () => {
                       (segmentoAtual && modulosPorSegmento[segmentoAtual.id]) ??
                       "core,financeiro";
 
-                    const orgCriada = await api.criarOrganizacao({
+                    if (!token) return;
+                    const orgCriada = await api.criarOrganizacao(token, {
                       nome: novoNomeOrg.trim(),
                       tipo: segmentoAtual?.label,
                       modulosAtivos
@@ -694,68 +1204,82 @@ const InnerApp: React.FC = () => {
             <div className="sidebar-section">
               <p className="sidebar-section-title">Resumo</p>
               {renderSidebarItem("dashboard", "Resumo geral", "📊")}
+              {isResident &&
+                renderSidebarItem("minhaUnidade", "Minha unidade", "🏠")}
             </div>
 
-            <div className="sidebar-section">
-              <p className="sidebar-section-title">Cadastros</p>
-              {renderSidebarItem("pessoas", "Pessoas", "👥")}
-              {renderSidebarItem("unidades", "Unidades", "🏢")}
-              {renderSidebarItem("funcionarios", "Funcionarios", "👔")}
-              {renderSidebarItem("fornecedores", "Fornecedores", "🤝")}
-              {renderSidebarItem("veiculos", "Veiculos", "🚗")}
-              {renderSidebarItem("pets", "Pets", "🐾")}
-            </div>
+            {podeVerCadastros && (
+              <div className="sidebar-section">
+                <p className="sidebar-section-title">Cadastros</p>
+                {renderSidebarItem("pessoas", "Pessoas", "👥")}
+                {renderSidebarItem("unidades", "Unidades", "🏢")}
+                {podeEditarCadastros &&
+                  renderSidebarItem("funcionarios", "Funcionarios", "👔")}
+                {podeEditarCadastros &&
+                  renderSidebarItem("fornecedores", "Fornecedores", "🤝")}
+                {renderSidebarItem("veiculos", "Veiculos", "🚗")}
+                {renderSidebarItem("pets", "Pets", "🐾")}
+              </div>
+            )}
 
-            <div className="sidebar-section">
-              <p className="sidebar-section-title">Financeiro</p>
-              <button
-                type="button"
-                onClick={() => {
-                  if (view !== "financeiro") {
-                    setView("financeiro");
-                    setSidebarFinanceiroOpen(true);
-                    setErro(null);
-                    return;
-                  }
-                  setSidebarFinanceiroOpen((prev) => !prev);
-                }}
-                className={
-                  "sidebar-item" + (view === "financeiro" ? " sidebar-item--active" : "")
-                }
-                title="Financeiro"
-              >
-                <span className="sidebar-item-icon">💰</span>
-                <span className="sidebar-item-label">Financeiro</span>
-              </button>
-              <div
-                className={
-                  "sidebar-submenu" +
-                  (sidebarFinanceiroOpen ? " sidebar-submenu--open" : "")
-                }
-              >
-                {menuFinanceiro.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    className={
-                      "sidebar-subitem" +
-                      (view === "financeiro" && financeiroAba === item.id
-                        ? " sidebar-subitem--active"
-                        : "")
-                    }
-                    onClick={() => {
+            {podeFinanceiro && (
+              <div className="sidebar-section">
+                <p className="sidebar-section-title">Financeiro</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (view !== "financeiro") {
                       setView("financeiro");
-                      setFinanceiroAba(item.id);
                       setSidebarFinanceiroOpen(true);
                       setErro(null);
-                    }}
-                    title={item.label}
-                  >
-                    <span className="sidebar-subitem-icon">{financeiroSiglas[item.id]}</span>
-                    <span className="sidebar-subitem-label">{item.label}</span>
-                  </button>
-                ))}
+                      return;
+                    }
+                    setSidebarFinanceiroOpen((prev) => !prev);
+                  }}
+                  className={
+                    "sidebar-item" + (view === "financeiro" ? " sidebar-item--active" : "")
+                  }
+                  title="Financeiro"
+                >
+                  <span className="sidebar-item-icon">💰</span>
+                  <span className="sidebar-item-label">Financeiro</span>
+                </button>
+                <div
+                  className={
+                    "sidebar-submenu" +
+                    (sidebarFinanceiroOpen ? " sidebar-submenu--open" : "")
+                  }
+                >
+                  {menuFinanceiro.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      className={
+                        "sidebar-subitem" +
+                        (view === "financeiro" && financeiroAba === item.id
+                          ? " sidebar-subitem--active"
+                          : "")
+                      }
+                      onClick={() => {
+                        setView("financeiro");
+                        setFinanceiroAba(item.id);
+                        setSidebarFinanceiroOpen(true);
+                        setErro(null);
+                      }}
+                      title={item.label}
+                    >
+                      <span className="sidebar-subitem-icon">{financeiroSiglas[item.id]}</span>
+                      <span className="sidebar-subitem-label">{item.label}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
+            )}
+
+            <div className="sidebar-section">
+              <p className="sidebar-section-title">Operacao</p>
+              {renderSidebarItem("chamados", "Chamados", "🛠️")}
+              {renderSidebarItem("reservas", "Reservas", "📅")}
             </div>
           </nav>
         </aside>
@@ -794,19 +1318,32 @@ const InnerApp: React.FC = () => {
 
           {erro && <p className="error">{erro}</p>}
 
-          {view === "dashboard" && <Dashboard organizacao={organizacaoSelecionada} />}
+          {view === "dashboard" && (
+            <Dashboard
+              organizacao={organizacaoSelecionada}
+              mostrarFinanceiro={roleAtual ? canAccessFinanceiro(roleAtual) : true}
+            />
+          )}
 
-          {view === "pessoas" && <PessoasView organizacao={organizacaoSelecionada} />}
+          {view === "pessoas" && (
+            <PessoasView
+              organizacao={organizacaoSelecionada}
+              readOnly={!podeEditarCadastros}
+            />
+          )}
 
-          {view === "funcionarios" && (
+          {view === "funcionarios" && podeEditarCadastros && (
             <PessoasView
               organizacao={organizacaoSelecionada}
               papelFixo="funcionario"
               titulo="Funcionarios"
             />
           )}
+          {view === "funcionarios" && !podeEditarCadastros && (
+            <NoAccessPage mensagem="Sem acesso a funcionarios." />
+          )}
 
-          {view === "fornecedores" && (
+          {view === "fornecedores" && podeEditarCadastros && (
             <div className="people-page">
               <div className="people-header-row">
                 <div>
@@ -814,6 +1351,9 @@ const InnerApp: React.FC = () => {
                 </div>
               </div>
             </div>
+          )}
+          {view === "fornecedores" && !podeEditarCadastros && (
+            <NoAccessPage mensagem="Sem acesso a fornecedores." />
           )}
 
           {view === "veiculos" && (
@@ -836,14 +1376,45 @@ const InnerApp: React.FC = () => {
             </div>
           )}
 
-          {view === "unidades" && <UnidadesView organizacao={organizacaoSelecionada} />}
+          {view === "unidades" && (
+            <UnidadesView
+              organizacao={organizacaoSelecionada}
+              readOnly={!podeEditarCadastros}
+            />
+          )}
 
-          {view === "financeiro" && (
+          {view === "financeiro" && podeFinanceiro && (
             <FinanceiroView
               organizacao={organizacaoSelecionada}
               abaSelecionada={financeiroAba}
               onAbaChange={setFinanceiroAba}
               exibirMenuAbas={false}
+            />
+          )}
+          {view === "financeiro" && !podeFinanceiro && (
+            <NoAccessPage mensagem="Sem acesso ao financeiro." />
+          )}
+
+          {view === "minhaUnidade" && membershipAtual && (
+            <MinhaUnidadeView
+              organizacao={organizacaoSelecionada}
+              unidadeId={membershipAtual.unidadeOrganizacionalId}
+            />
+          )}
+
+          {view === "chamados" && session && (
+            <ChamadosView
+              organizacao={organizacaoSelecionada}
+              pessoaId={session.pessoaId}
+              unidadeId={membershipAtual?.unidadeOrganizacionalId}
+            />
+          )}
+
+          {view === "reservas" && session && (
+            <ReservasView
+              organizacao={organizacaoSelecionada}
+              pessoaId={session.pessoaId}
+              unidadeId={membershipAtual?.unidadeOrganizacionalId}
             />
           )}
         </main>
