@@ -8,6 +8,7 @@ import {
   ContaFinanceira,
   LancamentoFinanceiro,
   Organizacao,
+  Pessoa,
   PlanoContas
 } from "../api";
 import { useAuth } from "../hooks/useAuth";
@@ -48,6 +49,11 @@ export default function FinanceiroView({
   const [novoVencimento, setNovoVencimento] = useState("");
   const [novoValor, setNovoValor] = useState("");
   const [novaDespesaCategoriaId, setNovaDespesaCategoriaId] = useState("");
+  const [novaDespesaContaId, setNovaDespesaContaId] = useState("");
+  const [novaDespesaPessoaId, setNovaDespesaPessoaId] = useState("");
+  const [novaDespesaFormaPagamento, setNovaDespesaFormaPagamento] =
+    useState("boleto");
+  const [novaDespesaReferencia, setNovaDespesaReferencia] = useState("");
 
   // Contas a receber (lançamentos)
   const [receitas, setReceitas] = useState<LancamentoFinanceiro[]>([]);
@@ -55,6 +61,12 @@ export default function FinanceiroView({
   const [novaReceitaVencimento, setNovaReceitaVencimento] = useState("");
   const [novaReceitaValor, setNovaReceitaValor] = useState("");
   const [novaReceitaCategoriaId, setNovaReceitaCategoriaId] = useState("");
+  const [novaReceitaContaId, setNovaReceitaContaId] = useState("");
+  const [novaReceitaPessoaId, setNovaReceitaPessoaId] = useState("");
+  const [novaReceitaFormaPagamento, setNovaReceitaFormaPagamento] =
+    useState("pix");
+  const [novaReceitaReferencia, setNovaReceitaReferencia] = useState("");
+  const [pessoasFinanceiro, setPessoasFinanceiro] = useState<Pessoa[]>([]);
 
   // Itens cobrados (salão, tags, multas, etc.)
   const [itensCobrados, setItensCobrados] = useState<ChargeItem[]>([]);
@@ -89,6 +101,17 @@ export default function FinanceiroView({
       setErro(e.message || "Erro ao carregar contas financeiras");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const carregarPessoasFinanceiro = async () => {
+    if (!token) return;
+    try {
+      setErro(null);
+      const lista = await api.listarPessoas(token, organizacaoId);
+      setPessoasFinanceiro(lista);
+    } catch (e: any) {
+      setErro(e.message || "Erro ao carregar pessoas para financeiro");
     }
   };
 
@@ -184,6 +207,7 @@ export default function FinanceiroView({
     void carregarReceitas();
     void carregarCategoriasReceita();
     void carregarCategoriasDespesa();
+    void carregarPessoasFinanceiro();
     // Itens cobrados serão carregados sob demanda ao abrir a aba
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, organizacaoId]);
@@ -278,7 +302,11 @@ export default function FinanceiroView({
       return;
     }
 
-    const conta = contas[0];
+    const conta =
+      contas.find((c) => c.id === novaDespesaContaId) ?? contas[0];
+    const pessoa =
+      pessoasFinanceiro.find((p) => p.id === novaDespesaPessoaId) ??
+      pessoasFinanceiro[0];
     try {
       setErro(null);
       setLoading(true);
@@ -289,16 +317,16 @@ export default function FinanceiroView({
         planoContasId: novaDespesaCategoriaId,
         centroCustoId: undefined,
         contaFinanceiraId: conta?.id,
-        pessoaId: "00000000-0000-0000-0000-000000000000",
+        pessoaId: pessoa?.id || "00000000-0000-0000-0000-000000000000",
         descricao: novaDescricao.trim(),
         valor: Number(novoValor.replace(/\./g, "").replace(",", ".")),
         dataCompetencia: novoVencimento,
         dataVencimento: novoVencimento,
         dataPagamento: undefined,
-        formaPagamento: "indefinido",
+        formaPagamento: novaDespesaFormaPagamento || "indefinido",
         parcelaNumero: undefined,
         parcelaTotal: undefined,
-        referencia: undefined
+        referencia: novaDespesaReferencia.trim() || undefined
       };
 
       const lanc = await api.criarLancamento(token, payload);
@@ -307,6 +335,10 @@ export default function FinanceiroView({
       setNovoVencimento("");
       setNovoValor("");
       setNovaDespesaCategoriaId("");
+      setNovaDespesaReferencia("");
+      setNovaDespesaContaId("");
+      setNovaDespesaPessoaId("");
+      setNovaDespesaFormaPagamento("boleto");
     } catch (e: any) {
       setErro(e.message || "Erro ao criar despesa");
     } finally {
@@ -326,7 +358,11 @@ export default function FinanceiroView({
       return;
     }
 
-    const conta = contas[0];
+    const conta =
+      contas.find((c) => c.id === novaReceitaContaId) ?? contas[0];
+    const pessoa =
+      pessoasFinanceiro.find((p) => p.id === novaReceitaPessoaId) ??
+      pessoasFinanceiro[0];
 
     try {
       setErro(null);
@@ -338,16 +374,16 @@ export default function FinanceiroView({
         planoContasId: novaReceitaCategoriaId,
         centroCustoId: undefined,
         contaFinanceiraId: conta?.id,
-        pessoaId: "00000000-0000-0000-0000-000000000000",
+        pessoaId: pessoa?.id || "00000000-0000-0000-0000-000000000000",
         descricao: novaReceitaDescricao.trim(),
         valor: Number(novaReceitaValor.replace(/\./g, "").replace(",", ".")),
         dataCompetencia: novaReceitaVencimento,
         dataVencimento: novaReceitaVencimento,
         dataPagamento: undefined,
-        formaPagamento: "indefinido",
+        formaPagamento: novaReceitaFormaPagamento || "indefinido",
         parcelaNumero: undefined,
         parcelaTotal: undefined,
-        referencia: undefined
+        referencia: novaReceitaReferencia.trim() || undefined
       };
 
       const lanc = await api.criarLancamento(token, payload);
@@ -356,6 +392,10 @@ export default function FinanceiroView({
       setNovaReceitaVencimento("");
       setNovaReceitaValor("");
       setNovaReceitaCategoriaId("");
+      setNovaReceitaReferencia("");
+      setNovaReceitaContaId("");
+      setNovaReceitaPessoaId("");
+      setNovaReceitaFormaPagamento("pix");
     } catch (e: any) {
       setErro(e.message || "Erro ao criar receita");
     } finally {
@@ -561,22 +601,22 @@ export default function FinanceiroView({
 
       <div className="finance-summary-grid">
         <div className="finance-summary-card">
-          <div className="finance-summary-label">Saldo inicial total</div>
-          <div className="finance-summary-value">
+          <p className="finance-summary-label">Saldo inicial total</p>
+          <p className="finance-summary-value">
             R$ {saldoInicialTotal.toFixed(2)}
-          </div>
+          </p>
         </div>
         <div className="finance-summary-card">
-          <div className="finance-summary-label">Total a pagar</div>
-          <div className="finance-summary-value">
+          <p className="finance-summary-label">Total a pagar</p>
+          <p className="finance-summary-value">
             R$ {totalAPagar.toFixed(2)}
-          </div>
+          </p>
         </div>
         <div className="finance-summary-card">
-          <div className="finance-summary-label">Total já pago</div>
-          <div className="finance-summary-value">
+          <p className="finance-summary-label">Total já pago</p>
+          <p className="finance-summary-value">
             R$ {totalPagas.toFixed(2)}
-          </div>
+          </p>
         </div>
       </div>
 
@@ -648,6 +688,7 @@ export default function FinanceiroView({
           {/* Formulário de conta */}
           <section className="finance-form-card">
             <h3>Nova conta</h3>
+
             <form onSubmit={criarConta} className="form">
               <label>
                 Nome da conta
@@ -808,6 +849,13 @@ export default function FinanceiroView({
                     </td>
                   </tr>
                 ))}
+                {contas.length === 0 && (
+                  <tr>
+                    <td colSpan={8} style={{ textAlign: "center" }}>
+                      Nenhuma conta cadastrada ainda.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </section>
@@ -864,6 +912,60 @@ export default function FinanceiroView({
                 ))}
               </select>
             </label>
+            <div className="finance-form-grid">
+              <label>
+                Conta financeira
+                <select
+                  value={novaDespesaContaId}
+                  onChange={(e) => setNovaDespesaContaId(e.target.value)}
+                >
+                  <option value="">Selecionar automaticamente</option>
+                  {contas.map((conta) => (
+                    <option key={conta.id} value={conta.id}>
+                      {conta.nome}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Fornecedor / Favorecido
+                <select
+                  value={novaDespesaPessoaId}
+                  onChange={(e) => setNovaDespesaPessoaId(e.target.value)}
+                >
+                  <option value="">Selecionar automaticamente</option>
+                  {pessoasFinanceiro.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.nome}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <div className="finance-form-grid">
+              <label>
+                Forma de pagamento
+                <select
+                  value={novaDespesaFormaPagamento}
+                  onChange={(e) => setNovaDespesaFormaPagamento(e.target.value)}
+                >
+                  <option value="boleto">Boleto</option>
+                  <option value="pix">Pix</option>
+                  <option value="transferencia">Transferência</option>
+                  <option value="cartao">Cartão</option>
+                  <option value="dinheiro">Dinheiro</option>
+                  <option value="indefinido">Indefinido</option>
+                </select>
+              </label>
+              <label>
+                Referência
+                <input
+                  value={novaDespesaReferencia}
+                  onChange={(e) => setNovaDespesaReferencia(e.target.value)}
+                  placeholder="Ex.: NF 12345 / Fevereiro"
+                />
+              </label>
+            </div>
             <button
               type="submit"
               disabled={
@@ -999,6 +1101,13 @@ export default function FinanceiroView({
                     </td>
                   </tr>
                 ))}
+              {despesas.length === 0 && (
+                <tr>
+                  <td colSpan={6} style={{ textAlign: "center" }}>
+                    Nenhuma despesa cadastrada ainda.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -1060,6 +1169,60 @@ export default function FinanceiroView({
                 ))}
               </select>
             </label>
+            <div className="finance-form-grid">
+              <label>
+                Conta financeira
+                <select
+                  value={novaReceitaContaId}
+                  onChange={(e) => setNovaReceitaContaId(e.target.value)}
+                >
+                  <option value="">Selecionar automaticamente</option>
+                  {contas.map((conta) => (
+                    <option key={conta.id} value={conta.id}>
+                      {conta.nome}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Pagador / Cliente
+                <select
+                  value={novaReceitaPessoaId}
+                  onChange={(e) => setNovaReceitaPessoaId(e.target.value)}
+                >
+                  <option value="">Selecionar automaticamente</option>
+                  {pessoasFinanceiro.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.nome}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <div className="finance-form-grid">
+              <label>
+                Forma de recebimento
+                <select
+                  value={novaReceitaFormaPagamento}
+                  onChange={(e) => setNovaReceitaFormaPagamento(e.target.value)}
+                >
+                  <option value="pix">Pix</option>
+                  <option value="boleto">Boleto</option>
+                  <option value="transferencia">Transferência</option>
+                  <option value="cartao">Cartão</option>
+                  <option value="dinheiro">Dinheiro</option>
+                  <option value="indefinido">Indefinido</option>
+                </select>
+              </label>
+              <label>
+                Referência
+                <input
+                  value={novaReceitaReferencia}
+                  onChange={(e) => setNovaReceitaReferencia(e.target.value)}
+                  placeholder="Ex.: Cota Março / Unidade 101"
+                />
+              </label>
+            </div>
             <button
               type="submit"
               disabled={
@@ -1195,6 +1358,13 @@ export default function FinanceiroView({
                   </td>
                 </tr>
               ))}
+              {receitas.length === 0 && (
+                <tr>
+                  <td colSpan={6} style={{ textAlign: "center" }}>
+                    Nenhuma receita cadastrada ainda.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -1303,6 +1473,10 @@ export default function FinanceiroView({
                     </option>
                   ))}
                 </select>
+                <small style={{ display: "block", marginTop: 4 }}>
+                  As categorias são configuradas na aba &quot;Categorias
+                  financeiras&quot;.
+                </small>
               </label>
 
               <label>
@@ -1546,6 +1720,13 @@ export default function FinanceiroView({
                     </td>
                   </tr>
                 ))}
+                {itensCobrados.length === 0 && (
+                  <tr>
+                    <td colSpan={5} style={{ textAlign: "center" }}>
+                      Nenhum item cadastrado ainda.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </section>
@@ -1786,6 +1967,13 @@ export default function FinanceiroView({
                       </td>
                     </tr>
                   ))}
+                {categoriasReceita.length + categoriasDespesa.length === 0 && (
+                  <tr>
+                    <td colSpan={5} style={{ textAlign: "center" }}>
+                      Nenhuma categoria cadastrada ainda.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </section>
@@ -1816,34 +2004,34 @@ export default function FinanceiroView({
               <div className="finance-card-header-row">
                 <strong>Total de receitas</strong>
               </div>
-              <div>
+              <p>
                 {totalReceitas.toLocaleString("pt-BR", {
                   style: "currency",
                   currency: "BRL"
                 })}
-              </div>
+              </p>
             </div>
             <div className="finance-card">
               <div className="finance-card-header-row">
                 <strong>Total de despesas</strong>
               </div>
-              <div>
+              <p>
                 {totalDespesas.toLocaleString("pt-BR", {
                   style: "currency",
                   currency: "BRL"
                 })}
-              </div>
+              </p>
             </div>
             <div className="finance-card">
               <div className="finance-card-header-row">
                 <strong>Saldo do periodo</strong>
               </div>
-              <div>
+              <p>
                 {saldoPeriodo.toLocaleString("pt-BR", {
                   style: "currency",
                   currency: "BRL"
                 })}
-              </div>
+              </p>
             </div>
           </div>
 
@@ -1869,6 +2057,13 @@ export default function FinanceiroView({
                       </td>
                     </tr>
                   )
+                )}
+                {Object.keys(totalReceitasPorCategoria).length === 0 && (
+                  <tr>
+                    <td colSpan={2} style={{ textAlign: "center" }}>
+                      Nenhuma receita cadastrada ainda.
+                    </td>
+                  </tr>
                 )}
               </tbody>
             </table>
@@ -1897,6 +2092,13 @@ export default function FinanceiroView({
                     </tr>
                   )
                 )}
+                {Object.keys(totalDespesasPorCategoria).length === 0 && (
+                  <tr>
+                    <td colSpan={2} style={{ textAlign: "center" }}>
+                      Nenhuma despesa cadastrada ainda.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
@@ -1905,4 +2107,3 @@ export default function FinanceiroView({
     </div>
   );
 }
-

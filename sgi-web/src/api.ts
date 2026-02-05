@@ -1,5 +1,6 @@
-export const API_BASE_URL =
+const rawApiBaseUrl =
   import.meta.env.VITE_API_BASE_URL ?? "http://localhost:7000";
+export const API_BASE_URL = rawApiBaseUrl.trim().replace(/\/+$/, "");
 
 export interface LoginResponse {
   accessToken: string;

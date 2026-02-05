@@ -1,14 +1,10 @@
-﻿import React, { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { AuthProvider, useAuth } from "../hooks/useAuth";
 import { api, ContaFinanceira, Organizacao } from "../api";
 import { LoginPage } from "./LoginPage";
 import PessoasView from "../views/PessoasView";
 import UnidadesView from "../views/UnidadesView";
 import FinanceiroView from "../views/FinanceiroView";
-
-// --------------------------------------------------------
-// Dashboard (adicionado para evitar erro "Dashboard is not defined")
-// --------------------------------------------------------
 
 const Dashboard: React.FC<{ organizacao: Organizacao | null }> = ({
   organizacao
@@ -25,16 +21,32 @@ const Dashboard: React.FC<{ organizacao: Organizacao | null }> = ({
     try {
       setErro(null);
       setLoading(true);
-      const [contasRes, chamadosRes, reservasRes] = await Promise.all([
+      const [contasRes, chamadosRes, reservasRes] = await Promise.allSettled([
         api.listarContas(token, organizacao.id),
         api.listarChamados(token, organizacao.id),
         api.listarReservas(token, organizacao.id)
       ]);
-      setContas(contasRes);
-      setChamados(chamadosRes);
-      setReservas(reservasRes);
+
+      if (contasRes.status === "fulfilled") {
+        setContas(contasRes.value);
+      } else {
+        throw contasRes.reason;
+      }
+
+      if (chamadosRes.status === "fulfilled") {
+        setChamados(chamadosRes.value);
+      } else {
+        setChamados([]);
+      }
+
+      if (reservasRes.status === "fulfilled") {
+        setReservas(reservasRes.value);
+      } else {
+        setReservas([]);
+      }
     } catch (e: any) {
-      setErro(e.message || "Erro ao carregar dados do dashboard");
+      const msg = e?.message || "Erro ao carregar dados do dashboard";
+      setErro(msg);
     } finally {
       setLoading(false);
     }
@@ -44,25 +56,54 @@ const Dashboard: React.FC<{ organizacao: Organizacao | null }> = ({
     void carregar();
   }, [token, organizacao?.id]);
 
-  const totalContas = contas.length;
   const saldoInicialTotal = contas.reduce(
     (sum, c) => sum + (c.saldoInicial ?? 0),
     0
   );
   const contasAtivas = contas.filter((c) => c.status === "ativo").length;
 
-  const chamadosAbertos = chamados.filter(
-    (c) => c.status && c.status.toLowerCase() !== "concluido"
-  ).length;
-
-  const reservasAtivas = reservas.filter(
-    (r) => r.status && r.status.toLowerCase() === "ativa"
-  ).length;
-
   return (
-    <div className="dashboard-clean">
-      <h2>Dashboard</h2>
-      <div className="dashboard-context">{organizacao?.nome}</div>
+    <div className="dashboard">
+      <div className="dashboard-header-row">
+        <button
+          type="button"
+          onClick={carregar}
+          disabled={loading}
+          className="dashboard-refresh"
+        >
+          {loading ? "Atualizando..." : "Atualizar dados"}
+        </button>
+      </div>
+
+      <div className="dashboard-grid">
+        <div className="dashboard-card dashboard-card--primary">
+          <div className="dashboard-card-label">💰 Saldo inicial total</div>
+          <div className="dashboard-card-value">
+            R$ {saldoInicialTotal.toFixed(2)}
+          </div>
+        </div>
+
+        <div className="dashboard-card">
+          <div className="dashboard-card-label">🏦 Contas financeiras ativas</div>
+          <div className="dashboard-card-value">{contasAtivas}</div>
+        </div>
+
+        <div className="dashboard-card">
+          <div className="dashboard-card-label">📣 Chamados registrados</div>
+          <div className="dashboard-card-value">{chamados.length}</div>
+        </div>
+
+        <div className="dashboard-card">
+          <div className="dashboard-card-label">🏘️ Reservas de áreas comuns</div>
+          <div className="dashboard-card-value">{reservas.length}</div>
+        </div>
+      </div>
+
+      {erro && (
+        <p className="error" style={{ marginTop: 8 }}>
+          {erro}
+        </p>
+      )}
     </div>
   );
 };
@@ -134,7 +175,10 @@ const InnerApp: React.FC = () => {
       | "pessoas"
       | "unidades"
       | "financeiro"
-      | "configuracoes"
+      | "funcionarios"
+      | "fornecedores"
+      | "veiculos"
+      | "pets"
     >("dashboard");
 
   const irParaInicio = () => {
@@ -167,6 +211,13 @@ const InnerApp: React.FC = () => {
       <div className="app-header-right">
         <button
           type="button"
+          className="app-header-button"
+          onClick={irParaInicio}
+        >
+          Início
+        </button>
+        <button
+          type="button"
           className="app-header-button app-header-button--danger"
           onClick={sairDoSistema}
         >
@@ -193,7 +244,6 @@ const InnerApp: React.FC = () => {
     return <LoginPage />;
   }
 
-  // 1) Escolha de segmento
   if (!segmentoSelecionado) {
     return (
       <>
@@ -219,7 +269,6 @@ const InnerApp: React.FC = () => {
     );
   }
 
-  // 2) Lista de organizações (layout mais rico)
   if (!organizacaoSelecionada) {
     const seg = segmentos.find((s) => s.id === segmentoSelecionado);
     const organizacoesDoSegmento =
@@ -245,7 +294,6 @@ const InnerApp: React.FC = () => {
           </div>
 
           <div className="org-layout">
-            {/* Card de nova organização */}
             <section className="org-form-card">
               <h3>Nova organização</h3>
               <label>
@@ -298,12 +346,11 @@ const InnerApp: React.FC = () => {
               {erro && <p className="error">{erro}</p>}
             </section>
 
-            {/* Card de lista de organizações */}
             <section className="org-list-card">
               <div className="org-list-header">
                 <h3>Organizações cadastradas</h3>
               </div>
-              {organizacoesDoSegmento.length > 0 && (
+              {organizacoesDoSegmento.length > 0 ? (
                 <div className="org-list-grid">
                   {organizacoesDoSegmento.map((org) => (
                     <button
@@ -329,7 +376,7 @@ const InnerApp: React.FC = () => {
                     </button>
                   ))}
                 </div>
-              )}
+              ) : null}
             </section>
           </div>
         </div>
@@ -337,12 +384,10 @@ const InnerApp: React.FC = () => {
     );
   }
 
-  // 3) Dashboard + demais telas para a organização selecionada
   return (
     <>
       {topBar}
       <div className="app-shell">
-        {/* MENU LATERAL DA ORGANIZAÇÃO */}
         <aside className="sidebar">
           <div className="sidebar-header">
             <div className="sidebar-title">{organizacaoSelecionada.nome}</div>
@@ -382,102 +427,180 @@ const InnerApp: React.FC = () => {
               >
                 Editar nome
               </button>
-            </div>
-          </div>
-
-          <nav className="sidebar-menu">
-            <button
-              type="button"
-              onClick={() => setView("dashboard")}
-              className={
-                "sidebar-item" +
-                (view === "dashboard" ? " sidebar-item--active" : "")
-              }
-            >
-              Dashboard
-            </button>
-            <button
-              type="button"
-              onClick={() => setView("pessoas")}
-              className={
-                "sidebar-item" +
-                (view === "pessoas" ? " sidebar-item--active" : "")
-              }
-            >
-              Pessoas
-            </button>
-            <button
-              type="button"
-              onClick={() => setView("unidades")}
-              className={
-                "sidebar-item" +
-                (view === "unidades" ? " sidebar-item--active" : "")
-              }
-            >
-              Unidades
-            </button>
-            <button
-              type="button"
-              onClick={() => setView("financeiro")}
-              className={
-                "sidebar-item" +
-                (view === "financeiro" ? " sidebar-item--active" : "")
-              }
-            >
-              Financeiro
-            </button>
-            <button
-              type="button"
-              onClick={() => setView("configuracoes")}
-              className={
-                "sidebar-item" +
-                (view === "configuracoes" ? " sidebar-item--active" : "")
-              }
-            >
-              Configurações
-            </button>
-          </nav>
-        </aside>
-
-        {/* CONTEÚDO PRINCIPAL */}
-        <main className="main-content">
-            <div className="content-topbar">
               <button
                 type="button"
-                className="content-back"
+                className="sidebar-action sidebar-action--secondary"
                 onClick={() => {
                   setOrganizacaoSelecionada(null);
                   setView("dashboard");
                 }}
               >
-                ← Voltar
+                Voltar
               </button>
             </div>
-            {view === "dashboard" && (
+          </div>
+
+          <nav className="sidebar-menu">
+            <div className="sidebar-section">
+              <p className="sidebar-section-title">Resumo</p>
+              <button
+                type="button"
+                onClick={() => setView("dashboard")}
+                className={
+                  "sidebar-item" +
+                  (view === "dashboard" ? " sidebar-item--active" : "")
+                }
+              >
+                <span className="sidebar-item-icon">📊</span>
+                Resumo geral
+              </button>
+            </div>
+
+            <details className="sidebar-accordion">
+              <summary>Cadastros</summary>
+              <div className="sidebar-accordion-body">
+                <button
+                  type="button"
+                  onClick={() => setView("pessoas")}
+                  className={
+                    "sidebar-item" +
+                    (view === "pessoas" ? " sidebar-item--active" : "")
+                  }
+                >
+                  <span className="sidebar-item-icon">👤</span>
+                  Pessoas
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setView("unidades")}
+                  className={
+                    "sidebar-item" +
+                    (view === "unidades" ? " sidebar-item--active" : "")
+                  }
+                >
+                  <span className="sidebar-item-icon">🏠</span>
+                  Unidades
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setView("funcionarios")}
+                  className={
+                    "sidebar-item" +
+                    (view === "funcionarios" ? " sidebar-item--active" : "")
+                  }
+                >
+                  <span className="sidebar-item-icon">🧑‍💼</span>
+                  Funcionários
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setView("fornecedores")}
+                  className={
+                    "sidebar-item" +
+                    (view === "fornecedores" ? " sidebar-item--active" : "")
+                  }
+                >
+                  <span className="sidebar-item-icon">🏭</span>
+                  Fornecedores
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setView("veiculos")}
+                  className={
+                    "sidebar-item" +
+                    (view === "veiculos" ? " sidebar-item--active" : "")
+                  }
+                >
+                  <span className="sidebar-item-icon">🚗</span>
+                  Veículos
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setView("pets")}
+                  className={
+                    "sidebar-item" +
+                    (view === "pets" ? " sidebar-item--active" : "")
+                  }
+                >
+                  <span className="sidebar-item-icon">🐾</span>
+                  Pets
+                </button>
+              </div>
+            </details>
+
+            <div className="sidebar-section">
+              <p className="sidebar-section-title">Financeiro</p>
+              <button
+                type="button"
+                onClick={() => setView("financeiro")}
+                className={
+                  "sidebar-item" +
+                  (view === "financeiro" ? " sidebar-item--active" : "")
+                }
+              >
+                <span className="sidebar-item-icon">💰</span>
+                Financeiro
+              </button>
+            </div>
+          </nav>
+        </aside>
+
+        <main className="main-content">
+          {view === "dashboard" && (
+            <>
               <Dashboard organizacao={organizacaoSelecionada} />
-            )}
+            </>
+          )}
 
-            {view === "pessoas" && organizacaoSelecionada && (
-              <PessoasView organizacao={organizacaoSelecionada} />
-            )}
+          {view === "pessoas" && organizacaoSelecionada && (
+            <PessoasView organizacao={organizacaoSelecionada} />
+          )}
 
-            {view === "unidades" && organizacaoSelecionada && (
-              <UnidadesView organizacao={organizacaoSelecionada} />
-            )}
+          {view === "funcionarios" && organizacaoSelecionada && (
+            <PessoasView
+              organizacao={organizacaoSelecionada}
+              papelFixo="funcionario"
+              titulo="Funcionários"
+            />
+          )}
 
-            {view === "financeiro" && organizacaoSelecionada && (
-              <FinanceiroView organizacao={organizacaoSelecionada} />
-            )}
-
-            {view === "configuracoes" && (
-              <div className="people-page">
-                <div className="people-header-row">
-                  <div>
-                    <h2>Configurações</h2>
-                  </div>
+          {view === "fornecedores" && (
+            <div className="people-page">
+              <div className="people-header-row">
+                <div>
+                  <h2>Fornecedores</h2>
                 </div>
               </div>
-            )}
+            </div>
+          )}
+
+          {view === "veiculos" && (
+            <div className="people-page">
+              <div className="people-header-row">
+                <div>
+                  <h2>Veículos</h2>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {view === "pets" && (
+            <div className="people-page">
+              <div className="people-header-row">
+                <div>
+                  <h2>Pets</h2>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {view === "unidades" && organizacaoSelecionada && (
+            <UnidadesView organizacao={organizacaoSelecionada} />
+          )}
+
+          {view === "financeiro" && organizacaoSelecionada && (
+            <FinanceiroView organizacao={organizacaoSelecionada} />
+          )}
         </main>
       </div>
     </>
@@ -491,4 +614,3 @@ export const App: React.FC = () => (
 );
 
 export default App;
-
