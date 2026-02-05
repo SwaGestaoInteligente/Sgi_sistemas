@@ -1,4 +1,5 @@
 ﻿import React, { useEffect, useState } from "react";
+import { useRef } from "react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import * as XLSX from "xlsx";
@@ -65,6 +66,7 @@ export default function FinanceiroView({
   onAbaChange,
   exibirMenuAbas = true
 }: FinanceiroViewProps) {
+  const topoRef = useRef<HTMLDivElement | null>(null);
   const { token } = useAuth();
   const [aba, setAba] = useState<FinanceiroTab>("contas");
   const [contas, setContas] = useState<ContaFinanceira[]>([]);
@@ -283,6 +285,13 @@ export default function FinanceiroView({
       onAbaChange(aba);
     }
   }, [aba, onAbaChange]);
+
+  const handleAbaChange = (novaAba: FinanceiroTab) => {
+    setAba(novaAba);
+    requestAnimationFrame(() => {
+      topoRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  };
 
   const criarConta = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -936,7 +945,7 @@ export default function FinanceiroView({
 
   // TODO: corpo completo do FinanceiroView (funções + render)
   return (
-    <div className="finance-page">
+    <div ref={topoRef} className="finance-page">
       <div className="finance-header-row">
         <div>
           <h2>Financeiro</h2>
@@ -976,7 +985,7 @@ export default function FinanceiroView({
               key={item.id}
               type="button"
               className={"finance-tab" + (aba === item.id ? " finance-tab--active" : "")}
-              onClick={() => setAba(item.id)}
+              onClick={() => handleAbaChange(item.id)}
             >
               {item.label}
             </button>
@@ -1188,10 +1197,10 @@ export default function FinanceiroView({
               </p>
             </div>
             <div className="finance-card-actions">
-              <button type="button" onClick={() => setAba("contasPagar")}>
+              <button type="button" onClick={() => handleAbaChange("contasPagar")}>
                 Ir para contas a pagar
               </button>
-              <button type="button" onClick={() => setAba("contasReceber")}>
+              <button type="button" onClick={() => handleAbaChange("contasReceber")}>
                 Ir para contas a receber
               </button>
             </div>
@@ -2808,7 +2817,7 @@ export default function FinanceiroView({
               <button type="button" onClick={gerarRelatorioExcel}>
                 Excel
               </button>
-              <button type="button" onClick={() => setAba("contas")}>
+              <button type="button" onClick={() => handleAbaChange("contas")}>
                 Voltar
               </button>
             </div>

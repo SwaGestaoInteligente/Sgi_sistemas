@@ -4,8 +4,8 @@ import { useAuth } from "../hooks/useAuth";
 
 export const LoginPage: React.FC = () => {
   const { setToken, setSession } = useAuth();
-  const [email, setEmail] = useState("");
-  const [senha, setSenha] = useState("");
+  const [email, setEmail] = useState("admin@teste.com");
+  const [senha, setSenha] = useState("Admin@123");
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 

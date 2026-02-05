@@ -156,7 +156,7 @@ export default function UnidadesView({ organizacao, readOnly = false }: Unidades
             </div>
           </div>
 
-          <div className="people-filter-row">
+          <div className="people-search-row">
             <input
               type="search"
               placeholder="Buscar por nome ou codigo interno"
@@ -175,14 +175,14 @@ export default function UnidadesView({ organizacao, readOnly = false }: Unidades
 
           {erro && <p className="error">{erro}</p>}
 
-          <div className="people-list">
+          <div className="person-list">
             {unidadesFiltradas.map((unidade) => (
               <button
                 key={unidade.id}
                 type="button"
                 className={
-                  "person-card" +
-                  (unidadeSelecionadaId === unidade.id ? " person-card--active" : "")
+                  "person-item person-item--compact" +
+                  (unidadeSelecionadaId === unidade.id ? " person-item--active" : "")
                 }
                 onClick={() => setUnidadeSelecionadaId(unidade.id)}
               >

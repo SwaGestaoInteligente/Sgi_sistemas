@@ -37,7 +37,35 @@ builder.Services.AddCors(options =>
                                   || string.Equals(uri.Host, "127.0.0.1", StringComparison.OrdinalIgnoreCase)
                                   || string.Equals(uri.Host, "::1", StringComparison.OrdinalIgnoreCase);
 
-                return isLocalHost;
+                if (isLocalHost)
+                {
+                    return true;
+                }
+
+                if (System.Net.IPAddress.TryParse(uri.Host, out var ip))
+                {
+                    var bytes = ip.GetAddressBytes();
+                    // IPv4 private ranges: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
+                    if (bytes.Length == 4)
+                    {
+                        if (bytes[0] == 10)
+                        {
+                            return true;
+                        }
+
+                        if (bytes[0] == 172 && bytes[1] >= 16 && bytes[1] <= 31)
+                        {
+                            return true;
+                        }
+
+                        if (bytes[0] == 192 && bytes[1] == 168)
+                        {
+                            return true;
+                        }
+                    }
+                }
+
+                return false;
             })
             .AllowAnyHeader()
             .AllowAnyMethod());
