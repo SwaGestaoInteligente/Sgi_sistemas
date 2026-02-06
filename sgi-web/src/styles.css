@@ -1682,13 +1682,57 @@ button:not(:disabled):active {
 .app-header-right {
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: nowrap;
 }
 
-.app-header-quick {
-  display: flex;
+.app-header-right > * {
+  flex-shrink: 0;
+}
+
+.app-header-quick-menu {
+  position: relative;
+}
+
+.app-header-quick-trigger {
+  list-style: none;
+  cursor: pointer;
+  min-height: 34px;
+  border-radius: 10px;
+  border: 1px solid #dbe3f0;
+  background: #f8fafc;
+  color: #1e293b;
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
+  justify-content: center;
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.app-header-quick-trigger:hover {
+  background: #e2e8f0;
+}
+
+.app-header-quick-trigger::-webkit-details-marker {
+  display: none;
+}
+
+.app-header-quick-dropdown {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  min-width: 170px;
+  border-radius: 10px;
+  border: 1px solid #dbe3f0;
+  background: #ffffff;
+  box-shadow: var(--shadow-sm);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  z-index: 20;
 }
 
 .app-header-button {
@@ -2243,6 +2287,11 @@ button:not(:disabled):active {
   .app-header-right {
     justify-content: space-between;
     flex-wrap: wrap;
+  }
+
+  .app-header-quick-dropdown {
+    right: auto;
+    left: 0;
   }
 
   .app-shell,

@@ -910,31 +910,34 @@ const InnerApp: React.FC = () => {
 
       <div className="app-header-right">
         {organizacaoSelecionada && roleAtual && (
-          <div className="app-header-quick">
-            {canAccessFinanceiro(roleAtual) && (
+          <details className="app-header-quick-menu">
+            <summary className="app-header-quick-trigger">Acoes</summary>
+            <div className="app-header-quick-dropdown">
+              {canAccessFinanceiro(roleAtual) && (
+                <button
+                  type="button"
+                  className="app-user-option"
+                  onClick={() => executarAcaoRapida("lancamento")}
+                >
+                  Novo lancamento
+                </button>
+              )}
               <button
                 type="button"
-                className="app-header-button app-header-button--ghost"
-                onClick={() => executarAcaoRapida("lancamento")}
+                className="app-user-option"
+                onClick={() => executarAcaoRapida("chamado")}
               >
-                Novo lancamento
+                Novo chamado
               </button>
-            )}
-            <button
-              type="button"
-              className="app-header-button app-header-button--ghost"
-              onClick={() => executarAcaoRapida("chamado")}
-            >
-              Novo chamado
-            </button>
-            <button
-              type="button"
-              className="app-header-button app-header-button--ghost"
-              onClick={() => executarAcaoRapida("reserva")}
-            >
-              Nova reserva
-            </button>
-          </div>
+              <button
+                type="button"
+                className="app-user-option"
+                onClick={() => executarAcaoRapida("reserva")}
+              >
+                Nova reserva
+              </button>
+            </div>
+          </details>
         )}
 
         <button
