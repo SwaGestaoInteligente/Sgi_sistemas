@@ -121,6 +121,18 @@ using (var scope = app.Services.CreateScope())
             UpdatedAt TEXT NOT NULL
         );
         """);
+    db.Database.ExecuteSqlRaw("""
+        CREATE TABLE IF NOT EXISTS FinanceAudits (
+            Id TEXT NOT NULL PRIMARY KEY,
+            OrganizacaoId TEXT NOT NULL,
+            UsuarioId TEXT NULL,
+            Acao TEXT NOT NULL,
+            Entidade TEXT NOT NULL,
+            EntidadeId TEXT NOT NULL,
+            Detalhes TEXT NULL,
+            DataHora TEXT NOT NULL
+        );
+        """);
 }
 
 if (app.Environment.IsDevelopment())

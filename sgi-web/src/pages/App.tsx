@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AuthProvider, useAuth } from "../hooks/useAuth";
 import {
   api,
@@ -618,6 +618,7 @@ const InnerApp: React.FC = () => {
   const [view, setView] = useState<AppView>("dashboard");
   const [financeiroAba, setFinanceiroAba] = useState<FinanceiroTab>("contas");
   const [sidebarFinanceiroOpen, setSidebarFinanceiroOpen] = useState(false);
+  const contentRef = useRef<HTMLElement | null>(null);
 
   const carregarOrganizacoes = useCallback(async () => {
     try {
@@ -734,6 +735,44 @@ const InnerApp: React.FC = () => {
   const podeVerCadastros = roleAtual ? canVerCadastros(roleAtual) : false;
   const podeEditarCadastros = roleAtual ? canEditarCadastros(roleAtual) : false;
   const isResident = roleAtual === "RESIDENT";
+
+  const activePathname = useMemo(() => {
+    if (!token || !session) return "/login";
+
+    if (!organizacaoSelecionada) {
+      if (isPlatformAdmin) {
+        return segmentoSelecionado
+          ? `/segmentos/${segmentoSelecionado}`
+          : "/segmentos";
+      }
+      return "/organizacoes";
+    }
+
+    const basePath = `/organizacoes/${organizacaoSelecionada.id}`;
+    if (view === "financeiro") {
+      return `${basePath}/financeiro/${financeiroAba}`;
+    }
+
+    return `${basePath}/${view}`;
+  }, [
+    financeiroAba,
+    isPlatformAdmin,
+    organizacaoSelecionada,
+    segmentoSelecionado,
+    session,
+    token,
+    view
+  ]);
+
+  useEffect(() => {
+    window.scrollTo(0, 0);
+
+    const contentEl = contentRef.current;
+    if (contentEl) {
+      contentEl.scrollTop = 0;
+      contentEl.scrollTo({ top: 0, left: 0 });
+    }
+  }, [activePathname]);
 
   const irParaInicio = () => {
     setOrganizacaoSelecionada(null);
@@ -1284,7 +1323,7 @@ const InnerApp: React.FC = () => {
           </nav>
         </aside>
 
-        <main className="main-content">
+        <main ref={contentRef} className="main-content">
           <header className="page-header">
             <div>
               <p className="page-header-eyebrow">{organizacaoSelecionada.nome}</p>

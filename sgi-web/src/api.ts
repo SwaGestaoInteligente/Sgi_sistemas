@@ -156,7 +156,7 @@ export interface LancamentoFinanceiro {
   id: string;
   organizacaoId: string;
   tipo: string; // "pagar" | "receber"
-  situacao: string; // "pendente" | "pago" | "cancelado"
+  situacao: string; // "aberto" | "aprovado" | "pago" | "conciliado" | "fechado" | "cancelado"
   planoContasId: string;
   centroCustoId?: string;
   contaFinanceiraId?: string;
@@ -191,6 +191,28 @@ export interface DocumentoCobranca {
   dataEmissao: string;
   dataVencimento: string;
   dataBaixa?: string;
+}
+
+export interface FinanceUploadResponse {
+  nomeArquivo: string;
+  caminho: string;
+  tipo: string;
+}
+
+export interface ConciliacaoExtratoItem {
+  index: number;
+  data: string;
+  descricao: string;
+  valor: number;
+  documento?: string;
+  sugestaoLancamentoId?: string;
+  sugestaoDescricao?: string;
+}
+
+export interface ConciliacaoImportResponse {
+  arquivo: string;
+  total: number;
+  itens: ConciliacaoExtratoItem[];
 }
 
 async function request<T>(
@@ -848,6 +870,123 @@ export const api = {
       `/api/financeiro/lancamentos/${encodeURIComponent(id)}/cancelar`,
       {
         method: "POST"
+      },
+      token
+    );
+  },
+
+  async aprovarLancamento(token: string, id: string): Promise<void> {
+    await request<void>(
+      `/api/financeiro/lancamentos/${encodeURIComponent(id)}/aprovar`,
+      { method: "POST" },
+      token
+    );
+  },
+
+  async conciliarLancamento(token: string, id: string): Promise<void> {
+    await request<void>(
+      `/api/financeiro/lancamentos/${encodeURIComponent(id)}/conciliar`,
+      { method: "POST" },
+      token
+    );
+  },
+
+  async fecharLancamento(token: string, id: string): Promise<void> {
+    await request<void>(
+      `/api/financeiro/lancamentos/${encodeURIComponent(id)}/fechar`,
+      { method: "POST" },
+      token
+    );
+  },
+
+  async reabrirLancamento(token: string, id: string): Promise<void> {
+    await request<void>(
+      `/api/financeiro/lancamentos/${encodeURIComponent(id)}/reabrir`,
+      { method: "POST" },
+      token
+    );
+  },
+
+  async uploadFinanceiro(
+    token: string,
+    organizacaoId: string,
+    tipo: string,
+    arquivo: File
+  ): Promise<FinanceUploadResponse> {
+    const formData = new FormData();
+    formData.append("organizacaoId", organizacaoId);
+    formData.append("tipo", tipo);
+    formData.append("arquivo", arquivo);
+
+    const headers: HeadersInit = {
+      "ngrok-skip-browser-warning": "true"
+    };
+
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+
+    const res = await fetch(`${API_BASE_URL}/api/financeiro/uploads`, {
+      method: "POST",
+      headers,
+      body: formData
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      throwHttpError(res.status, text);
+    }
+
+    return (await res.json()) as FinanceUploadResponse;
+  },
+
+  async importarExtrato(
+    token: string,
+    organizacaoId: string,
+    arquivo: File
+  ): Promise<ConciliacaoImportResponse> {
+    const formData = new FormData();
+    formData.append("organizacaoId", organizacaoId);
+    formData.append("arquivo", arquivo);
+
+    const headers: HeadersInit = {
+      "ngrok-skip-browser-warning": "true"
+    };
+
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+
+    const res = await fetch(`${API_BASE_URL}/api/financeiro/conciliacao/importar`, {
+      method: "POST",
+      headers,
+      body: formData
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      throwHttpError(res.status, text);
+    }
+
+    return (await res.json()) as ConciliacaoImportResponse;
+  },
+
+  async confirmarConciliacao(
+    token: string,
+    lancamentoId: string,
+    organizacaoId: string,
+    payload?: { dataConciliacao?: string; referencia?: string; documento?: string }
+  ): Promise<void> {
+    await request<void>(
+      `/api/financeiro/conciliacao/${encodeURIComponent(lancamentoId)}/confirmar`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          organizacaoId,
+          dataConciliacao: payload?.dataConciliacao,
+          referencia: payload?.referencia,
+          documento: payload?.documento
+        })
       },
       token
     );

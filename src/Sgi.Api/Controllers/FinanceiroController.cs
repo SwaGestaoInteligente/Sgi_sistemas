@@ -1,7 +1,11 @@
+using System.Globalization;
+using System.Text;
+using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Sgi.Api.Auth;
+using Sgi.Domain.Core;
 using Sgi.Domain.Financeiro;
 using Sgi.Infrastructure.Data;
 
@@ -14,11 +18,50 @@ namespace Sgi.Api.Controllers;
 public class FinanceiroController : ControllerBase
 {
     private readonly SgiDbContext _db;
+    private readonly IWebHostEnvironment _env;
 
-    public FinanceiroController(SgiDbContext db)
+    private const string SituacaoAberto = "aberto";
+    private const string SituacaoAprovado = "aprovado";
+    private const string SituacaoPago = "pago";
+    private const string SituacaoConciliado = "conciliado";
+    private const string SituacaoFechado = "fechado";
+    private const string SituacaoCancelado = "cancelado";
+
+    public FinanceiroController(SgiDbContext db, IWebHostEnvironment env)
     {
         _db = db;
+        _env = env;
     }
+
+    private static string NormalizarSituacao(string? situacao)
+    {
+        if (string.IsNullOrWhiteSpace(situacao))
+        {
+            return string.Empty;
+        }
+
+        var normalizada = situacao.Trim().ToLowerInvariant();
+        return normalizada == "pendente" ? SituacaoAberto : normalizada;
+    }
+
+    private void RegistrarAudit(Guid organizacaoId, Guid entidadeId, string entidade, string acao, object? detalhes = null)
+    {
+        var userId = Authz.GetUserId(User);
+        _db.FinanceAudits.Add(new FinanceAudit
+        {
+            Id = Guid.NewGuid(),
+            OrganizacaoId = organizacaoId,
+            UsuarioId = userId,
+            Entidade = entidade,
+            EntidadeId = entidadeId,
+            Acao = acao,
+            Detalhes = detalhes is null ? null : JsonSerializer.Serialize(detalhes),
+            DataHora = DateTime.UtcNow
+        });
+    }
+
+    private async Task<AuthzResult> EnsureRoleAsync(Guid organizacaoId, params UserRole[] roles)
+        => await Authz.EnsureMembershipAsync(_db, User, organizacaoId, roles);
 
     [HttpGet("contas")]
     public async Task<ActionResult<IEnumerable<ContaFinanceira>>> ListarContas([FromQuery] Guid? organizacaoId)
@@ -38,6 +81,14 @@ public class FinanceiroController : ControllerBase
     {
         model.Id = Guid.NewGuid();
         _db.ContasFinanceiras.Add(model);
+        RegistrarAudit(model.OrganizacaoId, model.Id, "ContaFinanceira", "CRIAR_CONTA", new
+        {
+            model.Nome,
+            model.Tipo,
+            model.Banco,
+            model.Agencia,
+            model.NumeroConta
+        });
         await _db.SaveChangesAsync();
         return CreatedAtAction(nameof(ListarContas), new { id = model.Id }, model);
     }
@@ -50,6 +101,11 @@ public class FinanceiroController : ControllerBase
         {
             return NotFound();
         }
+        var auth = await EnsureRoleAsync(conta.OrganizacaoId, UserRole.CONDO_ADMIN);
+        if (auth.Error is not null)
+        {
+            return auth.Error;
+        }
 
         var temLancamentos = await _db.LancamentosFinanceiros
             .AsNoTracking()
@@ -61,6 +117,11 @@ public class FinanceiroController : ControllerBase
         }
 
         _db.ContasFinanceiras.Remove(conta);
+        RegistrarAudit(conta.OrganizacaoId, conta.Id, "ContaFinanceira", "REMOVER_CONTA", new
+        {
+            conta.Nome,
+            conta.NumeroConta
+        });
         await _db.SaveChangesAsync();
         return NoContent();
     }
@@ -78,6 +139,11 @@ public class FinanceiroController : ControllerBase
         {
             return NotFound();
         }
+        var auth = await EnsureRoleAsync(conta.OrganizacaoId, UserRole.CONDO_ADMIN);
+        if (auth.Error is not null)
+        {
+            return auth.Error;
+        }
 
         if (string.IsNullOrWhiteSpace(request.Status))
         {
@@ -85,6 +151,10 @@ public class FinanceiroController : ControllerBase
         }
 
         conta.Status = request.Status;
+        RegistrarAudit(conta.OrganizacaoId, conta.Id, "ContaFinanceira", "ATUALIZAR_STATUS_CONTA", new
+        {
+            Status = request.Status
+        });
         await _db.SaveChangesAsync();
 
         return NoContent();
@@ -212,6 +282,15 @@ public class FinanceiroController : ControllerBase
 
         _db.LancamentosFinanceiros.Add(lancamentoSaida);
         _db.LancamentosFinanceiros.Add(lancamentoEntrada);
+        RegistrarAudit(request.OrganizacaoId, lancamentoSaida.Id, "LancamentoFinanceiro", "TRANSFERENCIA", new
+        {
+            LancamentoSaidaId = lancamentoSaida.Id,
+            LancamentoEntradaId = lancamentoEntrada.Id,
+            request.ContaOrigemId,
+            request.ContaDestinoId,
+            request.Valor,
+            Referencia = referencia
+        });
         await _db.SaveChangesAsync();
 
         return Ok(new TransferenciaResponse(
@@ -274,7 +353,15 @@ public class FinanceiroController : ControllerBase
 
         if (!string.IsNullOrWhiteSpace(situacao))
         {
-            query = query.Where(l => l.Situacao == situacao);
+            var situacaoNormalizada = NormalizarSituacao(situacao);
+            if (situacaoNormalizada == SituacaoAberto)
+            {
+                query = query.Where(l => l.Situacao == SituacaoAberto || l.Situacao == "pendente");
+            }
+            else
+            {
+                query = query.Where(l => l.Situacao == situacaoNormalizada);
+            }
         }
 
         if (competenciaInicio.HasValue)
@@ -331,23 +418,38 @@ public class FinanceiroController : ControllerBase
             return BadRequest("Data de vencimento não pode ser anterior à data de competência.");
         }
 
-        if (string.IsNullOrWhiteSpace(model.Situacao))
+        var situacaoInicial = NormalizarSituacao(model.Situacao);
+        if (string.IsNullOrWhiteSpace(situacaoInicial))
         {
-            model.Situacao = "pendente";
+            situacaoInicial = SituacaoAberto;
         }
-        else
-        {
-            var situacaoNormalizada = model.Situacao.Trim().ToLowerInvariant();
-            if (situacaoNormalizada is not ("pendente" or "pago" or "cancelado"))
-            {
-                return BadRequest("SituaÃ§Ã£o deve ser 'pendente', 'pago' ou 'cancelado'.");
-            }
 
-            model.Situacao = situacaoNormalizada;
+        if (situacaoInicial is not (SituacaoAberto or SituacaoAprovado or SituacaoPago or SituacaoConciliado or SituacaoFechado or SituacaoCancelado))
+        {
+            return BadRequest("Situação inválida. Use aberto, aprovado, pago, conciliado, fechado ou cancelado.");
+        }
+
+        if (situacaoInicial == SituacaoFechado)
+        {
+            return BadRequest("Não é possível criar lançamento já fechado.");
+        }
+
+        model.Situacao = situacaoInicial;
+
+        if (model.Situacao == SituacaoPago && !model.DataPagamento.HasValue)
+        {
+            model.DataPagamento = DateTime.UtcNow;
         }
 
         model.Id = Guid.NewGuid();
         _db.LancamentosFinanceiros.Add(model);
+        RegistrarAudit(model.OrganizacaoId, model.Id, "LancamentoFinanceiro", "CRIAR_LANCAMENTO", new
+        {
+            model.Tipo,
+            model.Situacao,
+            model.Descricao,
+            model.Valor
+        });
         await _db.SaveChangesAsync();
         return CreatedAtAction(nameof(ListarLancamentos), new { id = model.Id }, model);
     }
@@ -370,10 +472,10 @@ public class FinanceiroController : ControllerBase
 
         var totalLanc = itens.Count;
         var totalPagar = itens
-            .Where(l => l.Tipo == "pagar" && l.Situacao != "cancelado")
+            .Where(l => l.Tipo == "pagar" && NormalizarSituacao(l.Situacao) is SituacaoAberto or SituacaoAprovado)
             .Sum(l => l.Valor);
         var totalReceber = itens
-            .Where(l => l.Tipo == "receber" && l.Situacao != "cancelado")
+            .Where(l => l.Tipo == "receber" && NormalizarSituacao(l.Situacao) is SituacaoAberto or SituacaoAprovado)
             .Sum(l => l.Valor);
 
         var resumo = new ResumoFinanceiro(totalLanc, totalPagar, totalReceber);
@@ -389,22 +491,39 @@ public class FinanceiroController : ControllerBase
             return NotFound();
         }
 
-        if (lancamento.Situacao == "cancelado")
+        var situacaoAtual = NormalizarSituacao(lancamento.Situacao);
+
+        if (situacaoAtual == SituacaoFechado)
+        {
+            return BadRequest("Não é possível pagar um lançamento fechado.");
+        }
+
+        if (situacaoAtual == SituacaoCancelado)
         {
             return BadRequest("Não é possível pagar um lançamento cancelado.");
         }
 
-        if (lancamento.Situacao == "pago")
+        if (situacaoAtual == SituacaoPago)
         {
             return BadRequest("Lançamento já está marcado como pago.");
         }
 
-        lancamento.Situacao = "pago";
+        if (situacaoAtual != SituacaoAprovado)
+        {
+            return BadRequest("Aprovação é obrigatória antes do pagamento.");
+        }
+
+        lancamento.Situacao = SituacaoPago;
         if (!lancamento.DataPagamento.HasValue)
         {
             lancamento.DataPagamento = DateTime.UtcNow;
         }
 
+        RegistrarAudit(lancamento.OrganizacaoId, lancamento.Id, "LancamentoFinanceiro", "PAGAR_LANCAMENTO", new
+        {
+            lancamento.Descricao,
+            lancamento.Valor
+        });
         await _db.SaveChangesAsync();
 
         return NoContent();
@@ -419,19 +538,197 @@ public class FinanceiroController : ControllerBase
             return NotFound();
         }
 
-        if (lancamento.Situacao == "pago")
+        var situacaoAtual = NormalizarSituacao(lancamento.Situacao);
+
+        if (situacaoAtual == SituacaoFechado)
+        {
+            return BadRequest("Não é possível cancelar um lançamento fechado.");
+        }
+
+        if (situacaoAtual == SituacaoPago)
         {
             return BadRequest("Não é possível cancelar um lançamento já pago.");
         }
 
-        if (lancamento.Situacao == "cancelado")
+        if (situacaoAtual == SituacaoCancelado)
         {
             return BadRequest("Lançamento já está cancelado.");
         }
 
-        lancamento.Situacao = "cancelado";
+        if (situacaoAtual is not (SituacaoAberto or SituacaoAprovado))
+        {
+            return BadRequest("Lançamento não pode ser cancelado nesta etapa.");
+        }
+
+        lancamento.Situacao = SituacaoCancelado;
         lancamento.DataPagamento = null;
 
+        RegistrarAudit(lancamento.OrganizacaoId, lancamento.Id, "LancamentoFinanceiro", "CANCELAR_LANCAMENTO", new
+        {
+            lancamento.Descricao,
+            lancamento.Valor
+        });
+        await _db.SaveChangesAsync();
+
+        return NoContent();
+    }
+
+    [HttpPost("lancamentos/{id:guid}/aprovar")]
+    public async Task<IActionResult> AprovarLancamento(Guid id)
+    {
+        var lancamento = await _db.LancamentosFinanceiros.FindAsync(id);
+        if (lancamento is null)
+        {
+            return NotFound();
+        }
+
+        var auth = await EnsureRoleAsync(lancamento.OrganizacaoId, UserRole.CONDO_ADMIN);
+        if (auth.Error is not null)
+        {
+            return auth.Error;
+        }
+
+        var situacaoAtual = NormalizarSituacao(lancamento.Situacao);
+        if (situacaoAtual == SituacaoFechado)
+        {
+            return BadRequest("Não é possível aprovar um lançamento fechado.");
+        }
+
+        if (situacaoAtual == SituacaoCancelado)
+        {
+            return BadRequest("Não é possível aprovar um lançamento cancelado.");
+        }
+
+        if (situacaoAtual != SituacaoAberto)
+        {
+            return BadRequest("Apenas lançamentos em aberto podem ser aprovados.");
+        }
+
+        lancamento.Situacao = SituacaoAprovado;
+        RegistrarAudit(lancamento.OrganizacaoId, lancamento.Id, "LancamentoFinanceiro", "APROVAR_LANCAMENTO", new
+        {
+            lancamento.Descricao,
+            lancamento.Valor
+        });
+        await _db.SaveChangesAsync();
+
+        return NoContent();
+    }
+
+    [HttpPost("lancamentos/{id:guid}/conciliar")]
+    public async Task<IActionResult> ConciliarLancamento(Guid id)
+    {
+        var lancamento = await _db.LancamentosFinanceiros.FindAsync(id);
+        if (lancamento is null)
+        {
+            return NotFound();
+        }
+
+        var auth = await EnsureRoleAsync(
+            lancamento.OrganizacaoId,
+            UserRole.CONDO_ADMIN,
+            UserRole.CONDO_STAFF);
+        if (auth.Error is not null)
+        {
+            return auth.Error;
+        }
+
+        var situacaoAtual = NormalizarSituacao(lancamento.Situacao);
+        if (situacaoAtual == SituacaoFechado)
+        {
+            return BadRequest("Não é possível conciliar um lançamento fechado.");
+        }
+
+        if (situacaoAtual == SituacaoCancelado)
+        {
+            return BadRequest("Não é possível conciliar um lançamento cancelado.");
+        }
+
+        if (situacaoAtual != SituacaoPago)
+        {
+            return BadRequest("Somente lançamentos pagos podem ser conciliados.");
+        }
+
+        lancamento.Situacao = SituacaoConciliado;
+        RegistrarAudit(lancamento.OrganizacaoId, lancamento.Id, "LancamentoFinanceiro", "CONCILIAR_LANCAMENTO", new
+        {
+            lancamento.Descricao,
+            lancamento.Valor
+        });
+        await _db.SaveChangesAsync();
+
+        return NoContent();
+    }
+
+    [HttpPost("lancamentos/{id:guid}/fechar")]
+    public async Task<IActionResult> FecharLancamento(Guid id)
+    {
+        var lancamento = await _db.LancamentosFinanceiros.FindAsync(id);
+        if (lancamento is null)
+        {
+            return NotFound();
+        }
+
+        var auth = await EnsureRoleAsync(lancamento.OrganizacaoId, UserRole.CONDO_ADMIN);
+        if (auth.Error is not null)
+        {
+            return auth.Error;
+        }
+
+        var situacaoAtual = NormalizarSituacao(lancamento.Situacao);
+        if (situacaoAtual == SituacaoFechado)
+        {
+            return BadRequest("Lançamento já está fechado.");
+        }
+
+        if (situacaoAtual != SituacaoConciliado)
+        {
+            return BadRequest("Somente lançamentos conciliados podem ser fechados.");
+        }
+
+        lancamento.Situacao = SituacaoFechado;
+        RegistrarAudit(lancamento.OrganizacaoId, lancamento.Id, "LancamentoFinanceiro", "FECHAR_LANCAMENTO", new
+        {
+            lancamento.Descricao,
+            lancamento.Valor
+        });
+        await _db.SaveChangesAsync();
+
+        return NoContent();
+    }
+
+    [HttpPost("lancamentos/{id:guid}/reabrir")]
+    public async Task<IActionResult> ReabrirLancamento(Guid id)
+    {
+        var lancamento = await _db.LancamentosFinanceiros.FindAsync(id);
+        if (lancamento is null)
+        {
+            return NotFound();
+        }
+
+        var auth = await EnsureRoleAsync(lancamento.OrganizacaoId, UserRole.CONDO_ADMIN);
+        if (auth.Error is not null)
+        {
+            return auth.Error;
+        }
+
+        if (!auth.IsPlatformAdmin)
+        {
+            return Forbid();
+        }
+
+        var situacaoAtual = NormalizarSituacao(lancamento.Situacao);
+        if (situacaoAtual != SituacaoFechado)
+        {
+            return BadRequest("Apenas lançamentos fechados podem ser reabertos.");
+        }
+
+        lancamento.Situacao = SituacaoAberto;
+        RegistrarAudit(lancamento.OrganizacaoId, lancamento.Id, "LancamentoFinanceiro", "REABRIR_LANCAMENTO", new
+        {
+            lancamento.Descricao,
+            lancamento.Valor
+        });
         await _db.SaveChangesAsync();
 
         return NoContent();
@@ -773,7 +1070,8 @@ public class FinanceiroController : ControllerBase
             ?? lancamento.DataVencimento?.Date
             ?? DateTime.UtcNow.Date;
 
-        var statusInicial = string.Equals(lancamento.Situacao, "pago", StringComparison.OrdinalIgnoreCase)
+        var situacaoLancamento = NormalizarSituacao(lancamento.Situacao);
+        var statusInicial = situacaoLancamento is SituacaoPago or SituacaoConciliado or SituacaoFechado
             ? "paga"
             : (dataVencimento < DateTime.UtcNow.Date ? "vencida" : "emitida");
 
@@ -833,13 +1131,29 @@ public class FinanceiroController : ControllerBase
             var lancamento = await _db.LancamentosFinanceiros.FindAsync(fatura.LancamentoFinanceiroId);
             if (lancamento is not null)
             {
-                if (string.Equals(lancamento.Situacao, "cancelado", StringComparison.OrdinalIgnoreCase))
+                var situacaoAtual = NormalizarSituacao(lancamento.Situacao);
+                if (situacaoAtual == SituacaoCancelado)
                 {
                     return BadRequest("Nao e possivel dar baixa em fatura com lancamento cancelado.");
                 }
 
-                lancamento.Situacao = "pago";
+                if (situacaoAtual == SituacaoFechado)
+                {
+                    return BadRequest("Nao e possivel dar baixa em fatura com lancamento fechado.");
+                }
+
+                if (situacaoAtual == SituacaoAberto)
+                {
+                    lancamento.Situacao = SituacaoAprovado;
+                }
+
+                lancamento.Situacao = SituacaoPago;
                 lancamento.DataPagamento = dataBaixa;
+                RegistrarAudit(lancamento.OrganizacaoId, lancamento.Id, "LancamentoFinanceiro", "PAGAR_LANCAMENTO", new
+                {
+                    lancamento.Descricao,
+                    lancamento.Valor
+                });
             }
 
             fatura.DataBaixa = dataBaixa;
@@ -1021,5 +1335,410 @@ public class FinanceiroController : ControllerBase
         await _db.SaveChangesAsync();
 
         return NoContent();
+    }
+
+    // ---------------------------
+    // Uploads e conciliação bancária
+    // ---------------------------
+
+    public class UploadFinanceiroResponse
+    {
+        public string NomeArquivo { get; set; } = string.Empty;
+        public string Caminho { get; set; } = string.Empty;
+        public string Tipo { get; set; } = string.Empty;
+    }
+
+    [HttpPost("uploads")]
+    [RequestSizeLimit(25_000_000)]
+    public async Task<ActionResult<UploadFinanceiroResponse>> UploadFinanceiro(
+        [FromForm] Guid organizacaoId,
+        [FromForm] string tipo,
+        [FromForm] IFormFile arquivo)
+    {
+        if (organizacaoId == Guid.Empty)
+        {
+            return BadRequest("Organização é obrigatória.");
+        }
+
+        if (arquivo is null || arquivo.Length == 0)
+        {
+            return BadRequest("Arquivo é obrigatório.");
+        }
+
+        var tipoNormalizado = string.IsNullOrWhiteSpace(tipo) ? "geral" : tipo.Trim().ToLowerInvariant();
+        var uploadsRoot = Path.Combine(_env.ContentRootPath, "Uploads", "Financeiro", organizacaoId.ToString(), tipoNormalizado);
+        Directory.CreateDirectory(uploadsRoot);
+
+        var safeFileName = Path.GetFileName(arquivo.FileName);
+        var uniqueName = $"{DateTime.UtcNow:yyyyMMddHHmmssfff}-{Guid.NewGuid():N}-{safeFileName}";
+        var filePath = Path.Combine(uploadsRoot, uniqueName);
+
+        await using (var stream = System.IO.File.Create(filePath))
+        {
+            await arquivo.CopyToAsync(stream);
+        }
+
+        RegistrarAudit(organizacaoId, Guid.NewGuid(), "FinanceUpload", "UPLOAD_FINANCEIRO", new
+        {
+            Arquivo = safeFileName,
+            Tipo = tipoNormalizado
+        });
+        await _db.SaveChangesAsync();
+
+        return Ok(new UploadFinanceiroResponse
+        {
+            NomeArquivo = safeFileName,
+            Caminho = filePath,
+            Tipo = tipoNormalizado
+        });
+    }
+
+    public record ExtratoItemDto(
+        int Index,
+        DateTime Data,
+        string Descricao,
+        decimal Valor,
+        string? Documento,
+        Guid? SugestaoLancamentoId,
+        string? SugestaoDescricao);
+
+    public record ConciliacaoImportResponse(
+        string Arquivo,
+        int Total,
+        IEnumerable<ExtratoItemDto> Itens);
+
+    [HttpPost("conciliacao/importar")]
+    [RequestSizeLimit(25_000_000)]
+    public async Task<ActionResult<ConciliacaoImportResponse>> ImportarExtrato(
+        [FromForm] Guid organizacaoId,
+        [FromForm] IFormFile arquivo)
+    {
+        if (organizacaoId == Guid.Empty)
+        {
+            return BadRequest("Organização é obrigatória.");
+        }
+
+        if (arquivo is null || arquivo.Length == 0)
+        {
+            return BadRequest("Arquivo é obrigatório.");
+        }
+
+        string content;
+        await using (var stream = arquivo.OpenReadStream())
+        using (var reader = new StreamReader(stream, Encoding.UTF8, true))
+        {
+            content = await reader.ReadToEndAsync();
+        }
+
+        var itensBase = Path.GetExtension(arquivo.FileName).Equals(".ofx", StringComparison.OrdinalIgnoreCase)
+            ? ParseOfx(content)
+            : ParseCsv(content);
+
+        var itens = await SugerirLancamentosAsync(organizacaoId, itensBase);
+
+        RegistrarAudit(organizacaoId, Guid.NewGuid(), "ConciliacaoBancaria", "IMPORTAR_EXTRATO", new
+        {
+            Arquivo = arquivo.FileName,
+            Total = itens.Count
+        });
+        await _db.SaveChangesAsync();
+
+        return Ok(new ConciliacaoImportResponse(arquivo.FileName, itens.Count, itens));
+    }
+
+    public class ConfirmarConciliacaoRequest
+    {
+        public Guid OrganizacaoId { get; set; }
+        public DateTime? DataConciliacao { get; set; }
+        public string? Referencia { get; set; }
+        public string? Documento { get; set; }
+    }
+
+    [HttpPost("conciliacao/{id:guid}/confirmar")]
+    public async Task<IActionResult> ConfirmarConciliacao(Guid id, ConfirmarConciliacaoRequest request)
+    {
+        if (request.OrganizacaoId == Guid.Empty)
+        {
+            return BadRequest("Organização é obrigatória.");
+        }
+
+        var auth = await EnsureRoleAsync(
+            request.OrganizacaoId,
+            UserRole.CONDO_ADMIN,
+            UserRole.CONDO_STAFF);
+        if (auth.Error is not null)
+        {
+            return auth.Error;
+        }
+
+        var lancamento = await _db.LancamentosFinanceiros.FindAsync(id);
+        if (lancamento is null || lancamento.OrganizacaoId != request.OrganizacaoId)
+        {
+            return NotFound();
+        }
+
+        var situacaoAtual = NormalizarSituacao(lancamento.Situacao);
+        if (situacaoAtual == SituacaoFechado)
+        {
+            return BadRequest("Não é possível conciliar um lançamento fechado.");
+        }
+
+        if (situacaoAtual == SituacaoCancelado)
+        {
+            return BadRequest("Não é possível conciliar um lançamento cancelado.");
+        }
+
+        if (situacaoAtual != SituacaoPago)
+        {
+            return BadRequest("Somente lançamentos pagos podem ser conciliados.");
+        }
+
+        lancamento.Situacao = SituacaoConciliado;
+        if (!lancamento.DataPagamento.HasValue)
+        {
+            lancamento.DataPagamento = request.DataConciliacao ?? DateTime.UtcNow;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Referencia))
+        {
+            lancamento.Referencia = request.Referencia.Trim();
+        }
+
+        RegistrarAudit(lancamento.OrganizacaoId, lancamento.Id, "LancamentoFinanceiro", "CONCILIAR_LANCAMENTO", new
+        {
+            lancamento.Descricao,
+            lancamento.Valor,
+            request.Documento
+        });
+
+        await _db.SaveChangesAsync();
+
+        return NoContent();
+    }
+
+    private record ExtratoItemBase(
+        int Index,
+        DateTime Data,
+        string Descricao,
+        decimal Valor,
+        string? Documento);
+
+    private static List<ExtratoItemBase> ParseCsv(string content)
+    {
+        var lines = content
+            .Split(new[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(l => l.Trim())
+            .Where(l => !string.IsNullOrWhiteSpace(l))
+            .ToList();
+
+        if (lines.Count == 0)
+        {
+            return new List<ExtratoItemBase>();
+        }
+
+        var delimiter = lines[0].Count(c => c == ';') >= lines[0].Count(c => c == ',') ? ';' : ',';
+        var header = lines[0].ToLowerInvariant();
+        var hasHeader = header.Contains("data") || header.Contains("valor") || header.Contains("descricao") || header.Contains("hist");
+
+        var startIndex = hasHeader ? 1 : 0;
+        var headers = hasHeader ? lines[0].Split(delimiter) : Array.Empty<string>();
+
+        int ColIndex(string[] cols, params string[] keys)
+        {
+            for (var i = 0; i < cols.Length; i++)
+            {
+                var h = cols[i].ToLowerInvariant();
+                if (keys.Any(k => h.Contains(k)))
+                {
+                    return i;
+                }
+            }
+            return -1;
+        }
+
+        var idxData = hasHeader ? ColIndex(headers, "data") : 0;
+        var idxDesc = hasHeader ? ColIndex(headers, "descricao", "hist", "memo", "descricao") : 1;
+        var idxValor = hasHeader ? ColIndex(headers, "valor", "montante", "amount") : -1;
+        var idxDoc = hasHeader ? ColIndex(headers, "documento", "doc", "id") : -1;
+
+        var itens = new List<ExtratoItemBase>();
+        for (var i = startIndex; i < lines.Count; i++)
+        {
+            var parts = lines[i].Split(delimiter);
+            if (parts.Length < 2)
+            {
+                continue;
+            }
+
+            var dataRaw = idxData >= 0 && idxData < parts.Length ? parts[idxData] : parts[0];
+            var descRaw = idxDesc >= 0 && idxDesc < parts.Length ? parts[idxDesc] : parts.Length > 1 ? parts[1] : "";
+            var valorRaw = idxValor >= 0 && idxValor < parts.Length ? parts[idxValor] : parts[^1];
+            var docRaw = idxDoc >= 0 && idxDoc < parts.Length ? parts[idxDoc] : null;
+
+            if (!TryParseDate(dataRaw, out var data))
+            {
+                continue;
+            }
+
+            if (!TryParseDecimal(valorRaw ?? string.Empty, out var valor))
+            {
+                continue;
+            }
+
+            itens.Add(new ExtratoItemBase(i - startIndex + 1, data, descRaw.Trim(), valor, docRaw?.Trim()));
+        }
+
+        return itens;
+    }
+
+    private static List<ExtratoItemBase> ParseOfx(string content)
+    {
+        var itens = new List<ExtratoItemBase>();
+        var blocks = content.Split("<STMTTRN>", StringSplitOptions.RemoveEmptyEntries);
+        var index = 1;
+
+        foreach (var block in blocks)
+        {
+            if (!block.Contains("<TRNAMT>", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var dataRaw = ExtractTag(block, "DTPOSTED");
+            var valorRaw = ExtractTag(block, "TRNAMT");
+            var memo = ExtractTag(block, "MEMO") ?? ExtractTag(block, "NAME") ?? "Movimento bancário";
+            var doc = ExtractTag(block, "FITID");
+
+            if (!TryParseOfxDate(dataRaw, out var data))
+            {
+                continue;
+            }
+
+            if (!TryParseDecimal(valorRaw ?? string.Empty, out var valor))
+            {
+                continue;
+            }
+
+            itens.Add(new ExtratoItemBase(index++, data, memo.Trim(), valor, doc?.Trim()));
+        }
+
+        return itens;
+    }
+
+    private async Task<List<ExtratoItemDto>> SugerirLancamentosAsync(Guid organizacaoId, List<ExtratoItemBase> itens)
+    {
+        if (itens.Count == 0)
+        {
+            return new List<ExtratoItemDto>();
+        }
+
+        var minDate = itens.Min(i => i.Data).AddDays(-5);
+        var maxDate = itens.Max(i => i.Data).AddDays(5);
+
+        var candidatos = await _db.LancamentosFinanceiros
+            .AsNoTracking()
+            .Where(l => l.OrganizacaoId == organizacaoId)
+            .Where(l => l.DataCompetencia >= minDate && l.DataCompetencia <= maxDate)
+            .ToListAsync();
+
+        var resposta = new List<ExtratoItemDto>();
+        foreach (var item in itens)
+        {
+            var tipoEsperado = item.Valor < 0 ? "pagar" : "receber";
+            var valorAbs = Math.Abs(item.Valor);
+
+            var sugestao = candidatos
+                .Select(c => new
+                {
+                    Lancamento = c,
+                    Situacao = NormalizarSituacao(c.Situacao),
+                    DataBase = c.DataPagamento ?? c.DataCompetencia
+                })
+                .Where(c => c.Situacao == SituacaoPago)
+                .Where(c => string.Equals(c.Lancamento.Tipo, tipoEsperado, StringComparison.OrdinalIgnoreCase))
+                .Where(c => Math.Abs(c.Lancamento.Valor - valorAbs) <= 0.01m)
+                .OrderBy(c => Math.Abs((c.DataBase.Date - item.Data.Date).TotalDays))
+                .FirstOrDefault();
+
+            resposta.Add(new ExtratoItemDto(
+                item.Index,
+                item.Data,
+                item.Descricao,
+                item.Valor,
+                item.Documento,
+                sugestao?.Lancamento.Id,
+                sugestao?.Lancamento.Descricao));
+        }
+
+        return resposta;
+    }
+
+    private static bool TryParseDate(string raw, out DateTime data)
+    {
+        raw = raw.Trim();
+        var formats = new[] { "dd/MM/yyyy", "yyyy-MM-dd", "MM/dd/yyyy", "dd-MM-yyyy" };
+        return DateTime.TryParseExact(raw, formats, CultureInfo.InvariantCulture, DateTimeStyles.None, out data)
+               || DateTime.TryParse(raw, CultureInfo.InvariantCulture, DateTimeStyles.None, out data);
+    }
+
+    private static bool TryParseOfxDate(string? raw, out DateTime data)
+    {
+        data = default;
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return false;
+        }
+
+        raw = raw.Trim();
+        if (raw.Length >= 8 && DateTime.TryParseExact(raw.Substring(0, 8), "yyyyMMdd", CultureInfo.InvariantCulture, DateTimeStyles.None, out data))
+        {
+            return true;
+        }
+
+        return DateTime.TryParse(raw, out data);
+    }
+
+    private static bool TryParseDecimal(string raw, out decimal value)
+    {
+        value = 0;
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return false;
+        }
+
+        var sanitized = raw
+            .Replace("R$", string.Empty, StringComparison.OrdinalIgnoreCase)
+            .Replace(" ", string.Empty)
+            .Replace("\t", string.Empty);
+
+        if (sanitized.Contains(',') && sanitized.Contains('.'))
+        {
+            sanitized = sanitized.Replace(".", string.Empty).Replace(",", ".");
+        }
+        else if (sanitized.Contains(','))
+        {
+            sanitized = sanitized.Replace(",", ".");
+        }
+
+        return decimal.TryParse(sanitized, NumberStyles.Any, CultureInfo.InvariantCulture, out value);
+    }
+
+    private static string? ExtractTag(string block, string tag)
+    {
+        var open = $"<{tag}>";
+        var start = block.IndexOf(open, StringComparison.OrdinalIgnoreCase);
+        if (start < 0)
+        {
+            return null;
+        }
+
+        start += open.Length;
+        var end = block.IndexOf('<', start);
+        if (end < 0)
+        {
+            end = block.Length;
+        }
+
+        return block.Substring(start, end - start).Trim();
     }
 }

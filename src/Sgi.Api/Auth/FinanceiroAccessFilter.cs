@@ -37,7 +37,12 @@ public class FinanceiroAccessFilter : IAsyncActionFilter
             return;
         }
 
-        var auth = await Authz.EnsureMembershipAsync(_db, user, orgId.Value, UserRole.CONDO_ADMIN);
+        var auth = await Authz.EnsureMembershipAsync(
+            _db,
+            user,
+            orgId.Value,
+            UserRole.CONDO_ADMIN,
+            UserRole.CONDO_STAFF);
         if (auth.Error is not null)
         {
             context.Result = auth.Error;
@@ -129,6 +134,41 @@ public class FinanceiroAccessFilter : IAsyncActionFilter
                 await _db.ItensCobrados.AsNoTracking()
                     .Where(i => i.Id == id)
                     .Select(i => (Guid?)i.OrganizacaoId)
+                    .FirstOrDefaultAsync(),
+            nameof(Controllers.FinanceiroController.MarcarLancamentoComoPago) =>
+                await _db.LancamentosFinanceiros.AsNoTracking()
+                    .Where(l => l.Id == id)
+                    .Select(l => (Guid?)l.OrganizacaoId)
+                    .FirstOrDefaultAsync(),
+            nameof(Controllers.FinanceiroController.CancelarLancamento) =>
+                await _db.LancamentosFinanceiros.AsNoTracking()
+                    .Where(l => l.Id == id)
+                    .Select(l => (Guid?)l.OrganizacaoId)
+                    .FirstOrDefaultAsync(),
+            nameof(Controllers.FinanceiroController.AprovarLancamento) =>
+                await _db.LancamentosFinanceiros.AsNoTracking()
+                    .Where(l => l.Id == id)
+                    .Select(l => (Guid?)l.OrganizacaoId)
+                    .FirstOrDefaultAsync(),
+            nameof(Controllers.FinanceiroController.ConciliarLancamento) =>
+                await _db.LancamentosFinanceiros.AsNoTracking()
+                    .Where(l => l.Id == id)
+                    .Select(l => (Guid?)l.OrganizacaoId)
+                    .FirstOrDefaultAsync(),
+            nameof(Controllers.FinanceiroController.FecharLancamento) =>
+                await _db.LancamentosFinanceiros.AsNoTracking()
+                    .Where(l => l.Id == id)
+                    .Select(l => (Guid?)l.OrganizacaoId)
+                    .FirstOrDefaultAsync(),
+            nameof(Controllers.FinanceiroController.ReabrirLancamento) =>
+                await _db.LancamentosFinanceiros.AsNoTracking()
+                    .Where(l => l.Id == id)
+                    .Select(l => (Guid?)l.OrganizacaoId)
+                    .FirstOrDefaultAsync(),
+            nameof(Controllers.FinanceiroController.ConfirmarConciliacao) =>
+                await _db.LancamentosFinanceiros.AsNoTracking()
+                    .Where(l => l.Id == id)
+                    .Select(l => (Guid?)l.OrganizacaoId)
                     .FirstOrDefaultAsync(),
             _ => null
         };

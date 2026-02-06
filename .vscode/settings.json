@@ -1,0 +1,8 @@
+{{
+  "chat.thinking.style": "compact",
+  "chat.tools.autoExpandFailures": true,
+  "chat.agentsControl.enabled": true,
+  "chat.agentsControl.clickBehavior": "cycle",
+  "workbench.browser.openLocalhostLinks": true,
+  "simpleBrowser.useIntegratedBrowser": true
+}

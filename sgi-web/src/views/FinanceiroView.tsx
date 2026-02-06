@@ -6,6 +6,7 @@ import * as XLSX from "xlsx";
 import {
   api,
   ChargeItem,
+  ConciliacaoImportResponse,
   ContaFinanceira,
   DocumentoCobranca,
   LancamentoFinanceiro,
@@ -47,6 +48,7 @@ export const menuFinanceiro: Array<{ id: FinanceiroTab; label: string }> = [
   { id: "consumos", label: "Consumos" },
   { id: "receitasDespesas", label: "Receitas e despesas" },
   { id: "contasPagar", label: "Contas a pagar" },
+  { id: "contasReceber", label: "Contas a receber" },
   { id: "previsaoOrcamentaria", label: "Previsao orcamentaria" },
   { id: "transferencias", label: "Transferencias" },
   { id: "abonos", label: "Abonos" },
@@ -67,11 +69,20 @@ export default function FinanceiroView({
   exibirMenuAbas = true
 }: FinanceiroViewProps) {
   const topoRef = useRef<HTMLDivElement | null>(null);
-  const { token } = useAuth();
+  const { token, session } = useAuth();
   const [aba, setAba] = useState<FinanceiroTab>("contas");
   const [contas, setContas] = useState<ContaFinanceira[]>([]);
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  const membershipAtual = session?.memberships?.find(
+    (m) => m.condoId === organizacao.id && m.isActive
+  );
+  const roleAtual = session?.isPlatformAdmin
+    ? "PLATFORM_ADMIN"
+    : membershipAtual?.role;
+  const isPlatformAdmin = session?.isPlatformAdmin === true;
+  const isAdmin = isPlatformAdmin || roleAtual === "CONDO_ADMIN";
+  const isStaff = roleAtual === "CONDO_STAFF";
 
   // Contas
   const [nomeConta, setNomeConta] = useState("");
@@ -142,6 +153,16 @@ export default function FinanceiroView({
   const [novoItemGeraCobrancaAuto, setNovoItemGeraCobrancaAuto] =
     useState(true);
   const [novoItemDescricao, setNovoItemDescricao] = useState("");
+
+  // Uploads e conciliação
+  const [mostrarEnvio, setMostrarEnvio] = useState(false);
+  const [tipoEnvio, setTipoEnvio] = useState("boleto");
+  const [arquivoEnvio, setArquivoEnvio] = useState<File | null>(null);
+  const [statusEnvio, setStatusEnvio] = useState<string | null>(null);
+  const [extratoImportado, setExtratoImportado] =
+    useState<ConciliacaoImportResponse | null>(null);
+  const [conciliandoId, setConciliandoId] = useState<string | null>(null);
+  const [conciliados, setConciliados] = useState<string[]>([]);
 
   // Plano de contas (categorias financeiras)
   const [novaCategoriaCodigo, setNovaCategoriaCodigo] = useState("");
@@ -291,6 +312,97 @@ export default function FinanceiroView({
     requestAnimationFrame(() => {
       topoRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
+  };
+
+  const enviarArquivoFinanceiro = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!token || !arquivoEnvio) return;
+    try {
+      setErro(null);
+      setStatusEnvio(null);
+      setLoading(true);
+      if (tipoEnvio === "extrato") {
+        const resultado = await api.importarExtrato(
+          token,
+          organizacaoId,
+          arquivoEnvio
+        );
+        setExtratoImportado(resultado);
+        setConciliados([]);
+        setAba("conciliacaoBancaria");
+        setStatusEnvio("Extrato importado com sucesso.");
+      } else {
+        await api.uploadFinanceiro(token, organizacaoId, tipoEnvio, arquivoEnvio);
+        setStatusEnvio("Arquivo enviado com sucesso.");
+      }
+      setArquivoEnvio(null);
+    } catch (e: any) {
+      setErro(e.message || "Erro ao enviar arquivo.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const confirmarConciliacao = async (
+    item: ConciliacaoImportResponse["itens"][number]
+  ) => {
+    if (!token || !item.sugestaoLancamentoId) return;
+    try {
+      setErro(null);
+      setConciliandoId(item.sugestaoLancamentoId);
+      await api.confirmarConciliacao(token, item.sugestaoLancamentoId, organizacaoId, {
+        dataConciliacao: item.data,
+        documento: item.documento,
+        referencia: item.descricao
+      });
+      setConciliados((prev) => [...prev, item.sugestaoLancamentoId!]);
+      await Promise.all([carregarDespesas(), carregarReceitas()]);
+    } catch (e: any) {
+      setErro(e.message || "Erro ao conciliar lançamento.");
+    } finally {
+      setConciliandoId(null);
+    }
+  };
+
+  const executarAcaoLancamento = async (
+    tipo: "pagar" | "receber",
+    acao:
+      | "aprovar"
+      | "pagar"
+      | "conciliar"
+      | "fechar"
+      | "reabrir"
+      | "cancelar",
+    id: string
+  ) => {
+    if (!token) return;
+    try {
+      setErro(null);
+      setLoading(true);
+      if (acao === "aprovar") {
+        await api.aprovarLancamento(token, id);
+      } else if (acao === "pagar") {
+        await api.pagarLancamento(token, id);
+      } else if (acao === "conciliar") {
+        await api.conciliarLancamento(token, id);
+      } else if (acao === "fechar") {
+        await api.fecharLancamento(token, id);
+      } else if (acao === "reabrir") {
+        await api.reabrirLancamento(token, id);
+      } else if (acao === "cancelar") {
+        await api.cancelarLancamento(token, id);
+      }
+
+      if (tipo === "pagar") {
+        await carregarDespesas();
+      } else {
+        await carregarReceitas();
+      }
+    } catch (e: any) {
+      setErro(e.message || "Erro ao atualizar lançamento.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const criarConta = async (e: React.FormEvent) => {
@@ -464,7 +576,7 @@ export default function FinanceiroView({
       const payload: Omit<LancamentoFinanceiro, "id"> = {
         organizacaoId,
         tipo: "pagar",
-        situacao: "pendente",
+        situacao: "aberto",
         planoContasId: novaDespesaCategoriaId,
         centroCustoId: undefined,
         contaFinanceiraId: conta?.id,
@@ -521,7 +633,7 @@ export default function FinanceiroView({
       const payload: Omit<LancamentoFinanceiro, "id"> = {
         organizacaoId,
         tipo: "receber",
-        situacao: "pendente",
+        situacao: "aberto",
         planoContasId: novaReceitaCategoriaId,
         centroCustoId: undefined,
         contaFinanceiraId: conta?.id,
@@ -602,6 +714,38 @@ export default function FinanceiroView({
     }
   };
 
+  const normalizarSituacao = (situacao?: string) => {
+    const valor = (situacao ?? "").toLowerCase();
+    return valor === "pendente" ? "aberto" : valor;
+  };
+
+  const statusMeta = (situacao?: string) => {
+    const normalizada = normalizarSituacao(situacao);
+    switch (normalizada) {
+      case "aberto":
+        return { label: "Aberto", className: "badge-status--aberto" };
+      case "aprovado":
+        return { label: "Aprovado", className: "badge-status--aprovado" };
+      case "pago":
+        return { label: "Pago", className: "badge-status--pago" };
+      case "conciliado":
+        return { label: "Conciliado", className: "badge-status--conciliado" };
+      case "fechado":
+        return { label: "Fechado", className: "badge-status--fechado" };
+      case "cancelado":
+        return { label: "Cancelado", className: "badge-status--cancelado" };
+      default:
+        return { label: "Aberto", className: "badge-status--aberto" };
+    }
+  };
+
+  const isSituacaoAberta = (situacao?: string) =>
+    ["aberto", "aprovado"].includes(normalizarSituacao(situacao));
+  const isSituacaoPaga = (situacao?: string) =>
+    ["pago", "conciliado", "fechado"].includes(normalizarSituacao(situacao));
+  const isSituacaoCancelada = (situacao?: string) =>
+    normalizarSituacao(situacao) === "cancelado";
+
   const totalContas = contas.length;
   const contasAtivas = contas.filter((c) => c.status === "ativo").length;
   const contasInativas = contas.filter((c) => c.status === "inativo").length;
@@ -612,12 +756,29 @@ export default function FinanceiroView({
     (sum, c) => sum + (c.saldoInicial ?? 0),
     0
   );
-  const totalAPagar = despesas
-    .filter((d) => d.situacao === "pendente")
+  const agora = new Date();
+  const mesAtual = agora.getMonth();
+  const anoAtual = agora.getFullYear();
+  const dentroMesAtual = (data?: string) => {
+    if (!data) return false;
+    const dt = new Date(data);
+    return dt.getMonth() === mesAtual && dt.getFullYear() === anoAtual;
+  };
+  const totalAPagarMes = despesas
+    .filter((d) => isSituacaoAberta(d.situacao))
+    .filter((d) => dentroMesAtual(d.dataVencimento ?? d.dataCompetencia))
     .reduce((sum, d) => sum + d.valor, 0);
-  const totalPagas = despesas
-    .filter((d) => d.situacao === "pago")
+  const totalPagoMes = despesas
+    .filter((d) => isSituacaoPaga(d.situacao))
+    .filter((d) => dentroMesAtual(d.dataPagamento ?? d.dataCompetencia))
     .reduce((sum, d) => sum + d.valor, 0);
+  const receitasPagas = receitas
+    .filter((r) => isSituacaoPaga(r.situacao))
+    .reduce((sum, r) => sum + r.valor, 0);
+  const despesasPagas = despesas
+    .filter((d) => isSituacaoPaga(d.situacao))
+    .reduce((sum, d) => sum + d.valor, 0);
+  const saldoAtual = saldoInicialTotal + receitasPagas - despesasPagas;
 
   const categoriasDespesaPorId = Object.fromEntries(
     categoriasDespesa.map((c) => [c.id, `${c.codigo} - ${c.nome}`])
@@ -627,12 +788,8 @@ export default function FinanceiroView({
   );
   const receitasPorId = Object.fromEntries(receitas.map((r) => [r.id, r]));
 
-  const despesasValidas = despesas.filter(
-    (d) => d.situacao !== "cancelado"
-  );
-  const receitasValidas = receitas.filter(
-    (r) => r.situacao !== "cancelado"
-  );
+  const despesasValidas = despesas.filter((d) => !isSituacaoCancelada(d.situacao));
+  const receitasValidas = receitas.filter((r) => !isSituacaoCancelada(r.situacao));
   const totalReceitasPorCategoria = receitasValidas.reduce(
     (acc, r) => {
       const key = r.planoContasId || "sem-categoria";
@@ -662,7 +819,7 @@ export default function FinanceiroView({
   const inadimplentes = receitas
     .filter(
       (r) =>
-        r.situacao !== "pago" &&
+        !isSituacaoPaga(r.situacao) &&
         !!r.dataVencimento &&
         r.dataVencimento.slice(0, 10) < hojeIso
     )
@@ -674,7 +831,7 @@ export default function FinanceiroView({
     0
   );
   const pendentesParaBaixa = [...despesas, ...receitas].filter(
-    (l) => l.situacao === "pendente"
+    (l) => isSituacaoAberta(l.situacao)
   );
   const ultimosLancamentos = [...despesasValidas, ...receitasValidas]
     .sort((a, b) =>
@@ -690,7 +847,7 @@ export default function FinanceiroView({
     (f) => f.status !== "paga" && f.status !== "cancelada"
   );
   const lancamentosReceberElegiveisFatura = receitas
-    .filter((r) => r.situacao !== "cancelado")
+    .filter((r) => !isSituacaoCancelada(r.situacao))
     .filter(
       (r) => !faturasAbertas.some((f) => f.lancamentoFinanceiroId === r.id)
     )
@@ -959,23 +1116,78 @@ export default function FinanceiroView({
 
       <div className="finance-summary-grid">
         <div className="finance-summary-card">
-          <p className="finance-summary-label">Saldo inicial total</p>
+          <p className="finance-summary-label">Saldo atual</p>
           <p className="finance-summary-value">
-            R$ {saldoInicialTotal.toFixed(2)}
+            R$ {saldoAtual.toFixed(2)}
           </p>
         </div>
         <div className="finance-summary-card">
-          <p className="finance-summary-label">Total a pagar</p>
+          <p className="finance-summary-label">Total a pagar (mês)</p>
           <p className="finance-summary-value">
-            R$ {totalAPagar.toFixed(2)}
+            R$ {totalAPagarMes.toFixed(2)}
           </p>
         </div>
         <div className="finance-summary-card">
-          <p className="finance-summary-label">Total já pago</p>
+          <p className="finance-summary-label">Total pago (mês)</p>
           <p className="finance-summary-value">
-            R$ {totalPagas.toFixed(2)}
+            R$ {totalPagoMes.toFixed(2)}
           </p>
         </div>
+      </div>
+
+      <div className="finance-upload-card">
+        <div className="finance-upload-header">
+          <div>
+            <h3>Envios rápidos</h3>
+            <span className="finance-form-sub">
+              Envie documentos com a câmera ou arquivo.
+            </span>
+          </div>
+          <button
+            type="button"
+            className="action-primary"
+            onClick={() => setMostrarEnvio((prev) => !prev)}
+          >
+            Enviar para o SGI
+          </button>
+        </div>
+
+        {mostrarEnvio && (
+          <form className="finance-upload-form" onSubmit={enviarArquivoFinanceiro}>
+            <label>
+              Tipo do envio
+              <select
+                value={tipoEnvio}
+                onChange={(e) => setTipoEnvio(e.target.value)}
+              >
+                <option value="boleto">Boleto / Conta</option>
+                <option value="nota">Nota / Compra</option>
+                <option value="comprovante">Comprovante</option>
+                <option value="extrato">Extrato bancário</option>
+              </select>
+            </label>
+            <label>
+              Arquivo
+              <input
+                type="file"
+                accept={
+                  tipoEnvio === "extrato"
+                    ? ".csv,.ofx"
+                    : "image/*,application/pdf"
+                }
+                capture="environment"
+                onChange={(e) =>
+                  setArquivoEnvio(e.target.files ? e.target.files[0] : null)
+                }
+              />
+            </label>
+            <button type="submit" disabled={loading || !arquivoEnvio}>
+              {loading ? "Enviando..." : "Enviar"}
+            </button>
+          </form>
+        )}
+
+        {statusEnvio && <p className="success">{statusEnvio}</p>}
       </div>
 
       {exibirMenuAbas && (
@@ -1079,7 +1291,7 @@ export default function FinanceiroView({
             {renderTransferenciaForm()}
           </div>
 
-          {/* Tabela de contas */}
+          {/* Contas financeiras */}
           <section className="finance-table-card">
             <div className="finance-table-header">
               <div>
@@ -1087,91 +1299,63 @@ export default function FinanceiroView({
               </div>
             </div>
 
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Nome</th>
-                  <th>Tipo</th>
-                  <th>Banco</th>
-                  <th>Agência</th>
-                  <th>Número</th>
-                  <th>Saldo inicial</th>
-                  <th>Status</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {contas.map((conta) => (
-                  <tr key={conta.id}>
-                    <td>{conta.nome}</td>
-                    <td>{conta.tipo}</td>
-                    <td>{conta.banco || "-"}</td>
-                    <td>{conta.agencia || "-"}</td>
-                    <td>{conta.numeroConta || "-"}</td>
-                    <td>
-                      {conta.saldoInicial?.toLocaleString("pt-BR", {
-                        style: "currency",
-                        currency: conta.moeda || "BRL"
-                      })}
-                    </td>
-                    <td>
-                      {conta.status ? (
-                        <span
-                          className={
-                            "badge-status " +
-                            (conta.status === "ativo"
-                              ? "badge-status--ativo"
-                              : "badge-status--inativo")
-                          }
-                        >
-                          {conta.status === "ativo" ? "Ativa" : "Inativa"}
-                        </span>
-                      ) : (
-                        "-"
-                      )}
-                    </td>
-                    <td>
-                      <div className="finance-card-actions">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            atualizarStatusConta(
-                              conta,
-                              conta.status === "ativo" ? "inativo" : "ativo"
-                            )
-                          }
-                          style={{
-                            backgroundColor:
-                              conta.status === "ativo"
-                                ? "#f97316"
-                                : "#22c55e"
-                          }}
-                        >
-                          {conta.status === "ativo" ? "Desativar" : "Ativar"}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void removerConta(conta)}
-                          style={{
-                            backgroundColor: "#ef4444",
-                            color: "#ffffff"
-                          }}
-                        >
-                          Excluir
-                        </button>
+            <div className="finance-card-list">
+              {contas.map((conta) => (
+                <div key={conta.id} className="finance-item-card">
+                  <div className="finance-item-main">
+                    <div>
+                      <strong className="finance-item-title">{conta.nome}</strong>
+                      <div className="finance-item-sub">
+                        {conta.tipo} • {conta.banco || "-"} •{" "}
+                        {conta.numeroConta || "-"}
                       </div>
-                    </td>
-                  </tr>
-                ))}
-                {contas.length === 0 && (
-                  <tr>
-                    <td colSpan={8} style={{ textAlign: "center" }}>
-                      Nenhuma conta cadastrada ainda.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+                    </div>
+                    <div className="finance-item-right">
+                      <span className="finance-value">
+                        {(conta.saldoInicial ?? 0).toLocaleString("pt-BR", {
+                          style: "currency",
+                          currency: conta.moeda || "BRL"
+                        })}
+                      </span>
+                      <span
+                        className={
+                          "badge-status " +
+                          (conta.status === "ativo"
+                            ? "badge-status--ativo"
+                            : "badge-status--inativo")
+                        }
+                      >
+                        {conta.status === "ativo" ? "Ativa" : "Inativa"}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="finance-item-actions">
+                    <button
+                      type="button"
+                      className="button-secondary"
+                      onClick={() =>
+                        atualizarStatusConta(
+                          conta,
+                          conta.status === "ativo" ? "inativo" : "ativo"
+                        )
+                      }
+                    >
+                      {conta.status === "ativo" ? "Desativar" : "Ativar"}
+                    </button>
+                    <button
+                      type="button"
+                      className="action-secondary"
+                      onClick={() => void removerConta(conta)}
+                    >
+                      Excluir
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {contas.length === 0 && (
+                <p className="empty">Nenhuma conta cadastrada ainda.</p>
+              )}
+            </div>
           </section>
         </div>
       )}
@@ -1262,7 +1446,7 @@ export default function FinanceiroView({
                       currency: "BRL"
                     })}
                   </td>
-                  <td>{lanc.situacao}</td>
+                  <td>{statusMeta(lanc.situacao).label}</td>
                 </tr>
               ))}
               {ultimosLancamentos.length === 0 && (
@@ -1312,7 +1496,7 @@ export default function FinanceiroView({
                         currency: "BRL"
                       })}
                     </td>
-                    <td>{lanc.situacao}</td>
+                    <td>{statusMeta(lanc.situacao).label}</td>
                   </tr>
                 ))}
                 {transferenciasLancadas.length === 0 && (
@@ -1457,125 +1641,96 @@ export default function FinanceiroView({
 
           {erro && <p className="error">{erro}</p>}
 
-          <table className="table finance-table">
-            <thead>
-              <tr>
-                <th>Descrição</th>
-                <th>Categoria</th>
-                <th>Vencimento</th>
-                <th className="finance-value-header">Valor</th>
-                <th>Situação</th>
-                <th>Ações</th>
-              </tr>
-            </thead>
-            <tbody>
-              {despesas
-                .filter((d) => d.situacao !== "cancelado")
-                .map((d) => (
-                  <tr key={d.id}>
-                    <td>
-                      <div className="finance-desc">{d.descricao}</div>
-                    </td>
-                    <td>
-                      {categoriasDespesaPorId[d.planoContasId] ?? "-"}
-                    </td>
-                    <td>
-                      {d.dataVencimento
-                        ? new Date(d.dataVencimento).toLocaleDateString(
-                            "pt-BR"
-                          )
-                        : "-"}
-                    </td>
-                    <td className="finance-value-cell">
+          <div className="finance-card-list">
+            {despesasValidas.map((d) => {
+              const situacao = normalizarSituacao(d.situacao);
+              const statusInfo = statusMeta(d.situacao);
+              const primaryAction: {
+                label: string;
+                action: "aprovar" | "pagar" | "conciliar" | "fechar" | "reabrir";
+              } | null =
+                situacao === "aberto" && isAdmin
+                  ? { label: "Aprovar", action: "aprovar" }
+                  : situacao === "aprovado" && (isAdmin || isStaff)
+                  ? { label: "Marcar como pago", action: "pagar" }
+                  : situacao === "pago" && (isAdmin || isStaff)
+                  ? { label: "Conciliar", action: "conciliar" }
+                  : situacao === "conciliado" && isAdmin
+                  ? { label: "Fechar", action: "fechar" }
+                  : situacao === "fechado" && isPlatformAdmin
+                  ? { label: "Reabrir", action: "reabrir" }
+                  : null;
+              const podeCancelar =
+                isAdmin && (situacao === "aberto" || situacao === "aprovado");
+              return (
+                <div key={d.id} className="finance-item-card">
+                  <div className="finance-item-main">
+                    <div>
+                      <strong className="finance-item-title">
+                        {d.descricao}
+                      </strong>
+                      <div className="finance-item-sub">
+                        {categoriasDespesaPorId[d.planoContasId] ?? "-"} •{" "}
+                        {d.dataVencimento
+                          ? new Date(d.dataVencimento).toLocaleDateString(
+                              "pt-BR"
+                            )
+                          : "-"}{" "}
+                        • {d.formaPagamento || "indefinido"}
+                      </div>
+                    </div>
+                    <div className="finance-item-right">
                       <span className="finance-value">
                         {d.valor.toLocaleString("pt-BR", {
                           style: "currency",
                           currency: "BRL"
                         })}
                       </span>
-                    </td>
-                    <td>
                       <span
-                        className={
-                          "badge-status " +
-                          (d.situacao === "pago"
-                            ? "badge-status--pago"
-                            : "badge-status--pendente")
+                        className={`badge-status ${statusInfo.className}`}
+                      >
+                        {statusInfo.label}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="finance-item-actions">
+                    {primaryAction && (
+                      <button
+                        type="button"
+                        className="action-primary"
+                        disabled={loading}
+                        onClick={() =>
+                          executarAcaoLancamento(
+                            "pagar",
+                            primaryAction.action,
+                            d.id
+                          )
                         }
                       >
-                        {d.situacao === "pago" ? "Pago" : "Pendente"}
-                      </span>
-                    </td>
-                    <td className="finance-actions-cell">
-                      <div className="table-actions">
-                        <button
-                          type="button"
-                          className="action-primary"
-                          title="Marcar como pago"
-                          disabled={loading || d.situacao === "pago"}
-                          onClick={async () => {
-                            if (!token) return;
-                            try {
-                              setErro(null);
-                              setLoading(true);
-                              await api.pagarLancamento(token, d.id);
-                              await carregarDespesas();
-                            } catch (e: any) {
-                              setErro(
-                                e.message || "Erro ao marcar como pago"
-                              );
-                            } finally {
-                              setLoading(false);
-                            }
-                          }}
-                        >
-                          Marcar como pago
-                        </button>
-                        <details className="action-menu">
-                          <summary title="Mais ações" aria-label="Mais ações">
-                            ⋮
-                          </summary>
-                          <div className="action-menu-panel">
-                            <button
-                              type="button"
-                              className="action-secondary"
-                              title="Cancelar despesa"
-                              disabled={loading}
-                              onClick={async () => {
-                                if (!token) return;
-                                if (!window.confirm("Cancelar esta despesa?"))
-                                  return;
-                                try {
-                                  setErro(null);
-                                  setLoading(true);
-                                  await api.cancelarLancamento(token, d.id);
-                                  await carregarDespesas();
-                                } catch (e: any) {
-                                  setErro(
-                                    e.message || "Erro ao cancelar despesa"
-                                  );
-                                } finally {
-                                  setLoading(false);
-                                }
-                              }}
-                            >
-                              Cancelar
-                            </button>
-                          </div>
-                        </details>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              {despesas.length === 0 && (
-                <tr>
-                  <td colSpan={6} style={{ textAlign: "center" }}>
-                    Nenhuma despesa cadastrada ainda.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+                        {primaryAction.label}
+                      </button>
+                    )}
+                    {podeCancelar && (
+                      <button
+                        type="button"
+                        className="action-secondary"
+                        disabled={loading}
+                        onClick={async () => {
+                          if (!window.confirm("Cancelar esta despesa?")) return;
+                          await executarAcaoLancamento("pagar", "cancelar", d.id);
+                        }}
+                      >
+                        Cancelar
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+            {despesasValidas.length === 0 && (
+              <p className="empty">Nenhuma despesa cadastrada ainda.</p>
+            )}
+          </div>
         </div>
       )}
 
@@ -1714,125 +1869,100 @@ export default function FinanceiroView({
 
           {erro && <p className="error">{erro}</p>}
 
-          <table className="table finance-table">
-            <thead>
-              <tr>
-                <th>Descrição</th>
-                <th>Categoria</th>
-                <th>Vencimento</th>
-                <th className="finance-value-header">Valor</th>
-                <th>Situação</th>
-                <th>Ações</th>
-              </tr>
-            </thead>
-            <tbody>
-              {receitas.map((r) => (
-                <tr key={r.id}>
-                  <td>
-                    <div className="finance-desc">{r.descricao}</div>
-                  </td>
-                  <td>
-                    {categoriasReceitaPorId[r.planoContasId] ?? "-"}
-                  </td>
-                  <td>
-                    {r.dataVencimento
-                      ? new Date(r.dataVencimento).toLocaleDateString(
-                          "pt-BR"
-                        )
-                      : "-"}
-                  </td>
-                  <td className="finance-value-cell">
-                    <span className="finance-value">
-                      {r.valor.toLocaleString("pt-BR", {
-                        style: "currency",
-                        currency: "BRL"
-                      })}
-                    </span>
-                  </td>
-                  <td>
-                    <span
-                      className={
-                        "badge-status " +
-                        (r.situacao === "pago"
-                          ? "badge-status--pago"
-                          : r.situacao === "cancelado"
-                          ? "badge-status--inativo"
-                          : "badge-status--pendente")
-                      }
-                    >
-                      {r.situacao === "pago"
-                        ? "Pago"
-                        : r.situacao === "cancelado"
-                        ? "Cancelado"
-                        : "Pendente"}
-                    </span>
-                  </td>
-                  <td className="finance-actions-cell">
-                    <div className="table-actions">
+          <div className="finance-card-list">
+            {receitasValidas.map((r) => {
+              const situacao = normalizarSituacao(r.situacao);
+              const statusInfo = statusMeta(r.situacao);
+              const primaryAction: {
+                label: string;
+                action: "aprovar" | "pagar" | "conciliar" | "fechar" | "reabrir";
+              } | null =
+                situacao === "aberto" && isAdmin
+                  ? { label: "Aprovar", action: "aprovar" }
+                  : situacao === "aprovado" && (isAdmin || isStaff)
+                  ? { label: "Marcar como pago", action: "pagar" }
+                  : situacao === "pago" && (isAdmin || isStaff)
+                  ? { label: "Conciliar", action: "conciliar" }
+                  : situacao === "conciliado" && isAdmin
+                  ? { label: "Fechar", action: "fechar" }
+                  : situacao === "fechado" && isPlatformAdmin
+                  ? { label: "Reabrir", action: "reabrir" }
+                  : null;
+              const podeCancelar =
+                isAdmin && (situacao === "aberto" || situacao === "aprovado");
+              return (
+                <div key={r.id} className="finance-item-card">
+                  <div className="finance-item-main">
+                    <div>
+                      <strong className="finance-item-title">
+                        {r.descricao}
+                      </strong>
+                      <div className="finance-item-sub">
+                        {categoriasReceitaPorId[r.planoContasId] ?? "-"} •{" "}
+                        {r.dataVencimento
+                          ? new Date(r.dataVencimento).toLocaleDateString(
+                              "pt-BR"
+                            )
+                          : "-"}{" "}
+                        • {r.formaPagamento || "indefinido"}
+                      </div>
+                    </div>
+                    <div className="finance-item-right">
+                      <span className="finance-value">
+                        {r.valor.toLocaleString("pt-BR", {
+                          style: "currency",
+                          currency: "BRL"
+                        })}
+                      </span>
+                      <span
+                        className={`badge-status ${statusInfo.className}`}
+                      >
+                        {statusInfo.label}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="finance-item-actions">
+                    {primaryAction && (
                       <button
                         type="button"
                         className="action-primary"
-                        title="Marcar como pago"
-                        disabled={loading || r.situacao === "pago"}
+                        disabled={loading}
+                        onClick={() =>
+                          executarAcaoLancamento(
+                            "receber",
+                            primaryAction.action,
+                            r.id
+                          )
+                        }
+                      >
+                        {primaryAction.label}
+                      </button>
+                    )}
+                    {podeCancelar && (
+                      <button
+                        type="button"
+                        className="action-secondary"
+                        disabled={loading}
                         onClick={async () => {
-                          if (!token) return;
-                          try {
-                            setErro(null);
-                            setLoading(true);
-                            await api.pagarLancamento(token, r.id);
-                            await carregarReceitas();
-                          } catch (e: any) {
-                            setErro(e.message || "Erro ao marcar como pago");
-                          } finally {
-                            setLoading(false);
-                          }
+                          if (!window.confirm("Cancelar esta receita?")) return;
+                          await executarAcaoLancamento(
+                            "receber",
+                            "cancelar",
+                            r.id
+                          );
                         }}
                       >
-                        Marcar como pago
+                        Cancelar
                       </button>
-                      <details className="action-menu">
-                        <summary title="Mais ações" aria-label="Mais ações">
-                          ⋮
-                        </summary>
-                        <div className="action-menu-panel">
-                          <button
-                            type="button"
-                            className="action-secondary"
-                            title="Cancelar receita"
-                            disabled={loading}
-                            onClick={async () => {
-                              if (!token) return;
-                              if (!window.confirm("Cancelar esta receita?"))
-                                return;
-                              try {
-                                setErro(null);
-                                setLoading(true);
-                                await api.cancelarLancamento(token, r.id);
-                                await carregarReceitas();
-                              } catch (e: any) {
-                                setErro(e.message || "Erro ao cancelar receita");
-                              } finally {
-                                setLoading(false);
-                              }
-                            }}
-                          >
-                            Cancelar
-                          </button>
-                        </div>
-                      </details>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              {receitas.length === 0 && (
-                <tr>
-                  <td colSpan={6} style={{ textAlign: "center" }}>
-                    Nenhuma receita cadastrada ainda.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+            {receitasValidas.length === 0 && (
+              <p className="empty">Nenhuma receita cadastrada ainda.</p>
+            )}
+          </div>
         </div>
       )}
 
@@ -1900,7 +2030,7 @@ export default function FinanceiroView({
               {pendentesParaBaixa.length === 0 && (
                 <tr>
                   <td colSpan={5} style={{ textAlign: "center" }}>
-                    Nenhum lancamento pendente para baixa manual.
+                    Nenhum lançamento em aberto para baixa manual.
                   </td>
                 </tr>
               )}
@@ -2473,7 +2603,7 @@ export default function FinanceiroView({
               </p>
             </div>
             <div className="finance-card-actions">
-              <span className="badge-status badge-status--pendente">
+              <span className="badge-status badge-status--aberto">
                 Total:{" "}
                 {totalInadimplencia.toLocaleString("pt-BR", {
                   style: "currency",
@@ -2519,7 +2649,7 @@ export default function FinanceiroView({
                         currency: "BRL"
                       })}
                     </td>
-                    <td>{lanc.situacao}</td>
+                    <td>{statusMeta(lanc.situacao).label}</td>
                   </tr>
                 );
               })}
@@ -2535,16 +2665,104 @@ export default function FinanceiroView({
         </div>
       )}
 
-      {aba === "conciliacaoBancaria" &&
-        renderModuloBase(
-          "Conciliacao bancaria",
-          "Base para importar extrato e casar automaticamente com lancamentos.",
-          [
-            "Importar OFX/CSV do banco por conta e periodo.",
-            "Sugerir conciliacao por valor, data e referencia.",
-            "Apontar divergencias e gerar ajustes de conciliacao."
-          ]
-        )}
+      {aba === "conciliacaoBancaria" && (
+        <div className="finance-table-card" style={{ marginTop: 12 }}>
+          <div className="finance-table-header">
+            <div>
+              <h3>Conciliação bancária</h3>
+              <p className="finance-form-sub">
+                Importe extrato (CSV/OFX) e concilie com 1 clique.
+              </p>
+            </div>
+          </div>
+
+          <form
+            className="finance-upload-form"
+            onSubmit={(e) => {
+              setTipoEnvio("extrato");
+              void enviarArquivoFinanceiro(e);
+            }}
+          >
+            <label>
+              Extrato bancário
+              <input
+                type="file"
+                accept=".csv,.ofx"
+                onChange={(e) =>
+                  setArquivoEnvio(e.target.files ? e.target.files[0] : null)
+                }
+              />
+            </label>
+            <button type="submit" disabled={loading || !arquivoEnvio}>
+              {loading ? "Importando..." : "Importar extrato"}
+            </button>
+          </form>
+
+          {extratoImportado && (
+            <div className="finance-card-list" style={{ marginTop: 16 }}>
+              {extratoImportado.itens.map((item) => {
+                const conciliado = item.sugestaoLancamentoId
+                  ? conciliados.includes(item.sugestaoLancamentoId)
+                  : false;
+                return (
+                  <div key={item.index} className="finance-item-card">
+                    <div className="finance-item-main">
+                      <div>
+                        <strong className="finance-item-title">
+                          {item.descricao}
+                        </strong>
+                        <div className="finance-item-sub">
+                          {new Date(item.data).toLocaleDateString("pt-BR")} •{" "}
+                          {item.documento || "Sem documento"}
+                        </div>
+                      </div>
+                      <div className="finance-item-right">
+                        <span className="finance-value">
+                          {item.valor.toLocaleString("pt-BR", {
+                            style: "currency",
+                            currency: "BRL"
+                          })}
+                        </span>
+                        <span className="badge-status badge-status--conciliado">
+                          {conciliado ? "Conciliado" : "Pendente"}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="finance-item-actions">
+                      {item.sugestaoLancamentoId ? (
+                        <button
+                          type="button"
+                          className="action-primary"
+                          disabled={conciliado || conciliandoId === item.sugestaoLancamentoId}
+                          onClick={() => void confirmarConciliacao(item)}
+                        >
+                          {conciliado
+                            ? "Conciliado"
+                            : conciliandoId === item.sugestaoLancamentoId
+                            ? "Conciliando..."
+                            : "Conciliar"}
+                        </button>
+                      ) : (
+                        <span className="finance-item-sub">
+                          Sem sugestão automática
+                        </span>
+                      )}
+                    </div>
+                    {item.sugestaoDescricao && (
+                      <div className="finance-item-sub">
+                        Sugestão: {item.sugestaoDescricao}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              {extratoImportado.itens.length === 0 && (
+                <p className="empty">Nenhum item encontrado no extrato.</p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {aba === "livroPrestacaoContas" &&
         renderModuloBase(
