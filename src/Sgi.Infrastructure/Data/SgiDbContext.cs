@@ -23,6 +23,8 @@ public class SgiDbContext : DbContext
     public DbSet<UsuarioPapelOrganizacao> UsuariosPapeisOrganizacao => Set<UsuarioPapelOrganizacao>();
     public DbSet<Endereco> Enderecos => Set<Endereco>();
     public DbSet<LogAuditoria> LogsAuditoria => Set<LogAuditoria>();
+    public DbSet<Veiculo> Veiculos => Set<Veiculo>();
+    public DbSet<Pet> Pets => Set<Pet>();
 
     public DbSet<ContaFinanceira> ContasFinanceiras => Set<ContaFinanceira>();
     public DbSet<PlanoContas> PlanosContas => Set<PlanoContas>();
@@ -36,6 +38,7 @@ public class SgiDbContext : DbContext
     public DbSet<FinanceAudit> FinanceAudits => Set<FinanceAudit>();
 
     public DbSet<Chamado> Chamados => Set<Chamado>();
+    public DbSet<ChamadoHistorico> ChamadosHistorico => Set<ChamadoHistorico>();
     public DbSet<RecursoReservavel> RecursosReservaveis => Set<RecursoReservavel>();
     public DbSet<Reserva> Reservas => Set<Reserva>();
 
@@ -60,6 +63,8 @@ public class SgiDbContext : DbContext
             .HasConversion<string>();
         modelBuilder.Entity<Endereco>().ToTable("Enderecos");
         modelBuilder.Entity<LogAuditoria>().ToTable("LogsAuditoria");
+        modelBuilder.Entity<Veiculo>().ToTable("Veiculos");
+        modelBuilder.Entity<Pet>().ToTable("Pets");
 
         modelBuilder.Entity<ContaFinanceira>().ToTable("ContasFinanceiras");
         modelBuilder.Entity<PlanoContas>().ToTable("PlanosContas");
@@ -73,7 +78,43 @@ public class SgiDbContext : DbContext
         modelBuilder.Entity<FinanceAudit>().ToTable("FinanceAudits");
 
         modelBuilder.Entity<Chamado>().ToTable("Chamados");
+        modelBuilder.Entity<ChamadoHistorico>().ToTable("ChamadoHistoricos");
         modelBuilder.Entity<RecursoReservavel>().ToTable("RecursosReservaveis");
         modelBuilder.Entity<Reserva>().ToTable("Reservas");
+
+        ConfigureDemoSource(modelBuilder);
+    }
+
+    private static void ConfigureDemoSource(ModelBuilder modelBuilder)
+    {
+        AddSource<Organizacao>(modelBuilder);
+        AddSource<UnidadeOrganizacional>(modelBuilder);
+        AddSource<Pessoa>(modelBuilder);
+        AddSource<UserCondoMembership>(modelBuilder);
+        AddSource<VinculoPessoaOrganizacao>(modelBuilder);
+        AddSource<Endereco>(modelBuilder);
+        AddSource<Veiculo>(modelBuilder);
+        AddSource<Pet>(modelBuilder);
+
+        AddSource<ContaFinanceira>(modelBuilder);
+        AddSource<PlanoContas>(modelBuilder);
+        AddSource<ChargeItem>(modelBuilder);
+        AddSource<CentroCusto>(modelBuilder);
+        AddSource<LancamentoFinanceiro>(modelBuilder);
+        AddSource<DocumentoCobranca>(modelBuilder);
+        AddSource<CotaCondominial>(modelBuilder);
+        AddSource<RegraRateio>(modelBuilder);
+        AddSource<LancamentoRateado>(modelBuilder);
+        AddSource<FinanceAudit>(modelBuilder);
+
+        AddSource<Chamado>(modelBuilder);
+        AddSource<ChamadoHistorico>(modelBuilder);
+        AddSource<RecursoReservavel>(modelBuilder);
+        AddSource<Reserva>(modelBuilder);
+    }
+
+    private static void AddSource<TEntity>(ModelBuilder modelBuilder) where TEntity : class
+    {
+        modelBuilder.Entity<TEntity>().Property<string>("Source");
     }
 }

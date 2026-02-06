@@ -5,16 +5,29 @@ import { useAuth } from "../hooks/useAuth";
 type UnidadesViewProps = {
   organizacao: Organizacao;
   readOnly?: boolean;
+  titulo?: string;
+  tipoInicial?: string;
+  filtroTipoInicial?: string;
+  tipoFixo?: boolean;
+  filtroTipoFixo?: boolean;
 };
 
-export default function UnidadesView({ organizacao, readOnly = false }: UnidadesViewProps) {
+export default function UnidadesView({
+  organizacao,
+  readOnly = false,
+  titulo,
+  tipoInicial,
+  filtroTipoInicial,
+  tipoFixo = false,
+  filtroTipoFixo = false
+}: UnidadesViewProps) {
   const { token } = useAuth();
   const [unidades, setUnidades] = useState<UnidadeOrganizacional[]>([]);
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [formAberto, setFormAberto] = useState(false);
 
-  const [tipo, setTipo] = useState("Apartamento");
+  const [tipo, setTipo] = useState(tipoInicial ?? "Apartamento");
   const [codigoInterno, setCodigoInterno] = useState("");
   const [nome, setNome] = useState("");
   const [unidadeSelecionadaId, setUnidadeSelecionadaId] = useState<string | null>(
@@ -26,7 +39,7 @@ export default function UnidadesView({ organizacao, readOnly = false }: Unidades
   const [editTipo, setEditTipo] = useState("");
   const [salvandoEdicao, setSalvandoEdicao] = useState(false);
   const [busca, setBusca] = useState("");
-  const [filtroTipo, setFiltroTipo] = useState("todos");
+  const [filtroTipo, setFiltroTipo] = useState(filtroTipoInicial ?? "todos");
 
   const carregarUnidades = async () => {
     if (!token || !organizacao) return;
@@ -52,6 +65,18 @@ export default function UnidadesView({ organizacao, readOnly = false }: Unidades
       setFormAberto(false);
     }
   }, [formAberto, readOnly]);
+
+  useEffect(() => {
+    if (tipoInicial) {
+      setTipo(tipoInicial);
+    }
+  }, [tipoInicial]);
+
+  useEffect(() => {
+    if (filtroTipoInicial) {
+      setFiltroTipo(filtroTipoInicial);
+    }
+  }, [filtroTipoInicial]);
 
   const salvarUnidade = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -135,13 +160,15 @@ export default function UnidadesView({ organizacao, readOnly = false }: Unidades
     return true;
   });
 
+  const tituloExibido = titulo ?? "Unidades";
+
   return (
     <div className="people-page">
       <div className={"people-layout" + (formAberto ? "" : " people-layout--single")}>
         <section className="people-list-card">
           <div className="people-header-row">
             <div>
-              <h2>Unidades</h2>
+              <h2>{tituloExibido}</h2>
             </div>
             <div className="people-header-actions">
               {!readOnly && (
@@ -163,14 +190,18 @@ export default function UnidadesView({ organizacao, readOnly = false }: Unidades
               value={busca}
               onChange={(e) => setBusca(e.target.value)}
             />
-            <select value={filtroTipo} onChange={(e) => setFiltroTipo(e.target.value)}>
-              <option value="todos">Todos os tipos</option>
-              {[...new Set(unidades.map((u) => u.tipo))].map((tipoItem) => (
-                <option key={tipoItem} value={tipoItem}>
-                  {tipoItem}
-                </option>
-              ))}
-            </select>
+            {filtroTipoFixo ? (
+              <input value={filtroTipo === "todos" ? "" : filtroTipo} disabled />
+            ) : (
+              <select value={filtroTipo} onChange={(e) => setFiltroTipo(e.target.value)}>
+                <option value="todos">Todos os tipos</option>
+                {[...new Set(unidades.map((u) => u.tipo))].map((tipoItem) => (
+                  <option key={tipoItem} value={tipoItem}>
+                    {tipoItem}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
 
           {erro && <p className="error">{erro}</p>}
@@ -221,7 +252,11 @@ export default function UnidadesView({ organizacao, readOnly = false }: Unidades
             <form onSubmit={salvarUnidade} className="form">
               <label>
                 Tipo
-                <input value={tipo} onChange={(e) => setTipo(e.target.value)} />
+                <input
+                  value={tipo}
+                  onChange={(e) => setTipo(e.target.value)}
+                  disabled={tipoFixo}
+                />
               </label>
               <label>
                 Codigo interno

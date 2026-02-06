@@ -12,7 +12,7 @@ public class Chamado
     public string Status { get; set; } = string.Empty;
     public string? Prioridade { get; set; }
     public Guid? ResponsavelUsuarioId { get; set; }
+    public Guid? ResponsavelPessoaId { get; set; }
     public DateTime DataAbertura { get; set; }
     public DateTime? DataFechamento { get; set; }
 }
-

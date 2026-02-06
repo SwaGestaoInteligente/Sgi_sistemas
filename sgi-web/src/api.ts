@@ -61,6 +61,8 @@ export interface Pessoa {
   telefone?: string;
   documento?: string;
   papel?: string;
+  unidadeOrganizacionalId?: string | null;
+  unidadeCodigo?: string | null;
   // Campos de endereço podem não vir da API em todas as situações,
   // então ficam opcionais.
   logradouro?: string;
@@ -123,7 +125,9 @@ export interface Chamado {
   descricao: string;
   status: string;
   prioridade?: string | null;
+  responsavelPessoaId?: string | null;
   dataAbertura?: string;
+  dataFechamento?: string | null;
 }
 
 export interface Reserva {
@@ -136,6 +140,51 @@ export interface Reserva {
   dataFim: string;
   status: string;
   valorTotal?: number | null;
+}
+
+export interface RecursoReservavel {
+  id: string;
+  organizacaoId: string;
+  unidadeOrganizacionalId?: string | null;
+  nome: string;
+  tipo?: string;
+  capacidade?: number | null;
+  regrasJson?: string | null;
+  ativo?: boolean;
+}
+
+export interface ChamadoHistorico {
+  id: string;
+  organizacaoId: string;
+  chamadoId: string;
+  dataHora: string;
+  acao: string;
+  detalhes?: string | null;
+  responsavelPessoaId?: string | null;
+}
+
+export interface Veiculo {
+  id: string;
+  organizacaoId: string;
+  unidadeOrganizacionalId?: string | null;
+  pessoaId?: string | null;
+  placa: string;
+  marca: string;
+  modelo: string;
+  cor: string;
+  status: string;
+}
+
+export interface Pet {
+  id: string;
+  organizacaoId: string;
+  unidadeOrganizacionalId?: string | null;
+  pessoaId?: string | null;
+  nome: string;
+  especie: string;
+  raca?: string | null;
+  porte: string;
+  status: string;
 }
 
 export interface ChargeItem {
@@ -518,14 +567,119 @@ export const api = {
     );
   },
 
+  async atualizarChamado(
+    token: string,
+    id: string,
+    payload: {
+      status?: string;
+      prioridade?: string;
+      responsavelPessoaId?: string | null;
+      observacao?: string;
+    }
+  ): Promise<Chamado> {
+    return request<Chamado>(
+      `/api/operacao/chamados/${encodeURIComponent(id)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(payload)
+      },
+      token
+    );
+  },
+
+  async listarHistoricoChamado(
+    token: string,
+    id: string
+  ): Promise<ChamadoHistorico[]> {
+    return request<ChamadoHistorico[]>(
+      `/api/operacao/chamados/${encodeURIComponent(id)}/historico`,
+      {},
+      token
+    );
+  },
+
+  async listarRecursos(
+    token: string,
+    organizacaoId: string
+  ): Promise<RecursoReservavel[]> {
+    const suffix = `?organizacaoId=${encodeURIComponent(organizacaoId)}`;
+    return request<RecursoReservavel[]>(`/api/operacao/recursos${suffix}`, {}, token);
+  },
+
+  async criarRecurso(
+    token: string,
+    payload: {
+      organizacaoId: string;
+      unidadeOrganizacionalId?: string | null;
+      nome: string;
+      tipo?: string;
+      capacidade?: number | null;
+      regrasJson?: string | null;
+      ativo?: boolean;
+    }
+  ): Promise<RecursoReservavel> {
+    return request<RecursoReservavel>(
+      "/api/operacao/recursos",
+      {
+        method: "POST",
+        body: JSON.stringify(payload)
+      },
+      token
+    );
+  },
+
+  async atualizarRecurso(
+    token: string,
+    id: string,
+    payload: {
+      organizacaoId: string;
+      unidadeOrganizacionalId?: string | null;
+      nome: string;
+      tipo?: string;
+      capacidade?: number | null;
+      regrasJson?: string | null;
+      ativo?: boolean;
+    }
+  ): Promise<RecursoReservavel> {
+    return request<RecursoReservavel>(
+      `/api/operacao/recursos/${encodeURIComponent(id)}`,
+      {
+        method: "PUT",
+        body: JSON.stringify(payload)
+      },
+      token
+    );
+  },
+
+  async removerRecurso(
+    token: string,
+    id: string,
+    organizacaoId: string
+  ): Promise<void> {
+    const suffix = `?organizacaoId=${encodeURIComponent(organizacaoId)}`;
+    await request<void>(`/api/operacao/recursos/${encodeURIComponent(id)}${suffix}`, {
+      method: "DELETE"
+    }, token);
+  },
+
   async listarReservas(
     token: string,
-    organizacaoId?: string
+    organizacaoId?: string,
+    recursoId?: string
   ): Promise<Reserva[]> {
-    const suffix = organizacaoId
-      ? `?organizacaoId=${encodeURIComponent(organizacaoId)}`
-      : "";
-    return request<Reserva[]>(`/api/operacao/reservas${suffix}`, {}, token);
+    const searchParams = new URLSearchParams();
+    if (organizacaoId) {
+      searchParams.set("organizacaoId", organizacaoId);
+    }
+    if (recursoId) {
+      searchParams.set("recursoId", recursoId);
+    }
+    const suffix = searchParams.toString();
+    return request<Reserva[]>(
+      `/api/operacao/reservas${suffix ? `?${suffix}` : ""}`,
+      {},
+      token
+    );
   },
 
   async criarReserva(token: string, payload: Reserva): Promise<Reserva> {
@@ -536,6 +690,184 @@ export const api = {
         body: JSON.stringify(payload)
       },
       token
+    );
+  },
+
+  async atualizarReserva(
+    token: string,
+    id: string,
+    payload: { status: string }
+  ): Promise<Reserva> {
+    return request<Reserva>(
+      `/api/operacao/reservas/${encodeURIComponent(id)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(payload)
+      },
+      token
+    );
+  },
+
+  async listarVeiculos(
+    token: string,
+    organizacaoId: string,
+    filters?: { unidadeId?: string; pessoaId?: string; status?: string }
+  ): Promise<Veiculo[]> {
+    const searchParams = new URLSearchParams();
+    searchParams.set("organizacaoId", organizacaoId);
+    if (filters?.unidadeId) searchParams.set("unidadeId", filters.unidadeId);
+    if (filters?.pessoaId) searchParams.set("pessoaId", filters.pessoaId);
+    if (filters?.status) searchParams.set("status", filters.status);
+    return request<Veiculo[]>(
+      `/api/veiculos?${searchParams.toString()}`,
+      {},
+      token
+    );
+  },
+
+  async criarVeiculo(
+    token: string,
+    payload: {
+      organizacaoId: string;
+      unidadeOrganizacionalId?: string | null;
+      pessoaId?: string | null;
+      placa: string;
+      marca: string;
+      modelo: string;
+      cor: string;
+      status?: string;
+    }
+  ): Promise<Veiculo> {
+    return request<Veiculo>(
+      "/api/veiculos",
+      {
+        method: "POST",
+        body: JSON.stringify(payload)
+      },
+      token
+    );
+  },
+
+  async atualizarVeiculo(
+    token: string,
+    id: string,
+    payload: {
+      organizacaoId: string;
+      unidadeOrganizacionalId?: string | null;
+      pessoaId?: string | null;
+      placa: string;
+      marca: string;
+      modelo: string;
+      cor: string;
+      status?: string;
+    }
+  ): Promise<Veiculo> {
+    return request<Veiculo>(
+      `/api/veiculos/${encodeURIComponent(id)}`,
+      {
+        method: "PUT",
+        body: JSON.stringify(payload)
+      },
+      token
+    );
+  },
+
+  async removerVeiculo(
+    token: string,
+    id: string,
+    organizacaoId: string
+  ): Promise<void> {
+    const suffix = `?organizacaoId=${encodeURIComponent(organizacaoId)}`;
+    await request<void>(
+      `/api/veiculos/${encodeURIComponent(id)}${suffix}`,
+      { method: "DELETE" },
+      token
+    );
+  },
+
+  async listarPets(
+    token: string,
+    organizacaoId: string,
+    filters?: { unidadeId?: string; pessoaId?: string; status?: string }
+  ): Promise<Pet[]> {
+    const searchParams = new URLSearchParams();
+    searchParams.set("organizacaoId", organizacaoId);
+    if (filters?.unidadeId) searchParams.set("unidadeId", filters.unidadeId);
+    if (filters?.pessoaId) searchParams.set("pessoaId", filters.pessoaId);
+    if (filters?.status) searchParams.set("status", filters.status);
+    return request<Pet[]>(
+      `/api/pets?${searchParams.toString()}`,
+      {},
+      token
+    );
+  },
+
+  async criarPet(
+    token: string,
+    payload: {
+      organizacaoId: string;
+      unidadeOrganizacionalId?: string | null;
+      pessoaId?: string | null;
+      nome: string;
+      especie: string;
+      raca?: string | null;
+      porte: string;
+      status?: string;
+    }
+  ): Promise<Pet> {
+    return request<Pet>(
+      "/api/pets",
+      {
+        method: "POST",
+        body: JSON.stringify(payload)
+      },
+      token
+    );
+  },
+
+  async atualizarPet(
+    token: string,
+    id: string,
+    payload: {
+      organizacaoId: string;
+      unidadeOrganizacionalId?: string | null;
+      pessoaId?: string | null;
+      nome: string;
+      especie: string;
+      raca?: string | null;
+      porte: string;
+      status?: string;
+    }
+  ): Promise<Pet> {
+    return request<Pet>(
+      `/api/pets/${encodeURIComponent(id)}`,
+      {
+        method: "PUT",
+        body: JSON.stringify(payload)
+      },
+      token
+    );
+  },
+
+  async removerPet(
+    token: string,
+    id: string,
+    organizacaoId: string
+  ): Promise<void> {
+    const suffix = `?organizacaoId=${encodeURIComponent(organizacaoId)}`;
+    await request<void>(
+      `/api/pets/${encodeURIComponent(id)}${suffix}`,
+      { method: "DELETE" },
+      token
+    );
+  },
+
+  async seedDemoFull(): Promise<any> {
+    return request<any>(
+      "/api/dev/seed-demo-full",
+      {
+        method: "POST"
+      }
     );
   },
 
@@ -870,6 +1202,17 @@ export const api = {
       `/api/financeiro/lancamentos/${encodeURIComponent(id)}/cancelar`,
       {
         method: "POST"
+      },
+      token
+    );
+  },
+
+  async arquivarUnidade(token: string, id: string): Promise<void> {
+    const path = `/api/unidades/${encodeURIComponent(id)}/arquivar`;
+    await request<void>(
+      path,
+      {
+        method: "PATCH"
       },
       token
     );

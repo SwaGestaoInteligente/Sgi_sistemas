@@ -26,7 +26,9 @@ public class PessoasController : ControllerBase
         string? Telefone,
         string? Documento,
         string? Papel,
-        string? EnderecoResumo);
+        string? EnderecoResumo,
+        Guid? UnidadeOrganizacionalId,
+        string? UnidadeCodigo);
 
     public class CriarPessoaRequest
     {
@@ -71,6 +73,8 @@ public class PessoasController : ControllerBase
             join p in _db.Pessoas on v.PessoaId equals p.Id
             join e in _db.Enderecos on p.Id equals e.PessoaId into enderecos
             from e in enderecos.DefaultIfEmpty()
+            join u in _db.UnidadesOrganizacionais on v.UnidadeOrganizacionalId equals u.Id into unidades
+            from u in unidades.DefaultIfEmpty()
             where v.OrganizacaoId == organizacaoId
             select new PessoaDto(
                 p.Id,
@@ -81,7 +85,9 @@ public class PessoasController : ControllerBase
                 v.Papel,
                 e != null
                     ? $"{e.Logradouro}, {e.Numero} - {e.Bairro} - {e.Cidade}/{e.Estado}"
-                    : null
+                    : null,
+                v.UnidadeOrganizacionalId,
+                u != null ? u.CodigoInterno : null
             );
 
         var pessoas = await query.AsNoTracking().ToListAsync();
@@ -167,7 +173,9 @@ public class PessoasController : ControllerBase
             vinculo.Papel,
             endereco != null
                 ? $"{endereco.Logradouro}, {endereco.Numero} - {endereco.Bairro} - {endereco.Cidade}/{endereco.Estado}"
-                : null
+                : null,
+            vinculo.UnidadeOrganizacionalId,
+            null
         );
 
         return CreatedAtAction(nameof(Listar), new { organizacaoId = request.OrganizacaoId }, dto);
@@ -262,7 +270,9 @@ public class PessoasController : ControllerBase
             pessoa.Telefone,
             pessoa.Documento,
             vinculo.Papel,
-            resumoEndereco));
+            resumoEndereco,
+            vinculo.UnidadeOrganizacionalId,
+            null));
     }
 
     [HttpDelete("{id:guid}")]

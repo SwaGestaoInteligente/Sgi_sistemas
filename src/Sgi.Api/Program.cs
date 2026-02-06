@@ -133,6 +133,89 @@ using (var scope = app.Services.CreateScope())
             DataHora TEXT NOT NULL
         );
         """);
+    db.Database.ExecuteSqlRaw("""
+        CREATE TABLE IF NOT EXISTS Veiculos (
+            Id TEXT NOT NULL PRIMARY KEY,
+            OrganizacaoId TEXT NOT NULL,
+            UnidadeOrganizacionalId TEXT NULL,
+            PessoaId TEXT NULL,
+            Placa TEXT NOT NULL,
+            Marca TEXT NOT NULL,
+            Modelo TEXT NOT NULL,
+            Cor TEXT NOT NULL,
+            Status TEXT NOT NULL
+        );
+        """);
+    db.Database.ExecuteSqlRaw("""
+        CREATE TABLE IF NOT EXISTS Pets (
+            Id TEXT NOT NULL PRIMARY KEY,
+            OrganizacaoId TEXT NOT NULL,
+            UnidadeOrganizacionalId TEXT NULL,
+            PessoaId TEXT NULL,
+            Nome TEXT NOT NULL,
+            Especie TEXT NOT NULL,
+            Raca TEXT NULL,
+            Porte TEXT NOT NULL,
+            Status TEXT NOT NULL
+        );
+        """);
+    db.Database.ExecuteSqlRaw("""
+        CREATE TABLE IF NOT EXISTS ChamadoHistoricos (
+            Id TEXT NOT NULL PRIMARY KEY,
+            OrganizacaoId TEXT NOT NULL,
+            ChamadoId TEXT NOT NULL,
+            DataHora TEXT NOT NULL,
+            Acao TEXT NOT NULL,
+            Detalhes TEXT NULL,
+            ResponsavelPessoaId TEXT NULL
+        );
+        """);
+    try
+    {
+        db.Database.ExecuteSqlRaw("ALTER TABLE Chamados ADD COLUMN ResponsavelPessoaId TEXT");
+    }
+    catch
+    {
+        // Ignora se coluna ja existir.
+    }
+
+    var tabelasDemoSource = new[]
+    {
+        "Organizacoes",
+        "UnidadesOrganizacionais",
+        "Pessoas",
+        "UserCondoMemberships",
+        "VinculosPessoaOrganizacao",
+        "Enderecos",
+        "Veiculos",
+        "Pets",
+        "ContasFinanceiras",
+        "PlanosContas",
+        "ItensCobrados",
+        "CentrosCusto",
+        "LancamentosFinanceiros",
+        "DocumentosCobranca",
+        "CotasCondominio",
+        "RegrasRateio",
+        "LancamentosRateados",
+        "FinanceAudits",
+        "Chamados",
+        "ChamadoHistoricos",
+        "RecursosReservaveis",
+        "Reservas"
+    };
+
+    foreach (var tabela in tabelasDemoSource)
+    {
+        try
+        {
+            db.Database.ExecuteSqlRaw($"ALTER TABLE {tabela} ADD COLUMN Source TEXT");
+        }
+        catch
+        {
+            // Ignora se coluna já existir ou tabela não suportar alteração no momento.
+        }
+    }
 }
 
 if (app.Environment.IsDevelopment())

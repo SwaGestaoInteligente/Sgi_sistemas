@@ -20,6 +20,65 @@ public class OperacaoController : ControllerBase
         _db = db;
     }
 
+    private static readonly HashSet<string> StatusChamadoValidos = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "ABERTO",
+        "EM_ATENDIMENTO",
+        "AGUARDANDO",
+        "RESOLVIDO",
+        "ENCERRADO"
+    };
+
+    private static readonly HashSet<string> StatusReservaValidos = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "SOLICITADA",
+        "CONFIRMADA",
+        "CANCELADA",
+        "CONCLUIDA"
+    };
+
+    private static readonly HashSet<string> PrioridadesChamadoValidas = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "BAIXA",
+        "MEDIA",
+        "ALTA",
+        "URGENTE"
+    };
+
+    private static string NormalizarStatusChamado(string? status)
+    {
+        var valor = string.IsNullOrWhiteSpace(status) ? "ABERTO" : status.Trim().ToUpperInvariant();
+        return StatusChamadoValidos.Contains(valor) ? valor : "ABERTO";
+    }
+
+    private static string NormalizarPrioridade(string? prioridade)
+    {
+        var valor = string.IsNullOrWhiteSpace(prioridade) ? "MEDIA" : prioridade.Trim().ToUpperInvariant();
+        return PrioridadesChamadoValidas.Contains(valor) ? valor : "MEDIA";
+    }
+
+    private static string NormalizarStatusReserva(string? status)
+    {
+        var valor = string.IsNullOrWhiteSpace(status) ? "SOLICITADA" : status.Trim().ToUpperInvariant();
+        return StatusReservaValidos.Contains(valor) ? valor : "SOLICITADA";
+    }
+
+    private async Task RegistrarHistoricoChamado(Guid organizacaoId, Guid chamadoId, string acao, string? detalhes, Guid? responsavelPessoaId)
+    {
+        var historico = new ChamadoHistorico
+        {
+            Id = Guid.NewGuid(),
+            OrganizacaoId = organizacaoId,
+            ChamadoId = chamadoId,
+            DataHora = DateTime.UtcNow,
+            Acao = acao,
+            Detalhes = detalhes,
+            ResponsavelPessoaId = responsavelPessoaId
+        };
+        _db.ChamadosHistorico.Add(historico);
+        await _db.SaveChangesAsync();
+    }
+
     [HttpGet("chamados")]
     public async Task<ActionResult<IEnumerable<Chamado>>> ListarChamados([FromQuery] Guid? organizacaoId)
     {
@@ -104,13 +163,264 @@ public class OperacaoController : ControllerBase
 
         model.Id = Guid.NewGuid();
         model.DataAbertura = DateTime.UtcNow;
+        model.Status = NormalizarStatusChamado(model.Status);
+        model.Prioridade = NormalizarPrioridade(model.Prioridade);
         _db.Chamados.Add(model);
         await _db.SaveChangesAsync();
+        await RegistrarHistoricoChamado(model.OrganizacaoId, model.Id, "CRIADO", "Chamado criado.", model.ResponsavelPessoaId);
         return CreatedAtAction(nameof(ListarChamados), new { id = model.Id }, model);
     }
 
+    public record AtualizarChamadoRequest(
+        string? Status,
+        string? Prioridade,
+        Guid? ResponsavelPessoaId,
+        string? Observacao);
+
+    [HttpPatch("chamados/{id:guid}")]
+    public async Task<IActionResult> AtualizarChamado(Guid id, AtualizarChamadoRequest request)
+    {
+        var chamado = await _db.Chamados.FindAsync(id);
+        if (chamado is null)
+        {
+            return NotFound();
+        }
+
+        var auth = await Authz.EnsureMembershipAsync(
+            _db,
+            User,
+            chamado.OrganizacaoId,
+            UserRole.CONDO_ADMIN,
+            UserRole.CONDO_STAFF);
+        if (auth.Error is not null)
+        {
+            return auth.Error;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Status))
+        {
+            var status = request.Status.Trim().ToUpperInvariant();
+            if (!StatusChamadoValidos.Contains(status))
+            {
+                return BadRequest("Status invalido.");
+            }
+
+            chamado.Status = status;
+            if (status is "RESOLVIDO" or "ENCERRADO")
+            {
+                chamado.DataFechamento = DateTime.UtcNow;
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Prioridade))
+        {
+            var prioridade = request.Prioridade.Trim().ToUpperInvariant();
+            if (!PrioridadesChamadoValidas.Contains(prioridade))
+            {
+                return BadRequest("Prioridade invalida.");
+            }
+
+            chamado.Prioridade = prioridade;
+        }
+
+        if (request.ResponsavelPessoaId.HasValue)
+        {
+            chamado.ResponsavelPessoaId = request.ResponsavelPessoaId.Value;
+        }
+
+        await _db.SaveChangesAsync();
+        await RegistrarHistoricoChamado(
+            chamado.OrganizacaoId,
+            chamado.Id,
+            "ATUALIZADO",
+            request.Observacao ?? "Atualizacao de chamado.",
+            request.ResponsavelPessoaId ?? chamado.ResponsavelPessoaId);
+
+        return Ok(chamado);
+    }
+
+    [HttpGet("chamados/{id:guid}/historico")]
+    public async Task<ActionResult<IEnumerable<ChamadoHistorico>>> ListarHistoricoChamado(Guid id)
+    {
+        var chamado = await _db.Chamados.AsNoTracking().FirstOrDefaultAsync(c => c.Id == id);
+        if (chamado is null)
+        {
+            return NotFound();
+        }
+
+        var auth = await Authz.EnsureMembershipAsync(
+            _db,
+            User,
+            chamado.OrganizacaoId,
+            UserRole.CONDO_ADMIN,
+            UserRole.CONDO_STAFF,
+            UserRole.RESIDENT);
+        if (auth.Error is not null)
+        {
+            return auth.Error;
+        }
+
+        var itens = await _db.ChamadosHistorico.AsNoTracking()
+            .Where(h => h.ChamadoId == id)
+            .OrderByDescending(h => h.DataHora)
+            .ToListAsync();
+        return Ok(itens);
+    }
+
+    public class RecursoRequest
+    {
+        public Guid OrganizacaoId { get; set; }
+        public Guid? UnidadeOrganizacionalId { get; set; }
+        public string Nome { get; set; } = string.Empty;
+        public string? Tipo { get; set; }
+        public int? Capacidade { get; set; }
+        public string? RegrasJson { get; set; }
+        public bool? Ativo { get; set; }
+    }
+
+    [HttpGet("recursos")]
+    public async Task<ActionResult<IEnumerable<RecursoReservavel>>> ListarRecursos([FromQuery] Guid organizacaoId)
+    {
+        if (organizacaoId == Guid.Empty)
+        {
+            return BadRequest("OrganizacaoId e obrigatorio.");
+        }
+
+        var auth = await Authz.EnsureMembershipAsync(
+            _db,
+            User,
+            organizacaoId,
+            UserRole.CONDO_ADMIN,
+            UserRole.CONDO_STAFF,
+            UserRole.RESIDENT);
+        if (auth.Error is not null)
+        {
+            return auth.Error;
+        }
+
+        var itens = await _db.RecursosReservaveis.AsNoTracking()
+            .Where(r => r.OrganizacaoId == organizacaoId)
+            .OrderBy(r => r.Nome)
+            .ToListAsync();
+        return Ok(itens);
+    }
+
+    [HttpPost("recursos")]
+    public async Task<ActionResult<RecursoReservavel>> CriarRecurso(RecursoRequest request)
+    {
+        if (request.OrganizacaoId == Guid.Empty)
+        {
+            return BadRequest("OrganizacaoId e obrigatorio.");
+        }
+
+        var auth = await Authz.EnsureMembershipAsync(
+            _db,
+            User,
+            request.OrganizacaoId,
+            UserRole.CONDO_ADMIN,
+            UserRole.CONDO_STAFF);
+        if (auth.Error is not null)
+        {
+            return auth.Error;
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Nome))
+        {
+            return BadRequest("Nome do recurso e obrigatorio.");
+        }
+
+        var recurso = new RecursoReservavel
+        {
+            Id = Guid.NewGuid(),
+            OrganizacaoId = request.OrganizacaoId,
+            UnidadeOrganizacionalId = request.UnidadeOrganizacionalId ?? Guid.Empty,
+            Nome = request.Nome.Trim(),
+            Tipo = string.IsNullOrWhiteSpace(request.Tipo) ? "area_comum" : request.Tipo.Trim(),
+            Capacidade = request.Capacidade,
+            RegrasJson = request.RegrasJson,
+            Ativo = request.Ativo ?? true
+        };
+
+        _db.RecursosReservaveis.Add(recurso);
+        await _db.SaveChangesAsync();
+        return CreatedAtAction(nameof(ListarRecursos), new { organizacaoId = recurso.OrganizacaoId }, recurso);
+    }
+
+    [HttpPut("recursos/{id:guid}")]
+    public async Task<ActionResult<RecursoReservavel>> AtualizarRecurso(Guid id, RecursoRequest request)
+    {
+        if (request.OrganizacaoId == Guid.Empty)
+        {
+            return BadRequest("OrganizacaoId e obrigatorio.");
+        }
+
+        var recurso = await _db.RecursosReservaveis.FindAsync(id);
+        if (recurso is null)
+        {
+            return NotFound();
+        }
+
+        var auth = await Authz.EnsureMembershipAsync(
+            _db,
+            User,
+            request.OrganizacaoId,
+            UserRole.CONDO_ADMIN,
+            UserRole.CONDO_STAFF);
+        if (auth.Error is not null)
+        {
+            return auth.Error;
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Nome))
+        {
+            return BadRequest("Nome do recurso e obrigatorio.");
+        }
+
+        recurso.Nome = request.Nome.Trim();
+        recurso.Tipo = string.IsNullOrWhiteSpace(request.Tipo) ? recurso.Tipo : request.Tipo.Trim();
+        recurso.Capacidade = request.Capacidade;
+        recurso.RegrasJson = request.RegrasJson;
+        recurso.Ativo = request.Ativo ?? recurso.Ativo;
+        recurso.UnidadeOrganizacionalId = request.UnidadeOrganizacionalId ?? recurso.UnidadeOrganizacionalId;
+
+        await _db.SaveChangesAsync();
+        return Ok(recurso);
+    }
+
+    [HttpDelete("recursos/{id:guid}")]
+    public async Task<IActionResult> RemoverRecurso(Guid id, [FromQuery] Guid organizacaoId)
+    {
+        if (organizacaoId == Guid.Empty)
+        {
+            return BadRequest("OrganizacaoId e obrigatorio.");
+        }
+
+        var recurso = await _db.RecursosReservaveis.FindAsync(id);
+        if (recurso is null)
+        {
+            return NotFound();
+        }
+
+        var auth = await Authz.EnsureMembershipAsync(
+            _db,
+            User,
+            organizacaoId,
+            UserRole.CONDO_ADMIN,
+            UserRole.CONDO_STAFF);
+        if (auth.Error is not null)
+        {
+            return auth.Error;
+        }
+
+        _db.RecursosReservaveis.Remove(recurso);
+        await _db.SaveChangesAsync();
+        return NoContent();
+    }
+
     [HttpGet("reservas")]
-    public async Task<ActionResult<IEnumerable<Reserva>>> ListarReservas([FromQuery] Guid? organizacaoId)
+    public async Task<ActionResult<IEnumerable<Reserva>>> ListarReservas(
+        [FromQuery] Guid? organizacaoId,
+        [FromQuery] Guid? recursoId)
     {
         if (!organizacaoId.HasValue || organizacaoId.Value == Guid.Empty)
         {
@@ -130,6 +440,11 @@ public class OperacaoController : ControllerBase
         }
 
         var query = _db.Reservas.AsNoTracking().Where(r => r.OrganizacaoId == organizacaoId.Value);
+
+        if (recursoId.HasValue && recursoId.Value != Guid.Empty)
+        {
+            query = query.Where(r => r.RecursoReservavelId == recursoId.Value);
+        }
 
         if (!auth.IsPlatformAdmin && auth.Membership?.Role == UserRole.RESIDENT)
         {
@@ -191,9 +506,79 @@ public class OperacaoController : ControllerBase
             }
         }
 
+        if (model.RecursoReservavelId == Guid.Empty)
+        {
+            return BadRequest("RecursoReservavelId e obrigatorio.");
+        }
+
+        var recurso = await _db.RecursosReservaveis
+            .AsNoTracking()
+            .FirstOrDefaultAsync(r => r.Id == model.RecursoReservavelId && r.OrganizacaoId == model.OrganizacaoId);
+        if (recurso is null)
+        {
+            return BadRequest("Recurso nao encontrado para este condominio.");
+        }
+
+        if (model.DataFim <= model.DataInicio)
+        {
+            return BadRequest("DataFim deve ser maior que DataInicio.");
+        }
+
+        var conflito = await _db.Reservas.AsNoTracking()
+            .Where(r => r.RecursoReservavelId == model.RecursoReservavelId)
+            .Where(r =>
+                r.Status == null ||
+                (r.Status != "CANCELADA" &&
+                 r.Status != "cancelada" &&
+                 r.Status != "CONCLUIDA" &&
+                 r.Status != "concluida"))
+            .AnyAsync(r => r.DataInicio < model.DataFim && r.DataFim > model.DataInicio);
+
+        if (conflito)
+        {
+            return BadRequest("Horario indisponivel para este recurso.");
+        }
+
         model.Id = Guid.NewGuid();
+        model.Status = NormalizarStatusReserva(model.Status);
         _db.Reservas.Add(model);
         await _db.SaveChangesAsync();
         return CreatedAtAction(nameof(ListarReservas), new { id = model.Id }, model);
+    }
+
+    public record AtualizarReservaRequest(string? Status);
+
+    [HttpPatch("reservas/{id:guid}")]
+    public async Task<IActionResult> AtualizarReserva(Guid id, AtualizarReservaRequest request)
+    {
+        var reserva = await _db.Reservas.FindAsync(id);
+        if (reserva is null)
+        {
+            return NotFound();
+        }
+
+        var auth = await Authz.EnsureMembershipAsync(
+            _db,
+            User,
+            reserva.OrganizacaoId,
+            UserRole.CONDO_ADMIN,
+            UserRole.CONDO_STAFF);
+        if (auth.Error is not null)
+        {
+            return auth.Error;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Status))
+        {
+            var status = request.Status.Trim().ToUpperInvariant();
+            if (!StatusReservaValidos.Contains(status))
+            {
+                return BadRequest("Status invalido.");
+            }
+            reserva.Status = status;
+        }
+
+        await _db.SaveChangesAsync();
+        return Ok(reserva);
     }
 }

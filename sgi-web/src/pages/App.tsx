@@ -2,14 +2,29 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { AuthProvider, useAuth } from "../hooks/useAuth";
 import {
   api,
+  Chamado,
+  ChamadoHistorico,
   ContaFinanceira,
+  LancamentoFinanceiro,
   Membership,
   Organizacao,
-  UserRole
+  Pessoa,
+  Pet,
+  Reserva,
+  RecursoReservavel,
+  UserRole,
+  Veiculo
 } from "../api";
 import { LoginPage } from "./LoginPage";
 import PessoasView from "../views/PessoasView";
+import FornecedoresView from "../views/FornecedoresView";
 import UnidadesView from "../views/UnidadesView";
+import VeiculosView from "../views/VeiculosView";
+import PetsView from "../views/PetsView";
+import ConfiguracoesView, {
+  ConfiguracoesTab,
+  menuConfiguracoes
+} from "../views/ConfiguracoesView";
 import FinanceiroView, {
   FinanceiroTab,
   menuFinanceiro
@@ -20,6 +35,7 @@ type AppView =
   | "pessoas"
   | "unidades"
   | "financeiro"
+  | "configuracoes"
   | "funcionarios"
   | "fornecedores"
   | "veiculos"
@@ -93,6 +109,10 @@ const viewMeta: Record<AppView, { title: string; subtitle: string }> = {
     title: "Financeiro",
     subtitle: "Contas, lancamentos, transferencias e relatorios."
   },
+  configuracoes: {
+    title: "Configuracoes",
+    subtitle: "Parametros e preferencias do sistema."
+  },
   funcionarios: {
     title: "Funcionarios",
     subtitle: "Gestao de equipe interna."
@@ -141,6 +161,14 @@ const financeiroSiglas: Record<FinanceiroTab, string> = {
   conciliacaoBancaria: "CC",
   livroPrestacaoContas: "LP",
   relatorios: "RL"
+};
+
+const configuracoesSiglas: Record<ConfiguracoesTab, string> = {
+  blocos: "BL",
+  apartamentos: "AP",
+  dependencias: "DP",
+  garagens: "GA",
+  notificacoes: "NT"
 };
 
 const normalizeText = (value?: string | null) =>
@@ -324,16 +352,43 @@ const MinhaUnidadeView: React.FC<{
 }> = ({ organizacao, unidadeId }) => {
   const { token } = useAuth();
   const [unidade, setUnidade] = useState<any | null>(null);
+  const [moradores, setMoradores] = useState<Pessoa[]>([]);
+  const [veiculos, setVeiculos] = useState<Veiculo[]>([]);
+  const [pets, setPets] = useState<Pet[]>([]);
+  const [lancamentos, setLancamentos] = useState<LancamentoFinanceiro[]>([]);
   const [erro, setErro] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     const carregar = async () => {
       if (!token || !unidadeId) return;
       try {
-        const lista = await api.listarUnidades(token, organizacao.id);
-        setUnidade(lista.find((u) => u.id === unidadeId) ?? null);
+        setLoading(true);
+        const [listaUnidades, listaPessoas, listaVeiculos, listaPets, listaLanc] =
+          await Promise.all([
+            api.listarUnidades(token, organizacao.id),
+            api.listarPessoas(token, organizacao.id),
+            api.listarVeiculos(token, organizacao.id, { unidadeId }),
+            api.listarPets(token, organizacao.id, { unidadeId }),
+            api.listarLancamentos(token, organizacao.id, { tipo: "receber" })
+          ]);
+
+        setUnidade(listaUnidades.find((u) => u.id === unidadeId) ?? null);
+
+        const moradoresUnidade = listaPessoas.filter(
+          (p) => p.unidadeOrganizacionalId === unidadeId && p.papel === "morador"
+        );
+        setMoradores(moradoresUnidade);
+        setVeiculos(listaVeiculos);
+        setPets(listaPets);
+
+        const pessoaIds = new Set(moradoresUnidade.map((p) => p.id));
+        const lancUnidade = listaLanc.filter((l) => pessoaIds.has(l.pessoaId));
+        setLancamentos(lancUnidade);
       } catch (e: any) {
         setErro(e.message || "Erro ao carregar unidade");
+      } finally {
+        setLoading(false);
       }
     };
     void carregar();
@@ -348,15 +403,169 @@ const MinhaUnidadeView: React.FC<{
   }
 
   if (!unidade) {
-    return <p>Carregando unidade...</p>;
+    return <p>{loading ? "Carregando unidade..." : "Unidade nao encontrada."}</p>;
   }
 
+  const pendentes = lancamentos.filter(
+    (l) => (l.situacao ?? "").toLowerCase() !== "pago"
+  );
+  const ultimasCobrancas = lancamentos
+    .slice()
+    .sort((a, b) => (a.dataVencimento ?? "").localeCompare(b.dataVencimento ?? ""))
+    .slice(-5)
+    .reverse();
+
   return (
-    <div className="finance-table-card">
-      <h3>{unidade.nome}</h3>
-      <p>Tipo: {unidade.tipo}</p>
-      <p>Codigo interno: {unidade.codigoInterno}</p>
-      <p>Status: {unidade.status}</p>
+    <div className="finance-layout">
+      <section className="finance-table-card">
+        <h3>{unidade.nome}</h3>
+        <div className="finance-card-grid" style={{ marginTop: 12 }}>
+          <div className="finance-card">
+            <div className="finance-card-header-row">
+              <strong>Tipo</strong>
+            </div>
+            <p>{unidade.tipo}</p>
+          </div>
+          <div className="finance-card">
+            <div className="finance-card-header-row">
+              <strong>Codigo</strong>
+            </div>
+            <p>{unidade.codigoInterno}</p>
+          </div>
+          <div className="finance-card">
+            <div className="finance-card-header-row">
+              <strong>Status</strong>
+            </div>
+            <p>{unidade.status}</p>
+          </div>
+        </div>
+      </section>
+
+      <section className="finance-table-card">
+        <div className="finance-table-header">
+          <h3>Moradores vinculados</h3>
+        </div>
+        <div className="people-list-card">
+          {moradores.map((m) => (
+            <div key={m.id} className="people-item">
+              <span className="people-name">{m.nome}</span>
+              <span className="people-meta">{m.telefone ?? "-"}</span>
+            </div>
+          ))}
+          {moradores.length === 0 && <p className="empty">Nenhum morador vinculado.</p>}
+        </div>
+      </section>
+
+      <section className="finance-table-card">
+        <div className="finance-table-header">
+          <h3>Veiculos</h3>
+        </div>
+        <table className="table finance-table">
+          <thead>
+            <tr>
+              <th>Placa</th>
+              <th>Modelo</th>
+              <th>Cor</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {veiculos.map((v) => (
+              <tr key={v.id}>
+                <td>{v.placa}</td>
+                <td>
+                  {v.marca} {v.modelo}
+                </td>
+                <td>{v.cor}</td>
+                <td>{v.status}</td>
+              </tr>
+            ))}
+            {veiculos.length === 0 && (
+              <tr>
+                <td colSpan={4} style={{ textAlign: "center" }}>
+                  Nenhum veiculo cadastrado.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </section>
+
+      <section className="finance-table-card">
+        <div className="finance-table-header">
+          <h3>Pets</h3>
+        </div>
+        <table className="table finance-table">
+          <thead>
+            <tr>
+              <th>Nome</th>
+              <th>Especie</th>
+              <th>Porte</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {pets.map((p) => (
+              <tr key={p.id}>
+                <td>{p.nome}</td>
+                <td>{p.especie}</td>
+                <td>{p.porte}</td>
+                <td>{p.status}</td>
+              </tr>
+            ))}
+            {pets.length === 0 && (
+              <tr>
+                <td colSpan={4} style={{ textAlign: "center" }}>
+                  Nenhum pet cadastrado.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </section>
+
+      <section className="finance-table-card">
+        <div className="finance-table-header">
+          <div>
+            <h3>Cobrancas e pendencias</h3>
+            <p className="finance-form-sub">
+              {pendentes.length} lancamento(s) pendente(s).
+            </p>
+          </div>
+        </div>
+        <table className="table finance-table">
+          <thead>
+            <tr>
+              <th>Descricao</th>
+              <th>Vencimento</th>
+              <th>Status</th>
+              <th className="finance-value-header">Valor</th>
+            </tr>
+          </thead>
+          <tbody>
+            {ultimasCobrancas.map((l) => (
+              <tr key={l.id}>
+                <td>{l.descricao}</td>
+                <td>{l.dataVencimento ?? "-"}</td>
+                <td>{l.situacao}</td>
+                <td className="finance-value-cell">
+                  {l.valor.toLocaleString("pt-BR", {
+                    style: "currency",
+                    currency: "BRL"
+                  })}
+                </td>
+              </tr>
+            ))}
+            {ultimasCobrancas.length === 0 && (
+              <tr>
+                <td colSpan={4} style={{ textAlign: "center" }}>
+                  Nenhuma cobranca encontrada.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </section>
     </div>
   );
 };
@@ -366,20 +575,39 @@ const ChamadosView: React.FC<{
   pessoaId: string;
   unidadeId?: string | null;
 }> = ({ organizacao, pessoaId, unidadeId }) => {
-  const { token } = useAuth();
-  const [chamados, setChamados] = useState<any[]>([]);
+  const { token, session } = useAuth();
+  const [chamados, setChamados] = useState<Chamado[]>([]);
+  const [pessoas, setPessoas] = useState<Pessoa[]>([]);
+  const [historico, setHistorico] = useState<ChamadoHistorico[]>([]);
+  const [selecionado, setSelecionado] = useState<Chamado | null>(null);
   const [titulo, setTitulo] = useState("");
   const [descricao, setDescricao] = useState("");
   const [categoria, setCategoria] = useState("geral");
+  const [prioridade, setPrioridade] = useState("MEDIA");
+  const [responsavelPessoaId, setResponsavelPessoaId] = useState("");
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+
+  const membershipAtual = session?.memberships?.find(
+    (m) => m.condoId === organizacao.id && m.isActive
+  );
+  const canEditar =
+    session?.isPlatformAdmin || membershipAtual?.role === "CONDO_ADMIN" || membershipAtual?.role === "CONDO_STAFF";
+
+  const pessoasResponsaveis = pessoas.filter((p) =>
+    ["funcionario", "colaborador", "administrador"].includes(p.papel ?? "")
+  );
 
   const carregar = async () => {
     if (!token) return;
     try {
       setLoading(true);
-      const lista = await api.listarChamados(token, organizacao.id);
-      setChamados(lista);
+      const [listaChamados, listaPessoas] = await Promise.all([
+        api.listarChamados(token, organizacao.id),
+        api.listarPessoas(token, organizacao.id)
+      ]);
+      setChamados(listaChamados);
+      setPessoas(listaPessoas);
     } catch (e: any) {
       setErro(e.message || "Erro ao carregar chamados");
     } finally {
@@ -387,10 +615,32 @@ const ChamadosView: React.FC<{
     }
   };
 
+  const carregarHistorico = async (chamadoId: string) => {
+    if (!token) return;
+    try {
+      const lista = await api.listarHistoricoChamado(token, chamadoId);
+      setHistorico(lista);
+    } catch {
+      setHistorico([]);
+    }
+  };
+
   useEffect(() => {
     void carregar();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, organizacao.id]);
+
+  useEffect(() => {
+    if (!recursoId && recursos.length > 0) {
+      setRecursoId(recursos[0].id);
+    }
+  }, [recursos, recursoId]);
+
+  useEffect(() => {
+    if (!selecionado) return;
+    setResponsavelPessoaId(selecionado.responsavelPessoaId ?? "");
+    void carregarHistorico(selecionado.id);
+  }, [selecionado]);
 
   const criarChamado = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -406,13 +656,39 @@ const ChamadosView: React.FC<{
         categoria,
         titulo,
         descricao,
-        status: "aberto"
+        status: "ABERTO",
+        prioridade
       });
       setChamados((prev) => [criado, ...prev]);
       setTitulo("");
       setDescricao("");
     } catch (e: any) {
       setErro(e.message || "Erro ao criar chamado");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const atualizarChamado = async (payload: {
+    status?: string;
+    prioridade?: string;
+    responsavelPessoaId?: string | null;
+  }) => {
+    if (!token || !selecionado) return;
+    try {
+      setErro(null);
+      setLoading(true);
+      const atualizado = await api.atualizarChamado(token, selecionado.id, {
+        ...payload,
+        observacao: "Atualizacao via painel"
+      });
+      setChamados((prev) =>
+        prev.map((c) => (c.id === atualizado.id ? atualizado : c))
+      );
+      setSelecionado(atualizado);
+      await carregarHistorico(atualizado.id);
+    } catch (e: any) {
+      setErro(e.message || "Erro ao atualizar chamado");
     } finally {
       setLoading(false);
     }
@@ -435,12 +711,22 @@ const ChamadosView: React.FC<{
             Descricao
             <textarea value={descricao} onChange={(e) => setDescricao(e.target.value)} />
           </label>
+          <label>
+            Prioridade
+            <select value={prioridade} onChange={(e) => setPrioridade(e.target.value)}>
+              <option value="BAIXA">Baixa</option>
+              <option value="MEDIA">Media</option>
+              <option value="ALTA">Alta</option>
+              <option value="URGENTE">Urgente</option>
+            </select>
+          </label>
           <button type="submit" disabled={loading}>
             {loading ? "Enviando..." : "Criar chamado"}
           </button>
         </form>
         {erro && <p className="error">{erro}</p>}
       </section>
+
       <section className="finance-table-card">
         <div className="finance-table-header">
           <h3>Chamados</h3>
@@ -453,24 +739,103 @@ const ChamadosView: React.FC<{
             <tr>
               <th>Titulo</th>
               <th>Status</th>
+              <th>Prioridade</th>
             </tr>
           </thead>
           <tbody>
             {chamados.map((c) => (
-              <tr key={c.id}>
+              <tr
+                key={c.id}
+                style={{ cursor: "pointer" }}
+                onClick={() => setSelecionado(c)}
+              >
                 <td>{c.titulo}</td>
                 <td>{c.status}</td>
+                <td>{c.prioridade ?? "-"}</td>
               </tr>
             ))}
             {chamados.length === 0 && (
               <tr>
-                <td colSpan={2} style={{ textAlign: "center" }}>
+                <td colSpan={3} style={{ textAlign: "center" }}>
                   Nenhum chamado encontrado.
                 </td>
               </tr>
             )}
           </tbody>
         </table>
+      </section>
+
+      <section className="finance-form-card">
+        <div className="finance-table-header">
+          <h3>Detalhes</h3>
+        </div>
+        {!selecionado && <p className="finance-form-sub">Selecione um chamado.</p>}
+        {selecionado && (
+          <>
+            <div className="finance-card-grid" style={{ marginTop: 8 }}>
+              <div className="finance-card">
+                <strong>Status atual</strong>
+                <p>{selecionado.status}</p>
+              </div>
+              <div className="finance-card">
+                <strong>Prioridade</strong>
+                <p>{selecionado.prioridade ?? "-"}</p>
+              </div>
+            </div>
+
+            {canEditar && (
+              <div className="form" style={{ marginTop: 12 }}>
+                <label>
+                  Status
+                  <select
+                    value={selecionado.status}
+                    onChange={(e) => atualizarChamado({ status: e.target.value })}
+                  >
+                    <option value="ABERTO">Aberto</option>
+                    <option value="EM_ATENDIMENTO">Em atendimento</option>
+                    <option value="AGUARDANDO">Aguardando</option>
+                    <option value="RESOLVIDO">Resolvido</option>
+                    <option value="ENCERRADO">Encerrado</option>
+                  </select>
+                </label>
+                <label>
+                  Responsavel
+                  <select
+                    value={responsavelPessoaId}
+                    onChange={(e) => {
+                      const novo = e.target.value;
+                      setResponsavelPessoaId(novo);
+                      void atualizarChamado({ responsavelPessoaId: novo || null });
+                    }}
+                  >
+                    <option value="">Sem responsavel</option>
+                    {pessoasResponsaveis.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.nome}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            )}
+
+            <div style={{ marginTop: 16 }}>
+              <h4>Timeline</h4>
+              {historico.length === 0 && (
+                <p className="finance-form-sub">Sem historico registrado.</p>
+              )}
+              <ul className="list">
+                {historico.map((h) => (
+                  <li key={h.id}>
+                    <strong>{new Date(h.dataHora).toLocaleString("pt-BR")}</strong>
+                    <span> - {h.acao}</span>
+                    {h.detalhes && <span> ({h.detalhes})</span>}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </>
+        )}
       </section>
     </div>
   );
@@ -482,10 +847,14 @@ const ReservasView: React.FC<{
   unidadeId?: string | null;
 }> = ({ organizacao, pessoaId, unidadeId }) => {
   const { token } = useAuth();
-  const [reservas, setReservas] = useState<any[]>([]);
+  const [reservas, setReservas] = useState<Reserva[]>([]);
+  const [recursos, setRecursos] = useState<RecursoReservavel[]>([]);
   const [dataInicio, setDataInicio] = useState("");
   const [dataFim, setDataFim] = useState("");
-  const [status, setStatus] = useState("solicitada");
+  const [status, setStatus] = useState("SOLICITADA");
+  const [recursoId, setRecursoId] = useState("");
+  const [novoRecursoNome, setNovoRecursoNome] = useState("");
+  const [novoRecursoCapacidade, setNovoRecursoCapacidade] = useState("");
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
@@ -493,8 +862,12 @@ const ReservasView: React.FC<{
     if (!token) return;
     try {
       setLoading(true);
-      const lista = await api.listarReservas(token, organizacao.id);
-      setReservas(lista);
+      const [listaReservas, listaRecursos] = await Promise.all([
+        api.listarReservas(token, organizacao.id),
+        api.listarRecursos(token, organizacao.id)
+      ]);
+      setReservas(listaReservas);
+      setRecursos(listaRecursos);
     } catch (e: any) {
       setErro(e.message || "Erro ao carregar reservas");
     } finally {
@@ -516,7 +889,7 @@ const ReservasView: React.FC<{
       const criado = await api.criarReserva(token, {
         id: crypto.randomUUID(),
         organizacaoId: organizacao.id,
-        recursoReservavelId: crypto.randomUUID(),
+        recursoReservavelId: recursoId,
         pessoaSolicitanteId: pessoaId,
         unidadeOrganizacionalId: unidadeId ?? null,
         dataInicio,
@@ -533,11 +906,51 @@ const ReservasView: React.FC<{
     }
   };
 
+  const criarRecurso = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!token) return;
+    if (!novoRecursoNome.trim()) {
+      setErro("Informe o nome do recurso.");
+      return;
+    }
+    try {
+      setErro(null);
+      setLoading(true);
+      const capacidade = novoRecursoCapacidade.trim()
+        ? Number(novoRecursoCapacidade)
+        : undefined;
+      const criado = await api.criarRecurso(token, {
+        organizacaoId: organizacao.id,
+        nome: novoRecursoNome.trim(),
+        capacidade: Number.isFinite(capacidade) ? capacidade : undefined,
+        regrasJson: JSON.stringify({ antecedenciaDias: 7, duracaoHoras: 4 })
+      });
+      setRecursos((prev) => [...prev, criado]);
+      setNovoRecursoNome("");
+      setNovoRecursoCapacidade("");
+    } catch (e: any) {
+      setErro(e.message || "Erro ao criar recurso");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="finance-layout">
       <section className="finance-form-card">
         <h3>Nova reserva</h3>
         <form onSubmit={criarReserva} className="form">
+          <label>
+            Recurso
+            <select value={recursoId} onChange={(e) => setRecursoId(e.target.value)}>
+              <option value="">Selecione</option>
+              {recursos.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.nome}
+                </option>
+              ))}
+            </select>
+          </label>
           <label>
             Data inicio
             <input
@@ -556,10 +969,40 @@ const ReservasView: React.FC<{
           </label>
           <label>
             Status
-            <input value={status} onChange={(e) => setStatus(e.target.value)} />
+            <select value={status} onChange={(e) => setStatus(e.target.value)}>
+              <option value="SOLICITADA">Solicitada</option>
+              <option value="CONFIRMADA">Confirmada</option>
+              <option value="CANCELADA">Cancelada</option>
+              <option value="CONCLUIDA">Concluida</option>
+            </select>
+          </label>
+          <button type="submit" disabled={loading || !recursoId}>
+            {loading ? "Enviando..." : "Criar reserva"}
+          </button>
+        </form>
+
+        <div className="divider" />
+
+        <h4>Recursos disponiveis</h4>
+        <form onSubmit={criarRecurso} className="form">
+          <label>
+            Nome do recurso
+            <input
+              value={novoRecursoNome}
+              onChange={(e) => setNovoRecursoNome(e.target.value)}
+              placeholder="Salao de festas"
+            />
+          </label>
+          <label>
+            Capacidade
+            <input
+              value={novoRecursoCapacidade}
+              onChange={(e) => setNovoRecursoCapacidade(e.target.value)}
+              placeholder="80"
+            />
           </label>
           <button type="submit" disabled={loading}>
-            {loading ? "Enviando..." : "Criar reserva"}
+            {loading ? "Salvando..." : "Criar recurso"}
           </button>
         </form>
         {erro && <p className="error">{erro}</p>}
@@ -574,6 +1017,7 @@ const ReservasView: React.FC<{
         <table className="table finance-table">
           <thead>
             <tr>
+              <th>Recurso</th>
               <th>Inicio</th>
               <th>Fim</th>
               <th>Status</th>
@@ -582,6 +1026,7 @@ const ReservasView: React.FC<{
           <tbody>
             {reservas.map((r) => (
               <tr key={r.id}>
+                <td>{recursos.find((rec) => rec.id === r.recursoReservavelId)?.nome ?? "-"}</td>
                 <td>{r.dataInicio}</td>
                 <td>{r.dataFim}</td>
                 <td>{r.status}</td>
@@ -589,7 +1034,7 @@ const ReservasView: React.FC<{
             ))}
             {reservas.length === 0 && (
               <tr>
-                <td colSpan={3} style={{ textAlign: "center" }}>
+                <td colSpan={4} style={{ textAlign: "center" }}>
                   Nenhuma reserva encontrada.
                 </td>
               </tr>
@@ -618,7 +1063,12 @@ const InnerApp: React.FC = () => {
   const [view, setView] = useState<AppView>("dashboard");
   const [financeiroAba, setFinanceiroAba] = useState<FinanceiroTab>("contas");
   const [sidebarFinanceiroOpen, setSidebarFinanceiroOpen] = useState(false);
+  const [configuracoesAba, setConfiguracoesAba] =
+    useState<ConfiguracoesTab>("blocos");
+  const [sidebarConfiguracoesOpen, setSidebarConfiguracoesOpen] = useState(false);
   const contentRef = useRef<HTMLElement | null>(null);
+  const [gerandoDemo, setGerandoDemo] = useState(false);
+  const [mensagemDemo, setMensagemDemo] = useState<string | null>(null);
 
   const carregarOrganizacoes = useCallback(async () => {
     try {
@@ -752,9 +1202,13 @@ const InnerApp: React.FC = () => {
     if (view === "financeiro") {
       return `${basePath}/financeiro/${financeiroAba}`;
     }
+    if (view === "configuracoes") {
+      return `${basePath}/configuracoes/${configuracoesAba}`;
+    }
 
     return `${basePath}/${view}`;
   }, [
+    configuracoesAba,
     financeiroAba,
     isPlatformAdmin,
     organizacaoSelecionada,
@@ -773,6 +1227,24 @@ const InnerApp: React.FC = () => {
       contentEl.scrollTo({ top: 0, left: 0 });
     }
   }, [activePathname]);
+
+  const gerarDemo = async () => {
+    try {
+      setMensagemDemo(null);
+      setGerandoDemo(true);
+      await api.seedDemoFull();
+      setMensagemDemo("DEMO completo gerado.");
+      if (isPlatformAdmin) {
+        await carregarOrganizacoes();
+      } else {
+        await carregarOrganizacoesUsuario();
+      }
+    } catch (e: any) {
+      setMensagemDemo(e?.message || "Erro ao gerar DEMO.");
+    } finally {
+      setGerandoDemo(false);
+    }
+  };
 
   const irParaInicio = () => {
     setOrganizacaoSelecionada(null);
@@ -861,6 +1333,12 @@ const InnerApp: React.FC = () => {
       setSidebarFinanceiroOpen(false);
     }
   }, [sidebarFinanceiroOpen, view]);
+
+  useEffect(() => {
+    if (view !== "configuracoes" && sidebarConfiguracoesOpen) {
+      setSidebarConfiguracoesOpen(false);
+    }
+  }, [sidebarConfiguracoesOpen, view]);
 
   useEffect(() => {
     if (!podeFinanceiro && view === "financeiro") {
@@ -1318,6 +1796,63 @@ const InnerApp: React.FC = () => {
               </div>
             )}
 
+            {podeEditarCadastros && (
+              <div className="sidebar-section">
+                <p className="sidebar-section-title">Configuracoes</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (view !== "configuracoes") {
+                      setView("configuracoes");
+                      setSidebarConfiguracoesOpen(true);
+                      setErro(null);
+                      return;
+                    }
+                    setSidebarConfiguracoesOpen((prev) => !prev);
+                  }}
+                  className={
+                    "sidebar-item" +
+                    (view === "configuracoes" ? " sidebar-item--active" : "")
+                  }
+                  title="Configuracoes"
+                >
+                  <span className="sidebar-item-icon">⚙️</span>
+                  <span className="sidebar-item-label">Configuracoes</span>
+                </button>
+                <div
+                  className={
+                    "sidebar-submenu" +
+                    (sidebarConfiguracoesOpen ? " sidebar-submenu--open" : "")
+                  }
+                >
+                  {menuConfiguracoes.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      className={
+                        "sidebar-subitem" +
+                        (view === "configuracoes" && configuracoesAba === item.id
+                          ? " sidebar-subitem--active"
+                          : "")
+                      }
+                      onClick={() => {
+                        setView("configuracoes");
+                        setConfiguracoesAba(item.id);
+                        setSidebarConfiguracoesOpen(true);
+                        setErro(null);
+                      }}
+                      title={item.label}
+                    >
+                      <span className="sidebar-subitem-icon">
+                        {configuracoesSiglas[item.id]}
+                      </span>
+                      <span className="sidebar-subitem-label">{item.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="sidebar-section">
               <p className="sidebar-section-title">Operacao</p>
               {renderSidebarItem("chamados", "Chamados", "🛠️")}
@@ -1335,6 +1870,14 @@ const InnerApp: React.FC = () => {
             </div>
 
             <div className="page-header-actions">
+              <button
+                type="button"
+                className="button-secondary"
+                onClick={gerarDemo}
+                disabled={gerandoDemo}
+              >
+                {gerandoDemo ? "Gerando DEMO..." : "Gerar DEMO Completo"}
+              </button>
               {view !== "dashboard" && (
                 <button
                   type="button"
@@ -1359,6 +1902,7 @@ const InnerApp: React.FC = () => {
           </header>
 
           {erro && <p className="error">{erro}</p>}
+          {mensagemDemo && <p className="success">{mensagemDemo}</p>}
 
           {view === "dashboard" && (
             <Dashboard
@@ -1386,36 +1930,39 @@ const InnerApp: React.FC = () => {
           )}
 
           {view === "fornecedores" && podeEditarCadastros && (
-            <div className="people-page">
-              <div className="people-header-row">
-                <div>
-                  <h2>Fornecedores</h2>
-                </div>
-              </div>
-            </div>
+            <FornecedoresView
+              organizacao={organizacaoSelecionada}
+              readOnly={!podeEditarCadastros}
+            />
           )}
           {view === "fornecedores" && !podeEditarCadastros && (
             <NoAccessPage mensagem="Sem acesso a fornecedores." />
           )}
 
+          {view === "configuracoes" && podeEditarCadastros && (
+            <ConfiguracoesView
+              organizacao={organizacaoSelecionada}
+              abaSelecionada={configuracoesAba}
+              onAbaChange={setConfiguracoesAba}
+              readOnly={!podeEditarCadastros}
+            />
+          )}
+          {view === "configuracoes" && !podeEditarCadastros && (
+            <NoAccessPage mensagem="Sem acesso a configuracoes." />
+          )}
+
           {view === "veiculos" && (
-            <div className="people-page">
-              <div className="people-header-row">
-                <div>
-                  <h2>Veiculos</h2>
-                </div>
-              </div>
-            </div>
+            <VeiculosView
+              organizacao={organizacaoSelecionada}
+              readOnly={!podeEditarCadastros}
+            />
           )}
 
           {view === "pets" && (
-            <div className="people-page">
-              <div className="people-header-row">
-                <div>
-                  <h2>Pets</h2>
-                </div>
-              </div>
-            </div>
+            <PetsView
+              organizacao={organizacaoSelecionada}
+              readOnly={!podeEditarCadastros}
+            />
           )}
 
           {view === "unidades" && (

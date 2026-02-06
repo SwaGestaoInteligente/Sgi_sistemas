@@ -1,5 +1,5 @@
 ﻿import React, { useEffect, useState } from "react";
-import { useRef } from "react";
+import { useCallback, useRef } from "react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import * as XLSX from "xlsx";
@@ -42,23 +42,23 @@ export type FinanceiroTab =
   | "livroPrestacaoContas"
   | "relatorios";
 
-export const menuFinanceiro: Array<{ id: FinanceiroTab; label: string }> = [
+export const menuFinanceiro: Array<{ id: FinanceiroTab; label: string; badge?: string }> = [
   { id: "categorias", label: "Categorias" },
   { id: "contas", label: "Contas" },
-  { id: "consumos", label: "Consumos" },
+  { id: "consumos", label: "Consumos", badge: "Em breve" },
   { id: "receitasDespesas", label: "Receitas e despesas" },
   { id: "contasPagar", label: "Contas a pagar" },
   { id: "contasReceber", label: "Contas a receber" },
-  { id: "previsaoOrcamentaria", label: "Previsao orcamentaria" },
+  { id: "previsaoOrcamentaria", label: "Previsao orcamentaria", badge: "Em breve" },
   { id: "transferencias", label: "Transferencias" },
-  { id: "abonos", label: "Abonos" },
+  { id: "abonos", label: "Abonos", badge: "Em breve" },
   { id: "baixasManuais", label: "Baixas manuais" },
-  { id: "gruposRateio", label: "Grupos de rateio" },
+  { id: "gruposRateio", label: "Grupos de rateio", badge: "Em breve" },
   { id: "itensCobrados", label: "Cobrancas" },
   { id: "faturas", label: "Faturas" },
   { id: "inadimplentes", label: "Inadimplentes" },
-  { id: "conciliacaoBancaria", label: "Conciliacao bancaria" },
-  { id: "livroPrestacaoContas", label: "Livro de prestacao de contas" },
+  { id: "conciliacaoBancaria", label: "Conciliacao bancaria", badge: "Em breve" },
+  { id: "livroPrestacaoContas", label: "Livro de prestacao de contas", badge: "Em breve" },
   { id: "relatorios", label: "Relatorios" }
 ];
 
@@ -70,7 +70,18 @@ export default function FinanceiroView({
 }: FinanceiroViewProps) {
   const topoRef = useRef<HTMLDivElement | null>(null);
   const { token, session } = useAuth();
-  const [aba, setAba] = useState<FinanceiroTab>("contas");
+  const [abaLocal, setAbaLocal] = useState<FinanceiroTab>("contas");
+  const aba = abaSelecionada ?? abaLocal;
+  const setAba = useCallback(
+    (novaAba: FinanceiroTab) => {
+      if (onAbaChange) {
+        onAbaChange(novaAba);
+      } else {
+        setAbaLocal(novaAba);
+      }
+    },
+    [onAbaChange]
+  );
   const [contas, setContas] = useState<ContaFinanceira[]>([]);
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -294,18 +305,6 @@ export default function FinanceiroView({
     // Itens cobrados serão carregados sob demanda ao abrir a aba
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, organizacaoId]);
-
-  useEffect(() => {
-    if (abaSelecionada && abaSelecionada !== aba) {
-      setAba(abaSelecionada);
-    }
-  }, [abaSelecionada, aba]);
-
-  useEffect(() => {
-    if (onAbaChange) {
-      onAbaChange(aba);
-    }
-  }, [aba, onAbaChange]);
 
   const handleAbaChange = (novaAba: FinanceiroTab) => {
     setAba(novaAba);
@@ -1199,7 +1198,8 @@ export default function FinanceiroView({
               className={"finance-tab" + (aba === item.id ? " finance-tab--active" : "")}
               onClick={() => handleAbaChange(item.id)}
             >
-              {item.label}
+              <span>{item.label}</span>
+              {item.badge && <span className="badge">{item.badge}</span>}
             </button>
           ))}
         </div>

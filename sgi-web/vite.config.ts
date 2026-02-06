@@ -6,6 +6,10 @@ export default defineConfig(({ command }) => ({
   base: command === "serve" ? "/" : "/Sgi_sistemas/",
   server: {
     port: 5173,
-    strictPort: true
+    strictPort: true,
+    proxy: {
+      "/api": "http://localhost:7000"
+    }
   }
 }));
+
