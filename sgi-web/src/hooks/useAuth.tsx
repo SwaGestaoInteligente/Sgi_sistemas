@@ -1,10 +1,22 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
-import {
-  AUTH_SESSION_KEY,
-  AUTH_STORAGE_KEY,
-  AUTH_UNAUTHORIZED_EVENT,
-  Membership
-} from "../api";
+
+const AUTH_SESSION_KEY = "swa:auth:session";
+const AUTH_STORAGE_KEY = "swa:auth:token";
+const AUTH_UNAUTHORIZED_EVENT = "AUTH_UNAUTHORIZED_EVENT";
+
+export type UserRole =
+  | "PLATFORM_ADMIN"
+  | "CONDO_ADMIN"
+  | "CONDO_STAFF"
+  | "RESIDENT";
+
+export type Membership = {
+  id: string;
+  condoId?: string | null;
+  unidadeOrganizacionalId?: string | null;
+  role: UserRole;
+  isActive: boolean;
+};
 
 interface AuthContextValue {
   token: string | null;
