@@ -3,6 +3,7 @@ import { useCallback, useRef } from "react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import * as XLSX from "xlsx";
+import AnexosPanel from "../components/AnexosPanel";
 import {
   api,
   ChargeItem,
@@ -95,6 +96,8 @@ export default function FinanceiroView({
   const isPlatformAdmin = session?.isPlatformAdmin === true;
   const isAdmin = isPlatformAdmin || roleAtual === "CONDO_ADMIN";
   const isStaff = roleAtual === "CONDO_STAFF";
+  const [lancamentoSelecionado, setLancamentoSelecionado] =
+    useState<LancamentoFinanceiro | null>(null);
 
   // Contas
   const [nomeConta, setNomeConta] = useState("");
@@ -330,6 +333,12 @@ export default function FinanceiroView({
     // Itens cobrados serão carregados sob demanda ao abrir a aba
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, organizacaoId]);
+
+  useEffect(() => {
+    if (aba !== "contasPagar" && aba !== "contasReceber") {
+      setLancamentoSelecionado(null);
+    }
+  }, [aba]);
 
   useEffect(() => {
     if (contaExtratoId) return;
@@ -1858,6 +1867,13 @@ export default function FinanceiroView({
                         Cancelar
                       </button>
                     )}
+                    <button
+                      type="button"
+                      className="button-secondary"
+                      onClick={() => setLancamentoSelecionado(d)}
+                    >
+                      Anexos
+                    </button>
                   </div>
                 </div>
               );
@@ -1866,6 +1882,27 @@ export default function FinanceiroView({
               <p className="empty">Nenhuma despesa cadastrada ainda.</p>
             )}
           </div>
+
+          {lancamentoSelecionado && lancamentoSelecionado.tipo === "pagar" && (
+            <section className="finance-form-card" style={{ marginTop: 12 }}>
+              <div className="finance-table-header">
+                <h3>Anexos do lançamento</h3>
+                <button
+                  type="button"
+                  className="button-secondary"
+                  onClick={() => setLancamentoSelecionado(null)}
+                >
+                  Fechar
+                </button>
+              </div>
+              <AnexosPanel
+                organizacaoId={organizacao.id}
+                tipoEntidade="lancamento_financeiro"
+                entidadeId={lancamentoSelecionado.id}
+                titulo="Comprovantes e anexos"
+              />
+            </section>
+          )}
         </div>
       )}
 
@@ -2090,6 +2127,13 @@ export default function FinanceiroView({
                         Cancelar
                       </button>
                     )}
+                    <button
+                      type="button"
+                      className="button-secondary"
+                      onClick={() => setLancamentoSelecionado(r)}
+                    >
+                      Anexos
+                    </button>
                   </div>
                 </div>
               );
@@ -2098,6 +2142,27 @@ export default function FinanceiroView({
               <p className="empty">Nenhuma receita cadastrada ainda.</p>
             )}
           </div>
+
+          {lancamentoSelecionado && lancamentoSelecionado.tipo === "receber" && (
+            <section className="finance-form-card" style={{ marginTop: 12 }}>
+              <div className="finance-table-header">
+                <h3>Anexos do lançamento</h3>
+                <button
+                  type="button"
+                  className="button-secondary"
+                  onClick={() => setLancamentoSelecionado(null)}
+                >
+                  Fechar
+                </button>
+              </div>
+              <AnexosPanel
+                organizacaoId={organizacao.id}
+                tipoEntidade="lancamento_financeiro"
+                entidadeId={lancamentoSelecionado.id}
+                titulo="Comprovantes e anexos"
+              />
+            </section>
+          )}
         </div>
       )}
 

@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Text.RegularExpressions;
 using Sgi.Api.Auth;
 using Sgi.Domain.Core;
 using Sgi.Infrastructure.Data;
@@ -23,9 +24,53 @@ public class AnexosController : ControllerBase
         _logger = logger;
     }
 
+    private const long MaxFileSizeBytes = 10 * 1024 * 1024;
+
+    private static readonly HashSet<string> AllowedMimeTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "application/pdf",
+        "image/jpeg",
+        "image/jpg",
+        "image/png",
+        "image/webp"
+    };
+
+    private static readonly HashSet<string> AllowedExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".pdf",
+        ".jpg",
+        ".jpeg",
+        ".png",
+        ".webp"
+    };
+
     private static string NormalizeTipo(string tipoEntidade)
     {
         return tipoEntidade.Trim().ToLowerInvariant().Replace("/", "-");
+    }
+
+    private static string SanitizeFileName(string fileName)
+    {
+        var safeName = Path.GetFileName(fileName ?? string.Empty);
+        if (string.IsNullOrWhiteSpace(safeName))
+        {
+            return "arquivo";
+        }
+
+        foreach (var ch in Path.GetInvalidFileNameChars())
+        {
+            safeName = safeName.Replace(ch, '_');
+        }
+
+        safeName = Regex.Replace(safeName, @"\s+", " ").Trim();
+        safeName = safeName.Replace("..", ".");
+
+        if (safeName.Length > 120)
+        {
+            safeName = safeName[..120];
+        }
+
+        return string.IsNullOrWhiteSpace(safeName) ? "arquivo" : safeName;
     }
 
     private async Task<Guid?> ResolvePessoaIdAsync(Guid? userId)
@@ -205,7 +250,7 @@ public class AnexosController : ControllerBase
     }
 
     [HttpPost("upload")]
-    [RequestSizeLimit(25_000_000)]
+    [RequestSizeLimit(10_485_760)]
     public async Task<ActionResult<Anexo>> Upload(
         [FromForm] Guid organizacaoId,
         [FromForm] string tipoEntidade,
@@ -230,6 +275,27 @@ public class AnexosController : ControllerBase
         if (arquivo is null || arquivo.Length == 0)
         {
             return BadRequest("Arquivo e obrigatorio.");
+        }
+
+        if (arquivo.Length > MaxFileSizeBytes)
+        {
+            return BadRequest("Arquivo excede o limite de 10MB.");
+        }
+
+        var nomeOriginal = Path.GetFileName(arquivo.FileName);
+        var nomeSanitizado = SanitizeFileName(nomeOriginal);
+        var extensao = Path.GetExtension(nomeSanitizado);
+        if (string.IsNullOrWhiteSpace(extensao) || !AllowedExtensions.Contains(extensao))
+        {
+            return BadRequest("Tipo de arquivo nao permitido. Use PDF ou imagens (JPG/PNG/WEBP).");
+        }
+
+        var mime = string.IsNullOrWhiteSpace(arquivo.ContentType)
+            ? "application/octet-stream"
+            : arquivo.ContentType;
+        if (!AllowedMimeTypes.Contains(mime))
+        {
+            return BadRequest("Tipo de arquivo nao permitido. Use PDF ou imagens (JPG/PNG/WEBP).");
         }
 
         var auth = await Authz.EnsureMembershipAsync(
@@ -269,9 +335,9 @@ public class AnexosController : ControllerBase
             entidadeId.ToString());
         Directory.CreateDirectory(pasta);
 
-        var nomeOriginal = Path.GetFileName(arquivo.FileName);
-        var uniqueName = $"{DateTime.UtcNow:yyyyMMddHHmmssfff}-{Guid.NewGuid():N}-{nomeOriginal}";
-        var caminho = Path.Combine(pasta, uniqueName);
+        var anexoId = Guid.NewGuid();
+        var fileName = $"{anexoId:N}_{nomeSanitizado}";
+        var caminho = Path.Combine(pasta, fileName);
 
         await using (var stream = System.IO.File.Create(caminho))
         {
@@ -280,12 +346,12 @@ public class AnexosController : ControllerBase
 
         var anexo = new Anexo
         {
-            Id = Guid.NewGuid(),
+            Id = anexoId,
             OrganizacaoId = organizacaoId,
             TipoEntidade = tipoSeguro,
             EntidadeId = entidadeId,
-            NomeArquivo = nomeOriginal,
-            MimeType = arquivo.ContentType ?? "application/octet-stream",
+            NomeArquivo = nomeSanitizado,
+            MimeType = mime,
             Tamanho = arquivo.Length,
             Caminho = caminho,
             CriadoEm = DateTime.UtcNow,
@@ -428,12 +494,33 @@ public class AnexosController : ControllerBase
             }
         }
 
-        if (!System.IO.File.Exists(anexo.Caminho))
+        var expectedRoot = Path.GetFullPath(Path.Combine(
+            _env.ContentRootPath,
+            "Uploads",
+            anexo.OrganizacaoId.ToString(),
+            anexo.TipoEntidade,
+            anexo.EntidadeId.ToString()));
+        if (!expectedRoot.EndsWith(Path.DirectorySeparatorChar))
+        {
+            expectedRoot += Path.DirectorySeparatorChar;
+        }
+
+        var fullPath = Path.GetFullPath(anexo.Caminho);
+        if (!fullPath.StartsWith(expectedRoot, StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogWarning(
+                "Caminho de anexo fora do diretorio permitido: {AnexoId} - {Caminho}",
+                anexo.Id,
+                fullPath);
+            return NotFound("Arquivo nao encontrado.");
+        }
+
+        if (!System.IO.File.Exists(fullPath))
         {
             return NotFound("Arquivo nao encontrado.");
         }
 
-        return PhysicalFile(anexo.Caminho, anexo.MimeType, anexo.NomeArquivo);
+        return PhysicalFile(fullPath, anexo.MimeType, anexo.NomeArquivo);
     }
 
     [HttpDelete("{id:guid}")]
@@ -450,15 +537,57 @@ public class AnexosController : ControllerBase
             User,
             anexo.OrganizacaoId,
             UserRole.CONDO_ADMIN,
-            UserRole.CONDO_STAFF);
+            UserRole.CONDO_STAFF,
+            UserRole.RESIDENT);
         if (auth.Error is not null)
         {
             return auth.Error;
         }
 
+        var isResident = !auth.IsPlatformAdmin && auth.Membership?.Role == UserRole.RESIDENT;
+        if (isResident)
+        {
+            var pessoaId = await ResolvePessoaIdAsync(Authz.GetUserId(User));
+            var permitido = await ResidentPodeAcessarEntidadeAsync(
+                anexo.TipoEntidade,
+                anexo.EntidadeId,
+                anexo.OrganizacaoId,
+                auth.Membership?.UnidadeOrganizacionalId,
+                pessoaId);
+            if (!permitido)
+            {
+                return Forbid();
+            }
+        }
+
+        var expectedRoot = Path.GetFullPath(Path.Combine(
+            _env.ContentRootPath,
+            "Uploads",
+            anexo.OrganizacaoId.ToString(),
+            anexo.TipoEntidade,
+            anexo.EntidadeId.ToString()));
+        if (!expectedRoot.EndsWith(Path.DirectorySeparatorChar))
+        {
+            expectedRoot += Path.DirectorySeparatorChar;
+        }
+
+        var fullPath = Path.GetFullPath(anexo.Caminho);
+        if (!fullPath.StartsWith(expectedRoot, StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogWarning(
+                "Tentativa de remover anexo fora do diretorio permitido: {AnexoId} - {Caminho}",
+                anexo.Id,
+                fullPath);
+            return NotFound("Arquivo nao encontrado.");
+        }
+
         if (System.IO.File.Exists(anexo.Caminho))
         {
             System.IO.File.Delete(anexo.Caminho);
+        }
+        else
+        {
+            _logger.LogWarning("Arquivo de anexo nao encontrado no disco: {AnexoId}", anexo.Id);
         }
 
         _db.Anexos.Remove(anexo);

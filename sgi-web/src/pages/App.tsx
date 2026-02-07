@@ -33,6 +33,7 @@ import FinanceiroView, {
   FinanceiroTab,
   menuFinanceiro
 } from "../views/FinanceiroView";
+import AnexosPanel from "../components/AnexosPanel";
 
 type AppView =
   | "dashboard"
@@ -683,8 +684,6 @@ const ChamadosView: React.FC<{
   const [prioridade, setPrioridade] = useState("MEDIA");
   const [responsavelPessoaId, setResponsavelPessoaId] = useState("");
   const [comentario, setComentario] = useState("");
-  const [anexosChamado, setAnexosChamado] = useState<Anexo[]>([]);
-  const [arquivoChamado, setArquivoChamado] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
@@ -725,21 +724,6 @@ const ChamadosView: React.FC<{
     }
   };
 
-  const carregarAnexos = async (chamadoId: string) => {
-    if (!token) return;
-    try {
-      const lista = await api.listarAnexos(
-        token,
-        organizacao.id,
-        "chamado",
-        chamadoId
-      );
-      setAnexosChamado(lista);
-    } catch {
-      setAnexosChamado([]);
-    }
-  };
-
   useEffect(() => {
     void carregar();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -755,7 +739,6 @@ const ChamadosView: React.FC<{
     if (!selecionado) return;
     setResponsavelPessoaId(selecionado.responsavelPessoaId ?? "");
     void carregarHistorico(selecionado.id);
-    void carregarAnexos(selecionado.id);
   }, [selecionado]);
 
   const adicionarComentario = async () => {
@@ -772,24 +755,6 @@ const ChamadosView: React.FC<{
     }
   };
 
-  const enviarAnexo = async () => {
-    if (!token || !selecionado || !arquivoChamado) return;
-    try {
-      setLoading(true);
-      await api.uploadAnexo(token, {
-        organizacaoId: organizacao.id,
-        tipoEntidade: "chamado",
-        entidadeId: selecionado.id,
-        arquivo: arquivoChamado
-      });
-      setArquivoChamado(null);
-      await carregarAnexos(selecionado.id);
-    } catch (e: any) {
-      setErro(e.message || "Erro ao enviar anexo");
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const criarChamado = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1017,43 +982,12 @@ const ChamadosView: React.FC<{
             </div>
 
             <div className="finance-form-card" style={{ marginTop: 16 }}>
-              <h4>Anexos</h4>
-              <div className="finance-form-inline">
-                <input
-                  type="file"
-                  onChange={(e) =>
-                    setArquivoChamado(e.target.files?.[0] ?? null)
-                  }
-                />
-                <button
-                  type="button"
-                  className="button-secondary"
-                  onClick={enviarAnexo}
-                  disabled={!arquivoChamado || loading}
-                >
-                  Enviar
-                </button>
-              </div>
-              <ul className="list">
-                {anexosChamado.map((a) => (
-                  <li key={a.id}>
-                    <button
-                      type="button"
-                      className="link-button"
-                      onClick={async () => {
-                        const blob = await api.baixarAnexo(token!, a.id);
-                        const url = URL.createObjectURL(blob);
-                        window.open(url, "_blank");
-                      }}
-                    >
-                      {a.nomeArquivo}
-                    </button>
-                  </li>
-                ))}
-                {anexosChamado.length === 0 && (
-                  <li className="empty">Nenhum anexo.</li>
-                )}
-              </ul>
+              <AnexosPanel
+                organizacaoId={organizacao.id}
+                tipoEntidade="chamado"
+                entidadeId={selecionado.id}
+                titulo="Anexos do chamado"
+              />
             </div>
           </>
         )}
@@ -1084,6 +1018,9 @@ const ReservasView: React.FC<{
   const [novoRecursoBloqueios, setNovoRecursoBloqueios] = useState("");
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  const [reservaSelecionada, setReservaSelecionada] = useState<Reserva | null>(
+    null
+  );
 
   const membershipAtual = session?.memberships?.find(
     (m) => m.condoId === organizacao.id && m.isActive
@@ -1334,8 +1271,17 @@ const ReservasView: React.FC<{
             </tr>
           </thead>
           <tbody>
-            {reservas.map((r) => (
-              <tr key={r.id}>
+            {reservas.map((r) => {
+              const selecionada = reservaSelecionada?.id === r.id;
+              return (
+              <tr
+                key={r.id}
+                onClick={() => setReservaSelecionada(r)}
+                style={{
+                  cursor: "pointer",
+                  backgroundColor: selecionada ? "#f3f4f6" : undefined
+                }}
+              >
                 <td>{recursos.find((rec) => rec.id === r.recursoReservavelId)?.nome ?? "-"}</td>
                 <td>{r.dataInicio}</td>
                 <td>{r.dataFim}</td>
@@ -1382,7 +1328,8 @@ const ReservasView: React.FC<{
                   </td>
                 )}
               </tr>
-            ))}
+              );
+            })}
             {reservas.length === 0 && (
               <tr>
                 <td colSpan={canEditar ? 5 : 4} style={{ textAlign: "center" }}>
@@ -1392,6 +1339,25 @@ const ReservasView: React.FC<{
             )}
           </tbody>
         </table>
+      </section>
+
+      <section className="finance-form-card" style={{ marginTop: 12 }}>
+        <div className="finance-table-header">
+          <h3>Anexos da reserva</h3>
+        </div>
+        {!reservaSelecionada && (
+          <p className="finance-form-sub">
+            Selecione uma reserva para ver anexos.
+          </p>
+        )}
+        {reservaSelecionada && (
+          <AnexosPanel
+            organizacaoId={organizacao.id}
+            tipoEntidade="reserva"
+            entidadeId={reservaSelecionada.id}
+            titulo="Anexos vinculados"
+          />
+        )}
       </section>
     </div>
   );

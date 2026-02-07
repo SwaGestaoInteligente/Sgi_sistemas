@@ -14,6 +14,10 @@ condo-fullstack/
 # Banco de dados local
 src/Sgi.Api/sgi.db
 
+# Uploads locais
+src/Sgi.Api/Uploads/
+Uploads/
+
 # Arquivos temporários
 temp_App_tsx.txt
 
