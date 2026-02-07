@@ -42,7 +42,9 @@ export type UserRole =
 export interface Membership {
   id: string;
   condoId?: string | null;
+  orgId?: string | null;
   unidadeOrganizacionalId?: string | null;
+  unidadeId?: string | null;
   role: UserRole;
   isActive: boolean;
 }

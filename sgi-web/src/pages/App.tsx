@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AuthProvider, useAuth } from "../hooks/useAuth";
+import { getActiveMembership, getActiveRole } from "../authz";
 import {
   api,
   Anexo,
@@ -182,18 +183,6 @@ const normalizeText = (value?: string | null) =>
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
     .trim();
-
-const getActiveMembership = (
-  memberships: Membership[] | null | undefined,
-  orgId?: string | null
-) => {
-  if (!memberships || !orgId) return null;
-  return (
-    memberships.find(
-      (m) => m.isActive && m.condoId && m.condoId === orgId
-    ) ?? null
-  );
-};
 
 const canAccessFinanceiro = (role: UserRole) =>
   role === "PLATFORM_ADMIN" || role === "CONDO_ADMIN";
@@ -1494,9 +1483,10 @@ const InnerApp: React.FC = () => {
     organizacaoSelecionada?.id
   );
 
-  const roleAtual: UserRole | null = isPlatformAdmin
-    ? "PLATFORM_ADMIN"
-    : membershipAtual?.role ?? null;
+  const roleAtual: UserRole | null = getActiveRole(
+    session,
+    organizacaoSelecionada?.id
+  );
 
   const podeFinanceiro = roleAtual ? canAccessFinanceiro(roleAtual) : false;
   const podeVerCadastros = roleAtual ? canVerCadastros(roleAtual) : false;

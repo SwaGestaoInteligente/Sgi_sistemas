@@ -27,6 +27,11 @@ public record MembershipDto(
     UserRole Role,
     bool IsActive);
 
+public record MembershipClaimDto(
+    Guid? OrgId,
+    Guid? UnidadeId,
+    UserRole Role);
+
 public record LoginResponse(
     string AccessToken,
     DateTime ExpiresAt,
@@ -102,14 +107,28 @@ public class AuthController : ControllerBase
                 m.IsActive))
             .ToList();
 
+        var membershipClaims = memberships
+            .Select(m => new MembershipClaimDto(
+                m.OrganizacaoId,
+                m.UnidadeOrganizacionalId,
+                m.Role))
+            .ToList();
+
         var claims = new List<Claim>
         {
             new(JwtRegisteredClaimNames.Sub, usuario.Id.ToString()),
             new(JwtRegisteredClaimNames.Email, usuario.EmailLogin),
+            new("userId", usuario.Id.ToString()),
+            new("pessoaId", usuario.PessoaId.ToString()),
             new("uid", usuario.Id.ToString()),
             new("pid", usuario.PessoaId.ToString()),
             new("isPlatformAdmin", isPlatformAdmin ? "true" : "false"),
-            new("memberships", System.Text.Json.JsonSerializer.Serialize(membershipDtos))
+            new("memberships", System.Text.Json.JsonSerializer.Serialize(
+                membershipClaims,
+                new System.Text.Json.JsonSerializerOptions
+                {
+                    PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase
+                }))
         };
 
         var expires = DateTime.UtcNow.AddMinutes(_jwtSettings.ExpiresInMinutes);
