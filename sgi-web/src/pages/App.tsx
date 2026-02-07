@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AuthProvider, useAuth } from "../hooks/useAuth";
-import { getActiveMembership, getActiveRole } from "../authz";
+import { can, getActiveMembership, PermissionKey } from "../authz";
 import {
   api,
   Anexo,
@@ -15,7 +15,6 @@ import {
   Pet,
   Reserva,
   RecursoReservavel,
-  UserRole,
   UnidadeCobranca,
   UnidadePagamento,
   Veiculo
@@ -184,14 +183,6 @@ const normalizeText = (value?: string | null) =>
     .toLowerCase()
     .trim();
 
-const canAccessFinanceiro = (role: UserRole) =>
-  role === "PLATFORM_ADMIN" || role === "CONDO_ADMIN";
-
-const canEditarCadastros = (role: UserRole) =>
-  role === "PLATFORM_ADMIN" || role === "CONDO_ADMIN";
-
-const canVerCadastros = (role: UserRole) =>
-  role === "PLATFORM_ADMIN" || role === "CONDO_ADMIN" || role === "CONDO_STAFF";
 
 const Dashboard: React.FC<{
   organizacao: Organizacao | null;
@@ -676,11 +667,9 @@ const ChamadosView: React.FC<{
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
-  const membershipAtual = session?.memberships?.find(
-    (m) => m.condoId === organizacao.id && m.isActive
-  );
-  const canEditar =
-    session?.isPlatformAdmin || membershipAtual?.role === "CONDO_ADMIN" || membershipAtual?.role === "CONDO_STAFF";
+  const canCriar = can(session, organizacao.id, "operacao.create");
+  const canGerenciar = can(session, organizacao.id, "operacao.manage");
+  const canAnexos = can(session, organizacao.id, "anexos.write");
 
   const pessoasResponsaveis = pessoas.filter((p) =>
     ["funcionario", "colaborador", "administrador"].includes(p.papel ?? "")
@@ -801,7 +790,8 @@ const ChamadosView: React.FC<{
     <div className="finance-layout">
       <section className="finance-form-card">
         <h3>Novo chamado</h3>
-        <form onSubmit={criarChamado} className="form">
+        {canCriar ? (
+          <form onSubmit={criarChamado} className="form">
           <label>
             Categoria
             <input value={categoria} onChange={(e) => setCategoria(e.target.value)} />
@@ -826,7 +816,10 @@ const ChamadosView: React.FC<{
           <button type="submit" disabled={loading}>
             {loading ? "Enviando..." : "Criar chamado"}
           </button>
-        </form>
+          </form>
+        ) : (
+          <p className="finance-form-sub">Sem acesso para criar chamados.</p>
+        )}
         {erro && <p className="error">{erro}</p>}
       </section>
 
@@ -901,7 +894,7 @@ const ChamadosView: React.FC<{
               </div>
             </div>
 
-            {canEditar && (
+            {canGerenciar && (
               <div className="form" style={{ marginTop: 12 }}>
                 <label>
                   Status
@@ -976,6 +969,7 @@ const ChamadosView: React.FC<{
                 tipoEntidade="chamado"
                 entidadeId={selecionado.id}
                 titulo="Anexos do chamado"
+                readOnly={!canAnexos}
               />
             </div>
           </>
@@ -1011,13 +1005,9 @@ const ReservasView: React.FC<{
     null
   );
 
-  const membershipAtual = session?.memberships?.find(
-    (m) => m.condoId === organizacao.id && m.isActive
-  );
-  const canEditar =
-    session?.isPlatformAdmin ||
-    membershipAtual?.role === "CONDO_ADMIN" ||
-    membershipAtual?.role === "CONDO_STAFF";
+  const canCriar = can(session, organizacao.id, "operacao.create");
+  const canGerenciar = can(session, organizacao.id, "operacao.manage");
+  const canAnexos = can(session, organizacao.id, "anexos.write");
 
   const carregar = async () => {
     if (!token) return;
@@ -1134,7 +1124,8 @@ const ReservasView: React.FC<{
     <div className="finance-layout">
       <section className="finance-form-card">
         <h3>Nova reserva</h3>
-        <form onSubmit={criarReserva} className="form">
+        {canCriar ? (
+          <form onSubmit={criarReserva} className="form">
           <label>
             Recurso
             <select value={recursoId} onChange={(e) => setRecursoId(e.target.value)}>
@@ -1174,12 +1165,16 @@ const ReservasView: React.FC<{
           <button type="submit" disabled={loading || !recursoId}>
             {loading ? "Enviando..." : "Criar reserva"}
           </button>
-        </form>
+          </form>
+        ) : (
+          <p className="finance-form-sub">Sem acesso para criar reservas.</p>
+        )}
 
         <div className="divider" />
 
         <h4>Recursos disponiveis</h4>
-        <form onSubmit={criarRecurso} className="form">
+        {canGerenciar ? (
+          <form onSubmit={criarRecurso} className="form">
           <label>
             Nome do recurso
             <input
@@ -1236,10 +1231,13 @@ const ReservasView: React.FC<{
               placeholder="2026-02-15,2026-03-01"
             />
           </label>
-          <button type="submit" disabled={loading}>
-            {loading ? "Salvando..." : "Criar recurso"}
-          </button>
-        </form>
+            <button type="submit" disabled={loading}>
+              {loading ? "Salvando..." : "Criar recurso"}
+            </button>
+          </form>
+        ) : (
+          <p className="finance-form-sub">Sem acesso para gerenciar recursos.</p>
+        )}
         {erro && <p className="error">{erro}</p>}
       </section>
       <section className="finance-table-card">
@@ -1256,7 +1254,7 @@ const ReservasView: React.FC<{
               <th>Inicio</th>
               <th>Fim</th>
               <th>Status</th>
-              {canEditar && <th>Acoes</th>}
+              {canGerenciar && <th>Acoes</th>}
             </tr>
           </thead>
           <tbody>
@@ -1275,7 +1273,7 @@ const ReservasView: React.FC<{
                 <td>{r.dataInicio}</td>
                 <td>{r.dataFim}</td>
                 <td>{r.status}</td>
-                {canEditar && (
+                {canGerenciar && (
                   <td>
                     {r.status === "PENDENTE" && (
                       <div className="inline-actions">
@@ -1321,7 +1319,7 @@ const ReservasView: React.FC<{
             })}
             {reservas.length === 0 && (
               <tr>
-                <td colSpan={canEditar ? 5 : 4} style={{ textAlign: "center" }}>
+                <td colSpan={canGerenciar ? 5 : 4} style={{ textAlign: "center" }}>
                   Nenhuma reserva encontrada.
                 </td>
               </tr>
@@ -1345,6 +1343,7 @@ const ReservasView: React.FC<{
             tipoEntidade="reserva"
             entidadeId={reservaSelecionada.id}
             titulo="Anexos vinculados"
+            readOnly={!canAnexos}
           />
         )}
       </section>
@@ -1478,20 +1477,47 @@ const InnerApp: React.FC = () => {
     return Array.from(map.values()).sort((a, b) => a.nome.localeCompare(b.nome));
   }, [organizacaoSelecionada, organizacoesDoSegmento]);
 
-  const membershipAtual = getActiveMembership(
-    session?.memberships,
-    organizacaoSelecionada?.id
-  );
+  const orgId = organizacaoSelecionada?.id ?? null;
 
-  const roleAtual: UserRole | null = getActiveRole(
-    session,
-    organizacaoSelecionada?.id
-  );
+  const membershipAtual = getActiveMembership(session?.memberships, orgId);
 
-  const podeFinanceiro = roleAtual ? canAccessFinanceiro(roleAtual) : false;
-  const podeVerCadastros = roleAtual ? canVerCadastros(roleAtual) : false;
-  const podeEditarCadastros = roleAtual ? canEditarCadastros(roleAtual) : false;
-  const isResident = roleAtual === "RESIDENT";
+  const podeFinanceiro = can(session, orgId, "financeiro.read");
+  const podeFinanceiroEscrita = can(session, orgId, "financeiro.write");
+  const podeVerCadastros = can(session, orgId, "cadastros.read");
+  const podeEditarCadastros = can(session, orgId, "cadastros.write");
+  const podeOperacao = can(session, orgId, "operacao.read");
+  const podeCriarOperacao = can(session, orgId, "operacao.create");
+  const podeMinhaUnidade = can(session, orgId, "minha_unidade.read");
+
+  const viewPermissions: Partial<Record<AppView, PermissionKey>> = {
+    pessoas: "cadastros.read",
+    unidades: "cadastros.read",
+    financeiro: "financeiro.read",
+    configuracoes: "cadastros.write",
+    funcionarios: "cadastros.read",
+    fornecedores: "cadastros.read",
+    veiculos: "cadastros.read",
+    pets: "cadastros.read",
+    chamados: "operacao.read",
+    reservas: "operacao.read",
+    minhaUnidade: "minha_unidade.read"
+  };
+
+  const canView = (target: AppView) => {
+    const perm = viewPermissions[target];
+    return perm ? can(session, orgId, perm) : true;
+  };
+
+  const setViewIfAllowed = (target: AppView) => {
+    if (!canView(target)) {
+      setErro("Acesso restrito.");
+      return;
+    }
+    setView(target);
+    setErro(null);
+  };
+
+  const viewPermitido = canView(view);
 
   const activePathname = useMemo(() => {
     if (!token || !session) return "/login";
@@ -1610,29 +1636,30 @@ const InnerApp: React.FC = () => {
   };
 
   const executarAcaoRapida = (acao: "lancamento" | "chamado" | "reserva") => {
-    if (!roleAtual) {
-      setErro("Sem acesso para executar acoes rapidas.");
-      return;
-    }
     if (acao === "lancamento") {
-      if (!canAccessFinanceiro(roleAtual)) {
+      if (!podeFinanceiroEscrita) {
         setErro("Sem acesso ao financeiro.");
         return;
       }
-      setView("financeiro");
+      setViewIfAllowed("financeiro");
       setFinanceiroAba("contasPagar");
-      setErro(null);
       return;
     }
 
     if (acao === "chamado") {
-      setView("chamados");
-      setErro(null);
+      if (!podeCriarOperacao) {
+        setErro("Sem acesso a chamados.");
+        return;
+      }
+      setViewIfAllowed("chamados");
       return;
     }
 
-    setView("reservas");
-    setErro(null);
+    if (!podeCriarOperacao) {
+      setErro("Sem acesso a reservas.");
+      return;
+    }
+    setViewIfAllowed("reservas");
   };
 
   useEffect(() => {
@@ -1646,12 +1673,6 @@ const InnerApp: React.FC = () => {
       setSidebarConfiguracoesOpen(false);
     }
   }, [sidebarConfiguracoesOpen, view]);
-
-  useEffect(() => {
-    if (!podeFinanceiro && view === "financeiro") {
-      setView("dashboard");
-    }
-  }, [podeFinanceiro, view]);
 
   const topBar = (
     <header className="app-header">
@@ -1694,11 +1715,11 @@ const InnerApp: React.FC = () => {
       </div>
 
       <div className="app-header-right">
-        {organizacaoSelecionada && roleAtual && (
+        {organizacaoSelecionada && (podeFinanceiroEscrita || podeCriarOperacao) && (
           <details className="app-header-quick-menu">
             <summary className="app-header-quick-trigger">Acoes</summary>
             <div className="app-header-quick-dropdown">
-              {canAccessFinanceiro(roleAtual) && (
+              {podeFinanceiroEscrita && (
                 <button
                   type="button"
                   className="app-user-option"
@@ -1707,20 +1728,24 @@ const InnerApp: React.FC = () => {
                   Novo lancamento
                 </button>
               )}
-              <button
-                type="button"
-                className="app-user-option"
-                onClick={() => executarAcaoRapida("chamado")}
-              >
-                Novo chamado
-              </button>
-              <button
-                type="button"
-                className="app-user-option"
-                onClick={() => executarAcaoRapida("reserva")}
-              >
-                Nova reserva
-              </button>
+              {podeCriarOperacao && (
+                <button
+                  type="button"
+                  className="app-user-option"
+                  onClick={() => executarAcaoRapida("chamado")}
+                >
+                  Novo chamado
+                </button>
+              )}
+              {podeCriarOperacao && (
+                <button
+                  type="button"
+                  className="app-user-option"
+                  onClick={() => executarAcaoRapida("reserva")}
+                >
+                  Nova reserva
+                </button>
+              )}
             </div>
           </details>
         )}
@@ -1981,8 +2006,7 @@ const InnerApp: React.FC = () => {
       key={target}
       type="button"
       onClick={() => {
-        setView(target);
-        setErro(null);
+        setViewIfAllowed(target);
       }}
       className={"sidebar-item" + (view === target ? " sidebar-item--active" : "")}
       title={label}
@@ -2031,7 +2055,7 @@ const InnerApp: React.FC = () => {
             <div className="sidebar-section">
               <p className="sidebar-section-title">Resumo</p>
               {renderSidebarItem("dashboard", "Resumo geral", "📊")}
-              {isResident &&
+              {podeMinhaUnidade &&
                 renderSidebarItem("minhaUnidade", "Minha unidade", "🏠")}
             </div>
 
@@ -2040,10 +2064,8 @@ const InnerApp: React.FC = () => {
                 <p className="sidebar-section-title">Cadastros</p>
                 {renderSidebarItem("pessoas", "Pessoas", "👥")}
                 {renderSidebarItem("unidades", "Unidades", "🏢")}
-                {podeEditarCadastros &&
-                  renderSidebarItem("funcionarios", "Funcionarios", "👔")}
-                {podeEditarCadastros &&
-                  renderSidebarItem("fornecedores", "Fornecedores", "🤝")}
+                {renderSidebarItem("funcionarios", "Funcionarios", "👔")}
+                {renderSidebarItem("fornecedores", "Fornecedores", "🤝")}
                 {renderSidebarItem("veiculos", "Veiculos", "🚗")}
                 {renderSidebarItem("pets", "Pets", "🐾")}
               </div>
@@ -2056,9 +2078,8 @@ const InnerApp: React.FC = () => {
                   type="button"
                   onClick={() => {
                     if (view !== "financeiro") {
-                      setView("financeiro");
+                      setViewIfAllowed("financeiro");
                       setSidebarFinanceiroOpen(true);
-                      setErro(null);
                       return;
                     }
                     setSidebarFinanceiroOpen((prev) => !prev);
@@ -2088,10 +2109,9 @@ const InnerApp: React.FC = () => {
                           : "")
                       }
                       onClick={() => {
-                        setView("financeiro");
+                        setViewIfAllowed("financeiro");
                         setFinanceiroAba(item.id);
                         setSidebarFinanceiroOpen(true);
-                        setErro(null);
                       }}
                       title={item.label}
                     >
@@ -2110,9 +2130,8 @@ const InnerApp: React.FC = () => {
                   type="button"
                   onClick={() => {
                     if (view !== "configuracoes") {
-                      setView("configuracoes");
+                      setViewIfAllowed("configuracoes");
                       setSidebarConfiguracoesOpen(true);
-                      setErro(null);
                       return;
                     }
                     setSidebarConfiguracoesOpen((prev) => !prev);
@@ -2143,10 +2162,9 @@ const InnerApp: React.FC = () => {
                           : "")
                       }
                       onClick={() => {
-                        setView("configuracoes");
+                        setViewIfAllowed("configuracoes");
                         setConfiguracoesAba(item.id);
                         setSidebarConfiguracoesOpen(true);
-                        setErro(null);
                       }}
                       title={item.label}
                     >
@@ -2160,11 +2178,13 @@ const InnerApp: React.FC = () => {
               </div>
             )}
 
-            <div className="sidebar-section">
-              <p className="sidebar-section-title">Operacao</p>
-              {renderSidebarItem("chamados", "Chamados", "🛠️")}
-              {renderSidebarItem("reservas", "Reservas", "📅")}
-            </div>
+            {podeOperacao && (
+              <div className="sidebar-section">
+                <p className="sidebar-section-title">Operacao</p>
+                {renderSidebarItem("chamados", "Chamados", "🛠️")}
+                {renderSidebarItem("reservas", "Reservas", "📅")}
+              </div>
+            )}
           </nav>
         </aside>
 
@@ -2211,42 +2231,41 @@ const InnerApp: React.FC = () => {
           {erro && <p className="error">{erro}</p>}
           {mensagemDemo && <p className="success">{mensagemDemo}</p>}
 
-          {view === "dashboard" && (
+          {!viewPermitido && (
+            <NoAccessPage mensagem="Acesso restrito." />
+          )}
+
+          {viewPermitido && view === "dashboard" && (
             <Dashboard
               organizacao={organizacaoSelecionada}
-              mostrarFinanceiro={roleAtual ? canAccessFinanceiro(roleAtual) : true}
+              mostrarFinanceiro={podeFinanceiro}
             />
           )}
 
-          {view === "pessoas" && (
+          {viewPermitido && view === "pessoas" && (
             <PessoasView
               organizacao={organizacaoSelecionada}
               readOnly={!podeEditarCadastros}
             />
           )}
 
-          {view === "funcionarios" && podeEditarCadastros && (
+          {viewPermitido && view === "funcionarios" && (
             <PessoasView
               organizacao={organizacaoSelecionada}
               papelFixo="funcionario"
               titulo="Funcionarios"
+              readOnly={!podeEditarCadastros}
             />
           )}
-          {view === "funcionarios" && !podeEditarCadastros && (
-            <NoAccessPage mensagem="Sem acesso a funcionarios." />
-          )}
 
-          {view === "fornecedores" && podeEditarCadastros && (
+          {viewPermitido && view === "fornecedores" && (
             <FornecedoresView
               organizacao={organizacaoSelecionada}
               readOnly={!podeEditarCadastros}
             />
           )}
-          {view === "fornecedores" && !podeEditarCadastros && (
-            <NoAccessPage mensagem="Sem acesso a fornecedores." />
-          )}
 
-          {view === "configuracoes" && podeEditarCadastros && (
+          {viewPermitido && view === "configuracoes" && (
             <ConfiguracoesView
               organizacao={organizacaoSelecionada}
               abaSelecionada={configuracoesAba}
@@ -2254,51 +2273,46 @@ const InnerApp: React.FC = () => {
               readOnly={!podeEditarCadastros}
             />
           )}
-          {view === "configuracoes" && !podeEditarCadastros && (
-            <NoAccessPage mensagem="Sem acesso a configuracoes." />
-          )}
 
-          {view === "veiculos" && (
+          {viewPermitido && view === "veiculos" && (
             <VeiculosView
               organizacao={organizacaoSelecionada}
               readOnly={!podeEditarCadastros}
             />
           )}
 
-          {view === "pets" && (
+          {viewPermitido && view === "pets" && (
             <PetsView
               organizacao={organizacaoSelecionada}
               readOnly={!podeEditarCadastros}
             />
           )}
 
-          {view === "unidades" && (
+          {viewPermitido && view === "unidades" && (
             <UnidadesView
               organizacao={organizacaoSelecionada}
               readOnly={!podeEditarCadastros}
             />
           )}
 
-          {view === "financeiro" && podeFinanceiro && (
+          {viewPermitido && view === "financeiro" && (
             <FinanceiroView
               organizacao={organizacaoSelecionada}
               abaSelecionada={financeiroAba}
               onAbaChange={setFinanceiroAba}
+              readOnly={!podeFinanceiroEscrita}
               exibirMenuAbas={false}
             />
           )}
-          {view === "financeiro" && !podeFinanceiro && (
-            <NoAccessPage mensagem="Sem acesso ao financeiro." />
-          )}
 
-          {view === "minhaUnidade" && membershipAtual && (
+          {viewPermitido && view === "minhaUnidade" && membershipAtual && (
             <MinhaUnidadeView
               organizacao={organizacaoSelecionada}
               unidadeId={membershipAtual.unidadeOrganizacionalId}
             />
           )}
 
-          {view === "chamados" && session && (
+          {viewPermitido && view === "chamados" && session && (
             <ChamadosView
               organizacao={organizacaoSelecionada}
               pessoaId={session.pessoaId}
@@ -2306,7 +2320,7 @@ const InnerApp: React.FC = () => {
             />
           )}
 
-          {view === "reservas" && session && (
+          {viewPermitido && view === "reservas" && session && (
             <ReservasView
               organizacao={organizacaoSelecionada}
               pessoaId={session.pessoaId}

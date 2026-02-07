@@ -16,6 +16,7 @@ import {
   PlanoContas,
   RecursoReservavel
 } from "../api";
+import { can } from "../authz";
 import { useAuth } from "../hooks/useAuth";
 
 type FinanceiroViewProps = {
@@ -23,6 +24,7 @@ type FinanceiroViewProps = {
   abaSelecionada?: FinanceiroTab;
   onAbaChange?: (aba: FinanceiroTab) => void;
   exibirMenuAbas?: boolean;
+  readOnly?: boolean;
 };
 
 export type FinanceiroTab =
@@ -68,7 +70,8 @@ export default function FinanceiroView({
   organizacao,
   abaSelecionada,
   onAbaChange,
-  exibirMenuAbas = true
+  exibirMenuAbas = true,
+  readOnly = false
 }: FinanceiroViewProps) {
   const topoRef = useRef<HTMLDivElement | null>(null);
   const { token, session } = useAuth();
@@ -96,6 +99,8 @@ export default function FinanceiroView({
   const isPlatformAdmin = session?.isPlatformAdmin === true;
   const isAdmin = isPlatformAdmin || roleAtual === "CONDO_ADMIN";
   const isStaff = roleAtual === "CONDO_STAFF";
+  const canWrite = !readOnly;
+  const canAnexos = can(session, organizacao.id, "anexos.write");
   const [lancamentoSelecionado, setLancamentoSelecionado] =
     useState<LancamentoFinanceiro | null>(null);
 
@@ -962,88 +967,93 @@ export default function FinanceiroView({
       <p className="finance-form-sub">
         Registra saida na conta origem e entrada na conta destino.
       </p>
-
-      <form onSubmit={transferirEntreContas} className="form">
-        <label>
-          Conta origem
-          <select
-            value={transferenciaOrigemId}
-            onChange={(e) => setTransferenciaOrigemId(e.target.value)}
-            required
-          >
-            <option value="">Selecione</option>
-            {contasTransferencia.map((conta) => (
-              <option key={conta.id} value={conta.id}>
-                {conta.nome}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label>
-          Conta destino
-          <select
-            value={transferenciaDestinoId}
-            onChange={(e) => setTransferenciaDestinoId(e.target.value)}
-            required
-          >
-            <option value="">Selecione</option>
-            {contasTransferencia.map((conta) => (
-              <option key={conta.id} value={conta.id}>
-                {conta.nome}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <div className="finance-form-grid">
+      {canWrite ? (
+        <form onSubmit={transferirEntreContas} className="form">
           <label>
-            Valor
-            <input
-              value={transferenciaValor}
-              onChange={(e) => setTransferenciaValor(e.target.value)}
-              placeholder="Ex.: 150,00"
+            Conta origem
+            <select
+              value={transferenciaOrigemId}
+              onChange={(e) => setTransferenciaOrigemId(e.target.value)}
               required
+            >
+              <option value="">Selecione</option>
+              {contasTransferencia.map((conta) => (
+                <option key={conta.id} value={conta.id}>
+                  {conta.nome}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label>
+            Conta destino
+            <select
+              value={transferenciaDestinoId}
+              onChange={(e) => setTransferenciaDestinoId(e.target.value)}
+              required
+            >
+              <option value="">Selecione</option>
+              {contasTransferencia.map((conta) => (
+                <option key={conta.id} value={conta.id}>
+                  {conta.nome}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <div className="finance-form-grid">
+            <label>
+              Valor
+              <input
+                value={transferenciaValor}
+                onChange={(e) => setTransferenciaValor(e.target.value)}
+                placeholder="Ex.: 150,00"
+                required
+              />
+            </label>
+            <label>
+              Data
+              <input
+                type="date"
+                value={transferenciaData}
+                onChange={(e) => setTransferenciaData(e.target.value)}
+                required
+              />
+            </label>
+          </div>
+
+          <label>
+            Descricao
+            <input
+              value={transferenciaDescricao}
+              onChange={(e) => setTransferenciaDescricao(e.target.value)}
+              placeholder="Transferencia entre contas"
             />
           </label>
+
           <label>
-            Data
+            Referencia (opcional)
             <input
-              type="date"
-              value={transferenciaData}
-              onChange={(e) => setTransferenciaData(e.target.value)}
-              required
+              value={transferenciaReferencia}
+              onChange={(e) => setTransferenciaReferencia(e.target.value)}
+              placeholder="Ex.: TRF-20260205-001"
             />
           </label>
-        </div>
 
-        <label>
-          Descricao
-          <input
-            value={transferenciaDescricao}
-            onChange={(e) => setTransferenciaDescricao(e.target.value)}
-            placeholder="Transferencia entre contas"
-          />
-        </label>
-
-        <label>
-          Referencia (opcional)
-          <input
-            value={transferenciaReferencia}
-            onChange={(e) => setTransferenciaReferencia(e.target.value)}
-            placeholder="Ex.: TRF-20260205-001"
-          />
-        </label>
-
-        <button type="submit" disabled={loading || contasTransferencia.length < 2}>
-          {loading ? "Transferindo..." : "Transferir"}
-        </button>
-        {contasTransferencia.length < 2 && (
-          <p className="finance-form-sub">
-            Cadastre pelo menos duas contas ativas para transferir.
-          </p>
-        )}
-      </form>
+          <button type="submit" disabled={loading || contasTransferencia.length < 2}>
+            {loading ? "Transferindo..." : "Transferir"}
+          </button>
+          {contasTransferencia.length < 2 && (
+            <p className="finance-form-sub">
+              Cadastre pelo menos duas contas ativas para transferir.
+            </p>
+          )}
+        </form>
+      ) : (
+        <p className="finance-form-sub">
+          Sem acesso para transferencias.
+        </p>
+      )}
     </section>
   );
 
@@ -1270,16 +1280,22 @@ export default function FinanceiroView({
               Envie documentos com a câmera ou arquivo.
             </span>
           </div>
-          <button
-            type="button"
-            className="action-primary"
-            onClick={() => setMostrarEnvio((prev) => !prev)}
-          >
-            Enviar para o SGI
-          </button>
+          {canWrite && (
+            <button
+              type="button"
+              className="action-primary"
+              onClick={() => setMostrarEnvio((prev) => !prev)}
+            >
+              Enviar para o SGI
+            </button>
+          )}
         </div>
 
-        {mostrarEnvio && (
+        {!canWrite && (
+          <p className="finance-form-sub">Sem acesso para envios.</p>
+        )}
+
+        {canWrite && mostrarEnvio && (
           <form className="finance-upload-form" onSubmit={enviarArquivoFinanceiro}>
             <label>
               Tipo do envio
@@ -1356,80 +1372,84 @@ export default function FinanceiroView({
             <section className="finance-form-card">
               <h3>Nova conta</h3>
 
-              <form onSubmit={criarConta} className="form">
-                <label>
-                  Nome da conta
-                  <input
-                    value={nomeConta}
-                    onChange={(e) => setNomeConta(e.target.value)}
-                    required
-                  />
-                </label>
-                <label>
-                  Tipo de conta
-                  <select
-                    value={tipoConta}
-                    onChange={(e) => setTipoConta(e.target.value)}
-                  >
-                    <option value="Bancária">Bancária</option>
-                    <option value="Caixa">Caixa</option>
-                    <option value="Digital">Conta digital</option>
-                    <option value="Outros">Outros</option>
-                  </select>
-                </label>
-
-                <div className="finance-form-grid">
+              {canWrite ? (
+                <form onSubmit={criarConta} className="form">
                   <label>
-                    Banco
+                    Nome da conta
                     <input
-                      value={banco}
-                      onChange={(e) => setBanco(e.target.value)}
+                      value={nomeConta}
+                      onChange={(e) => setNomeConta(e.target.value)}
+                      required
                     />
                   </label>
                   <label>
-                    Agência
-                    <input
-                      value={agencia}
-                      onChange={(e) => setAgencia(e.target.value)}
-                    />
+                    Tipo de conta
+                    <select
+                      value={tipoConta}
+                      onChange={(e) => setTipoConta(e.target.value)}
+                    >
+                      <option value="Bancária">Bancária</option>
+                      <option value="Caixa">Caixa</option>
+                      <option value="Digital">Conta digital</option>
+                      <option value="Outros">Outros</option>
+                    </select>
                   </label>
-                </div>
 
-                <div className="finance-form-grid">
+                  <div className="finance-form-grid">
+                    <label>
+                      Banco
+                      <input
+                        value={banco}
+                        onChange={(e) => setBanco(e.target.value)}
+                      />
+                    </label>
+                    <label>
+                      Agência
+                      <input
+                        value={agencia}
+                        onChange={(e) => setAgencia(e.target.value)}
+                      />
+                    </label>
+                  </div>
+
+                  <div className="finance-form-grid">
+                    <label>
+                      Número da conta
+                      <input
+                        value={numeroConta}
+                        onChange={(e) => setNumeroConta(e.target.value)}
+                      />
+                    </label>
+                    <label>
+                      Saldo inicial
+                      <input
+                        value={saldoInicial}
+                        onChange={(e) => setSaldoInicial(e.target.value)}
+                        placeholder="Ex.: 0,00"
+                      />
+                    </label>
+                  </div>
+
                   <label>
-                    Número da conta
-                    <input
-                      value={numeroConta}
-                      onChange={(e) => setNumeroConta(e.target.value)}
-                    />
+                    Moeda
+                    <select
+                      value={moeda}
+                      onChange={(e) => setMoeda(e.target.value)}
+                    >
+                      <option value="BRL">Real (BRL)</option>
+                      <option value="USD">Dólar (USD)</option>
+                      <option value="EUR">Euro (EUR)</option>
+                    </select>
                   </label>
-                  <label>
-                    Saldo inicial
-                    <input
-                      value={saldoInicial}
-                      onChange={(e) => setSaldoInicial(e.target.value)}
-                      placeholder="Ex.: 0,00"
-                    />
-                  </label>
-                </div>
 
-                <label>
-                  Moeda
-                  <select
-                    value={moeda}
-                    onChange={(e) => setMoeda(e.target.value)}
-                  >
-                    <option value="BRL">Real (BRL)</option>
-                    <option value="USD">Dólar (USD)</option>
-                    <option value="EUR">Euro (EUR)</option>
-                  </select>
-                </label>
-
-                <button type="submit" disabled={loading}>
-                  {loading ? "Salvando..." : "Adicionar conta"}
-                </button>
-                {erro && <p className="error">{erro}</p>}
-              </form>
+                  <button type="submit" disabled={loading}>
+                    {loading ? "Salvando..." : "Adicionar conta"}
+                  </button>
+                </form>
+              ) : (
+                <p className="finance-form-sub">Sem acesso para criar contas.</p>
+              )}
+              {erro && <p className="error">{erro}</p>}
             </section>
 
             {renderTransferenciaForm()}
@@ -1473,27 +1493,29 @@ export default function FinanceiroView({
                       </span>
                     </div>
                   </div>
-                  <div className="finance-item-actions">
-                    <button
-                      type="button"
-                      className="button-secondary"
-                      onClick={() =>
-                        atualizarStatusConta(
-                          conta,
-                          conta.status === "ativo" ? "inativo" : "ativo"
-                        )
-                      }
-                    >
-                      {conta.status === "ativo" ? "Desativar" : "Ativar"}
-                    </button>
-                    <button
-                      type="button"
-                      className="action-secondary"
-                      onClick={() => void removerConta(conta)}
-                    >
-                      Excluir
-                    </button>
-                  </div>
+                  {canWrite && (
+                    <div className="finance-item-actions">
+                      <button
+                        type="button"
+                        className="button-secondary"
+                        onClick={() =>
+                          atualizarStatusConta(
+                            conta,
+                            conta.status === "ativo" ? "inativo" : "ativo"
+                          )
+                        }
+                      >
+                        {conta.status === "ativo" ? "Desativar" : "Ativar"}
+                      </button>
+                      <button
+                        type="button"
+                        className="action-secondary"
+                        onClick={() => void removerConta(conta)}
+                      >
+                        Excluir
+                      </button>
+                    </div>
+                  )}
                 </div>
               ))}
               {contas.length === 0 && (
@@ -1660,119 +1682,123 @@ export default function FinanceiroView({
         <div className="finance-table-card" style={{ marginTop: 12 }}>
           <h3>Contas a pagar</h3>
 
-          <form
-            onSubmit={criarDespesa}
-            className="form"
-            style={{ marginTop: 12, marginBottom: 12 }}
-          >
-            <label>
-              Descrição
-              <input
-                value={novaDescricao}
-                onChange={(e) => setNovaDescricao(e.target.value)}
-                placeholder="Ex.: Conta de energia"
-              />
-            </label>
-            <div className="finance-form-grid">
-              <label>
-                Vencimento
-                <input
-                  type="date"
-                  value={novoVencimento}
-                  onChange={(e) => setNovoVencimento(e.target.value)}
-                />
-              </label>
-              <label>
-                Valor
-                <input
-                  value={novoValor}
-                  onChange={(e) => setNovoValor(e.target.value)}
-                  placeholder="Ex.: 150,00"
-                />
-              </label>
-            </div>
-            <label>
-              Categoria de despesa
-              <select
-                value={novaDespesaCategoriaId}
-                onChange={(e) => setNovaDespesaCategoriaId(e.target.value)}
-                required
-              >
-                <option value="">Selecione uma categoria</option>
-                {categoriasDespesa.map((cat) => (
-                  <option key={cat.id} value={cat.id}>
-                    {cat.codigo} - {cat.nome}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <div className="finance-form-grid">
-              <label>
-                Conta financeira
-                <select
-                  value={novaDespesaContaId}
-                  onChange={(e) => setNovaDespesaContaId(e.target.value)}
-                >
-                  <option value="">Selecionar automaticamente</option>
-                  {contas.map((conta) => (
-                    <option key={conta.id} value={conta.id}>
-                      {conta.nome}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Fornecedor / Favorecido
-                <select
-                  value={novaDespesaPessoaId}
-                  onChange={(e) => setNovaDespesaPessoaId(e.target.value)}
-                >
-                  <option value="">Selecionar automaticamente</option>
-                  {pessoasFinanceiro.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.nome}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            <div className="finance-form-grid">
-              <label>
-                Forma de pagamento
-                <select
-                  value={novaDespesaFormaPagamento}
-                  onChange={(e) => setNovaDespesaFormaPagamento(e.target.value)}
-                >
-                  <option value="boleto">Boleto</option>
-                  <option value="pix">Pix</option>
-                  <option value="transferencia">Transferência</option>
-                  <option value="cartao">Cartão</option>
-                  <option value="dinheiro">Dinheiro</option>
-                  <option value="indefinido">Indefinido</option>
-                </select>
-              </label>
-              <label>
-                Referência
-                <input
-                  value={novaDespesaReferencia}
-                  onChange={(e) => setNovaDespesaReferencia(e.target.value)}
-                  placeholder="Ex.: NF 12345 / Fevereiro"
-                />
-              </label>
-            </div>
-            <button
-              type="submit"
-              disabled={
-                loading ||
-                !novaDescricao.trim() ||
-                !novoVencimento ||
-                !novoValor ||
-                !novaDespesaCategoriaId
-              }
+          {canWrite ? (
+            <form
+              onSubmit={criarDespesa}
+              className="form"
+              style={{ marginTop: 12, marginBottom: 12 }}
             >
-              {loading ? "Salvando..." : "Criar despesa"}
-            </button>
-          </form>
+              <label>
+                Descrição
+                <input
+                  value={novaDescricao}
+                  onChange={(e) => setNovaDescricao(e.target.value)}
+                  placeholder="Ex.: Conta de energia"
+                />
+              </label>
+              <div className="finance-form-grid">
+                <label>
+                  Vencimento
+                  <input
+                    type="date"
+                    value={novoVencimento}
+                    onChange={(e) => setNovoVencimento(e.target.value)}
+                  />
+                </label>
+                <label>
+                  Valor
+                  <input
+                    value={novoValor}
+                    onChange={(e) => setNovoValor(e.target.value)}
+                    placeholder="Ex.: 150,00"
+                  />
+                </label>
+              </div>
+              <label>
+                Categoria de despesa
+                <select
+                  value={novaDespesaCategoriaId}
+                  onChange={(e) => setNovaDespesaCategoriaId(e.target.value)}
+                  required
+                >
+                  <option value="">Selecione uma categoria</option>
+                  {categoriasDespesa.map((cat) => (
+                    <option key={cat.id} value={cat.id}>
+                      {cat.codigo} - {cat.nome}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="finance-form-grid">
+                <label>
+                  Conta financeira
+                  <select
+                    value={novaDespesaContaId}
+                    onChange={(e) => setNovaDespesaContaId(e.target.value)}
+                  >
+                    <option value="">Selecionar automaticamente</option>
+                    {contas.map((conta) => (
+                      <option key={conta.id} value={conta.id}>
+                        {conta.nome}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Fornecedor / Favorecido
+                  <select
+                    value={novaDespesaPessoaId}
+                    onChange={(e) => setNovaDespesaPessoaId(e.target.value)}
+                  >
+                    <option value="">Selecionar automaticamente</option>
+                    {pessoasFinanceiro.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.nome}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <div className="finance-form-grid">
+                <label>
+                  Forma de pagamento
+                  <select
+                    value={novaDespesaFormaPagamento}
+                    onChange={(e) => setNovaDespesaFormaPagamento(e.target.value)}
+                  >
+                    <option value="boleto">Boleto</option>
+                    <option value="pix">Pix</option>
+                    <option value="transferencia">Transferência</option>
+                    <option value="cartao">Cartão</option>
+                    <option value="dinheiro">Dinheiro</option>
+                    <option value="indefinido">Indefinido</option>
+                  </select>
+                </label>
+                <label>
+                  Referência
+                  <input
+                    value={novaDespesaReferencia}
+                    onChange={(e) => setNovaDespesaReferencia(e.target.value)}
+                    placeholder="Ex.: NF 12345 / Fevereiro"
+                  />
+                </label>
+              </div>
+              <button
+                type="submit"
+                disabled={
+                  loading ||
+                  !novaDescricao.trim() ||
+                  !novoVencimento ||
+                  !novoValor ||
+                  !novaDespesaCategoriaId
+                }
+              >
+                {loading ? "Salvando..." : "Criar despesa"}
+              </button>
+            </form>
+          ) : (
+            <p className="finance-form-sub">Sem acesso para criar despesas.</p>
+          )}
 
           <button
             type="button"
@@ -1793,19 +1819,21 @@ export default function FinanceiroView({
                 label: string;
                 action: "aprovar" | "pagar" | "conciliar" | "fechar" | "reabrir";
               } | null =
-                situacao === "aberto" && isAdmin
+                canWrite && situacao === "aberto" && isAdmin
                   ? { label: "Aprovar", action: "aprovar" }
-                  : situacao === "aprovado" && (isAdmin || isStaff)
+                  : canWrite && situacao === "aprovado" && (isAdmin || isStaff)
                   ? { label: "Marcar como pago", action: "pagar" }
-                  : situacao === "pago" && (isAdmin || isStaff)
+                  : canWrite && situacao === "pago" && (isAdmin || isStaff)
                   ? { label: "Conciliar", action: "conciliar" }
-                  : situacao === "conciliado" && isAdmin
+                  : canWrite && situacao === "conciliado" && isAdmin
                   ? { label: "Fechar", action: "fechar" }
-                  : situacao === "fechado" && isPlatformAdmin
+                  : canWrite && situacao === "fechado" && isPlatformAdmin
                   ? { label: "Reabrir", action: "reabrir" }
                   : null;
               const podeCancelar =
-                isAdmin && (situacao === "aberto" || situacao === "aprovado");
+                canWrite &&
+                isAdmin &&
+                (situacao === "aberto" || situacao === "aprovado");
               return (
                 <div key={d.id} className="finance-item-card">
                   <div className="finance-item-main">
@@ -1900,6 +1928,7 @@ export default function FinanceiroView({
                 tipoEntidade="lancamento_financeiro"
                 entidadeId={lancamentoSelecionado.id}
                 titulo="Comprovantes e anexos"
+                readOnly={!canAnexos}
               />
             </section>
           )}
@@ -1910,125 +1939,129 @@ export default function FinanceiroView({
         <div className="finance-table-card" style={{ marginTop: 12 }}>
           <h3>Contas a receber</h3>
 
-          <form
-            onSubmit={criarReceita}
-            className="form"
-            style={{ marginTop: 12, marginBottom: 12 }}
-          >
-            <label>
-              Descrição
-              <input
-                value={novaReceitaDescricao}
-                onChange={(e) =>
-                  setNovaReceitaDescricao(e.target.value)
-                }
-                placeholder="Ex.: Taxa condominial janeiro"
-              />
-            </label>
-            <div className="finance-form-grid">
-              <label>
-                Vencimento
-                <input
-                  type="date"
-                  value={novaReceitaVencimento}
-                  onChange={(e) =>
-                    setNovaReceitaVencimento(e.target.value)
-                  }
-                />
-              </label>
-              <label>
-                Valor
-                <input
-                  value={novaReceitaValor}
-                  onChange={(e) =>
-                    setNovaReceitaValor(e.target.value)
-                  }
-                  placeholder="Ex.: 300,00"
-                />
-              </label>
-            </div>
-            <label>
-              Categoria de receita
-              <select
-                value={novaReceitaCategoriaId}
-                onChange={(e) => setNovaReceitaCategoriaId(e.target.value)}
-                required
-              >
-                <option value="">Selecione uma categoria</option>
-                {categoriasReceita.map((cat) => (
-                  <option key={cat.id} value={cat.id}>
-                    {cat.codigo} - {cat.nome}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <div className="finance-form-grid">
-              <label>
-                Conta financeira
-                <select
-                  value={novaReceitaContaId}
-                  onChange={(e) => setNovaReceitaContaId(e.target.value)}
-                >
-                  <option value="">Selecionar automaticamente</option>
-                  {contas.map((conta) => (
-                    <option key={conta.id} value={conta.id}>
-                      {conta.nome}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Pagador / Cliente
-                <select
-                  value={novaReceitaPessoaId}
-                  onChange={(e) => setNovaReceitaPessoaId(e.target.value)}
-                >
-                  <option value="">Selecionar automaticamente</option>
-                  {pessoasFinanceiro.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.nome}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            <div className="finance-form-grid">
-              <label>
-                Forma de recebimento
-                <select
-                  value={novaReceitaFormaPagamento}
-                  onChange={(e) => setNovaReceitaFormaPagamento(e.target.value)}
-                >
-                  <option value="pix">Pix</option>
-                  <option value="boleto">Boleto</option>
-                  <option value="transferencia">Transferência</option>
-                  <option value="cartao">Cartão</option>
-                  <option value="dinheiro">Dinheiro</option>
-                  <option value="indefinido">Indefinido</option>
-                </select>
-              </label>
-              <label>
-                Referência
-                <input
-                  value={novaReceitaReferencia}
-                  onChange={(e) => setNovaReceitaReferencia(e.target.value)}
-                  placeholder="Ex.: Cota Março / Unidade 101"
-                />
-              </label>
-            </div>
-            <button
-              type="submit"
-              disabled={
-                loading ||
-                !novaReceitaDescricao.trim() ||
-                !novaReceitaVencimento ||
-                !novaReceitaValor ||
-                !novaReceitaCategoriaId
-              }
+          {canWrite ? (
+            <form
+              onSubmit={criarReceita}
+              className="form"
+              style={{ marginTop: 12, marginBottom: 12 }}
             >
-              {loading ? "Salvando..." : "Criar receita"}
-            </button>
-          </form>
+              <label>
+                Descrição
+                <input
+                  value={novaReceitaDescricao}
+                  onChange={(e) =>
+                    setNovaReceitaDescricao(e.target.value)
+                  }
+                  placeholder="Ex.: Taxa condominial janeiro"
+                />
+              </label>
+              <div className="finance-form-grid">
+                <label>
+                  Vencimento
+                  <input
+                    type="date"
+                    value={novaReceitaVencimento}
+                    onChange={(e) =>
+                      setNovaReceitaVencimento(e.target.value)
+                    }
+                  />
+                </label>
+                <label>
+                  Valor
+                  <input
+                    value={novaReceitaValor}
+                    onChange={(e) =>
+                      setNovaReceitaValor(e.target.value)
+                    }
+                    placeholder="Ex.: 300,00"
+                  />
+                </label>
+              </div>
+              <label>
+                Categoria de receita
+                <select
+                  value={novaReceitaCategoriaId}
+                  onChange={(e) => setNovaReceitaCategoriaId(e.target.value)}
+                  required
+                >
+                  <option value="">Selecione uma categoria</option>
+                  {categoriasReceita.map((cat) => (
+                    <option key={cat.id} value={cat.id}>
+                      {cat.codigo} - {cat.nome}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="finance-form-grid">
+                <label>
+                  Conta financeira
+                  <select
+                    value={novaReceitaContaId}
+                    onChange={(e) => setNovaReceitaContaId(e.target.value)}
+                  >
+                    <option value="">Selecionar automaticamente</option>
+                    {contas.map((conta) => (
+                      <option key={conta.id} value={conta.id}>
+                        {conta.nome}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Pagador / Cliente
+                  <select
+                    value={novaReceitaPessoaId}
+                    onChange={(e) => setNovaReceitaPessoaId(e.target.value)}
+                  >
+                    <option value="">Selecionar automaticamente</option>
+                    {pessoasFinanceiro.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.nome}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <div className="finance-form-grid">
+                <label>
+                  Forma de recebimento
+                  <select
+                    value={novaReceitaFormaPagamento}
+                    onChange={(e) => setNovaReceitaFormaPagamento(e.target.value)}
+                  >
+                    <option value="pix">Pix</option>
+                    <option value="boleto">Boleto</option>
+                    <option value="transferencia">Transferência</option>
+                    <option value="cartao">Cartão</option>
+                    <option value="dinheiro">Dinheiro</option>
+                    <option value="indefinido">Indefinido</option>
+                  </select>
+                </label>
+                <label>
+                  Referência
+                  <input
+                    value={novaReceitaReferencia}
+                    onChange={(e) => setNovaReceitaReferencia(e.target.value)}
+                    placeholder="Ex.: Cota Março / Unidade 101"
+                  />
+                </label>
+              </div>
+              <button
+                type="submit"
+                disabled={
+                  loading ||
+                  !novaReceitaDescricao.trim() ||
+                  !novaReceitaVencimento ||
+                  !novaReceitaValor ||
+                  !novaReceitaCategoriaId
+                }
+              >
+                {loading ? "Salvando..." : "Criar receita"}
+              </button>
+            </form>
+          ) : (
+            <p className="finance-form-sub">Sem acesso para criar receitas.</p>
+          )}
 
           <button
             type="button"
@@ -2049,19 +2082,21 @@ export default function FinanceiroView({
                 label: string;
                 action: "aprovar" | "pagar" | "conciliar" | "fechar" | "reabrir";
               } | null =
-                situacao === "aberto" && isAdmin
+                canWrite && situacao === "aberto" && isAdmin
                   ? { label: "Aprovar", action: "aprovar" }
-                  : situacao === "aprovado" && (isAdmin || isStaff)
+                  : canWrite && situacao === "aprovado" && (isAdmin || isStaff)
                   ? { label: "Marcar como pago", action: "pagar" }
-                  : situacao === "pago" && (isAdmin || isStaff)
+                  : canWrite && situacao === "pago" && (isAdmin || isStaff)
                   ? { label: "Conciliar", action: "conciliar" }
-                  : situacao === "conciliado" && isAdmin
+                  : canWrite && situacao === "conciliado" && isAdmin
                   ? { label: "Fechar", action: "fechar" }
-                  : situacao === "fechado" && isPlatformAdmin
+                  : canWrite && situacao === "fechado" && isPlatformAdmin
                   ? { label: "Reabrir", action: "reabrir" }
                   : null;
               const podeCancelar =
-                isAdmin && (situacao === "aberto" || situacao === "aprovado");
+                canWrite &&
+                isAdmin &&
+                (situacao === "aberto" || situacao === "aprovado");
               return (
                 <div key={r.id} className="finance-item-card">
                   <div className="finance-item-main">
@@ -2160,6 +2195,7 @@ export default function FinanceiroView({
                 tipoEntidade="lancamento_financeiro"
                 entidadeId={lancamentoSelecionado.id}
                 titulo="Comprovantes e anexos"
+                readOnly={!canAnexos}
               />
             </section>
           )}
@@ -2255,161 +2291,167 @@ export default function FinanceiroView({
           <section className="finance-form-card">
             <h3>Novo item cobrado</h3>
 
-            <form
-              className="form"
-              onSubmit={async (e) => {
-                e.preventDefault();
-                if (!token || !novoItemNome.trim()) return;
-                try {
-                  setErro(null);
-                  setLoading(true);
-                  const valor =
-                    novoItemValorPadrao.trim().length > 0
-                      ? Number(
-                          novoItemValorPadrao
-                            .replace(/\./g, "")
-                            .replace(",", ".")
-                        )
-                      : undefined;
-                  const criado = await api.criarItemCobrado(token, {
-                    organizacaoId,
-                    nome: novoItemNome.trim(),
-                    tipo: novoItemTipo,
-                    financeCategoryId:
-                      novoItemCategoriaId ||
-                      "00000000-0000-0000-0000-000000000000",
-                    valorPadrao: valor,
-                    permiteAlterarValor: novoItemPermiteAlterar,
-                    exigeReserva: novoItemExigeReserva,
-                    geraCobrancaAutomatica: novoItemGeraCobrancaAuto,
-                    descricaoOpcional:
-                      novoItemDescricao.trim().length > 0
-                        ? novoItemDescricao.trim()
-                        : undefined
-                  });
-                  setItensCobrados((prev) => [...prev, criado]);
-                  setNovoItemNome("");
-                  setNovoItemTipo("AreaComum");
-                  setNovoItemCategoriaId("");
-                  setNovoItemValorPadrao("");
-                  setNovoItemPermiteAlterar(true);
-                  setNovoItemExigeReserva(false);
-                  setNovoItemGeraCobrancaAuto(true);
-                  setNovoItemDescricao("");
-                } catch (e: any) {
-                  setErro(e.message || "Erro ao criar item cobrado");
-                } finally {
-                  setLoading(false);
-                }
-              }}
-            >
-              <label>
-                Nome do item
-                <input
-                  value={novoItemNome}
-                  onChange={(e) => setNovoItemNome(e.target.value)}
-                  placeholder="Ex.: Reserva salão de festas"
-                  required
-                />
-              </label>
-
-              <div className="finance-form-grid">
+            {canWrite ? (
+              <form
+                className="form"
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  if (!token || !novoItemNome.trim()) return;
+                  try {
+                    setErro(null);
+                    setLoading(true);
+                    const valor =
+                      novoItemValorPadrao.trim().length > 0
+                        ? Number(
+                            novoItemValorPadrao
+                              .replace(/\./g, "")
+                              .replace(",", ".")
+                          )
+                        : undefined;
+                    const criado = await api.criarItemCobrado(token, {
+                      organizacaoId,
+                      nome: novoItemNome.trim(),
+                      tipo: novoItemTipo,
+                      financeCategoryId:
+                        novoItemCategoriaId ||
+                        "00000000-0000-0000-0000-000000000000",
+                      valorPadrao: valor,
+                      permiteAlterarValor: novoItemPermiteAlterar,
+                      exigeReserva: novoItemExigeReserva,
+                      geraCobrancaAutomatica: novoItemGeraCobrancaAuto,
+                      descricaoOpcional:
+                        novoItemDescricao.trim().length > 0
+                          ? novoItemDescricao.trim()
+                          : undefined
+                    });
+                    setItensCobrados((prev) => [...prev, criado]);
+                    setNovoItemNome("");
+                    setNovoItemTipo("AreaComum");
+                    setNovoItemCategoriaId("");
+                    setNovoItemValorPadrao("");
+                    setNovoItemPermiteAlterar(true);
+                    setNovoItemExigeReserva(false);
+                    setNovoItemGeraCobrancaAuto(true);
+                    setNovoItemDescricao("");
+                  } catch (e: any) {
+                    setErro(e.message || "Erro ao criar item cobrado");
+                  } finally {
+                    setLoading(false);
+                  }
+                }}
+              >
                 <label>
-                  Tipo
-                  <select
-                    value={novoItemTipo}
-                    onChange={(e) => setNovoItemTipo(e.target.value)}
-                  >
-                    <option value="AreaComum">Área comum</option>
-                    <option value="TagAcesso">Tag / acesso</option>
-                    <option value="Multa">Multa</option>
-                    <option value="Outros">Outros</option>
-                  </select>
-                </label>
-                <label>
-                  Valor padrão
+                  Nome do item
                   <input
-                    value={novoItemValorPadrao}
-                    onChange={(e) =>
-                      setNovoItemValorPadrao(e.target.value)
-                    }
-                    placeholder="Ex.: 250,00"
+                    value={novoItemNome}
+                    onChange={(e) => setNovoItemNome(e.target.value)}
+                    placeholder="Ex.: Reserva salão de festas"
+                    required
                   />
                 </label>
-              </div>
 
-              <label>
-                Categoria financeira
-                <select
-                  value={novoItemCategoriaId}
-                  onChange={(e) =>
-                    setNovoItemCategoriaId(e.target.value)
-                  }
+                <div className="finance-form-grid">
+                  <label>
+                    Tipo
+                    <select
+                      value={novoItemTipo}
+                      onChange={(e) => setNovoItemTipo(e.target.value)}
+                    >
+                      <option value="AreaComum">Área comum</option>
+                      <option value="TagAcesso">Tag / acesso</option>
+                      <option value="Multa">Multa</option>
+                      <option value="Outros">Outros</option>
+                    </select>
+                  </label>
+                  <label>
+                    Valor padrão
+                    <input
+                      value={novoItemValorPadrao}
+                      onChange={(e) =>
+                        setNovoItemValorPadrao(e.target.value)
+                      }
+                      placeholder="Ex.: 250,00"
+                    />
+                  </label>
+                </div>
+
+                <label>
+                  Categoria financeira
+                  <select
+                    value={novoItemCategoriaId}
+                    onChange={(e) =>
+                      setNovoItemCategoriaId(e.target.value)
+                    }
+                  >
+                    <option value="">Selecione uma categoria</option>
+                    {categoriasReceita.map((cat) => (
+                      <option key={cat.id} value={cat.id}>
+                        {cat.codigo} - {cat.nome}
+                      </option>
+                    ))}
+                  </select>
+                  <small style={{ display: "block", marginTop: 4 }}>
+                    As categorias são configuradas na aba &quot;Categorias
+                    financeiras&quot;.
+                  </small>
+                </label>
+
+                <label>
+                  Descrição
+                  <textarea
+                    value={novoItemDescricao}
+                    onChange={(e) =>
+                      setNovoItemDescricao(e.target.value)
+                    }
+                    rows={3}
+                  />
+                </label>
+
+                <label className="checkbox-inline">
+                  <input
+                    type="checkbox"
+                    checked={novoItemPermiteAlterar}
+                    onChange={(e) =>
+                      setNovoItemPermiteAlterar(e.target.checked)
+                    }
+                  />{" "}
+                  Permite alterar valor na hora
+                </label>
+
+                <label className="checkbox-inline">
+                  <input
+                    type="checkbox"
+                    checked={novoItemExigeReserva}
+                    onChange={(e) =>
+                      setNovoItemExigeReserva(e.target.checked)
+                    }
+                  />{" "}
+                  Exige reserva aprovada (salão, churrasqueira, etc.)
+                </label>
+
+                <label className="checkbox-inline">
+                  <input
+                    type="checkbox"
+                    checked={novoItemGeraCobrancaAuto}
+                    onChange={(e) =>
+                      setNovoItemGeraCobrancaAuto(e.target.checked)
+                    }
+                  />{" "}
+                  Gerar cobrança automática no financeiro
+                </label>
+
+                <button
+                  type="submit"
+                  disabled={loading || !novoItemNome.trim()}
                 >
-                  <option value="">Selecione uma categoria</option>
-                  {categoriasReceita.map((cat) => (
-                    <option key={cat.id} value={cat.id}>
-                      {cat.codigo} - {cat.nome}
-                    </option>
-                  ))}
-                </select>
-                <small style={{ display: "block", marginTop: 4 }}>
-                  As categorias são configuradas na aba &quot;Categorias
-                  financeiras&quot;.
-                </small>
-              </label>
-
-              <label>
-                Descrição
-                <textarea
-                  value={novoItemDescricao}
-                  onChange={(e) =>
-                    setNovoItemDescricao(e.target.value)
-                  }
-                  rows={3}
-                />
-              </label>
-
-              <label className="checkbox-inline">
-                <input
-                  type="checkbox"
-                  checked={novoItemPermiteAlterar}
-                  onChange={(e) =>
-                    setNovoItemPermiteAlterar(e.target.checked)
-                  }
-                />{" "}
-                Permite alterar valor na hora
-              </label>
-
-              <label className="checkbox-inline">
-                <input
-                  type="checkbox"
-                  checked={novoItemExigeReserva}
-                  onChange={(e) =>
-                    setNovoItemExigeReserva(e.target.checked)
-                  }
-                />{" "}
-                Exige reserva aprovada (salão, churrasqueira, etc.)
-              </label>
-
-              <label className="checkbox-inline">
-                <input
-                  type="checkbox"
-                  checked={novoItemGeraCobrancaAuto}
-                  onChange={(e) =>
-                    setNovoItemGeraCobrancaAuto(e.target.checked)
-                  }
-                />{" "}
-                Gerar cobrança automática no financeiro
-              </label>
-
-              <button
-                type="submit"
-                disabled={loading || !novoItemNome.trim()}
-              >
-                {loading ? "Salvando..." : "Salvar item"}
-              </button>
-            </form>
+                  {loading ? "Salvando..." : "Salvar item"}
+                </button>
+              </form>
+            ) : (
+              <p className="finance-form-sub">
+                Sem acesso para criar itens cobrados.
+              </p>
+            )}
           </section>
 
           <section className="finance-table-card">
@@ -2436,7 +2478,7 @@ export default function FinanceiroView({
                   <th>Categoria</th>
                   <th>Valor padrão</th>
                   <th>Ativo</th>
-                  <th />
+                  {canWrite && <th>Ações</th>}
                 </tr>
               </thead>
               <tbody>
@@ -2469,140 +2511,142 @@ export default function FinanceiroView({
                         {item.ativo ? "Ativo" : "Inativo"}
                       </span>
                     </td>
-                    <td>
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          if (!token) return;
-                          const novoNome = window.prompt(
-                            "Nome do item:",
-                            item.nome
-                          );
-                          if (!novoNome || !novoNome.trim()) return;
+                    {canWrite && (
+                      <td>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (!token) return;
+                            const novoNome = window.prompt(
+                              "Nome do item:",
+                              item.nome
+                            );
+                            if (!novoNome || !novoNome.trim()) return;
 
-                          const novoValorStr = window.prompt(
-                            "Valor padrão (ex.: 150,00):",
-                            item.valorPadrao != null
-                              ? item.valorPadrao.toLocaleString("pt-BR", {
-                                  minimumFractionDigits: 2
-                                })
-                              : ""
-                          );
-                          const novoValor =
-                            novoValorStr && novoValorStr.trim().length > 0
-                              ? Number(
-                                  novoValorStr
-                                    .replace(/\./g, "")
-                                    .replace(",", ".")
+                            const novoValorStr = window.prompt(
+                              "Valor padrão (ex.: 150,00):",
+                              item.valorPadrao != null
+                                ? item.valorPadrao.toLocaleString("pt-BR", {
+                                    minimumFractionDigits: 2
+                                  })
+                                : ""
+                            );
+                            const novoValor =
+                              novoValorStr && novoValorStr.trim().length > 0
+                                ? Number(
+                                    novoValorStr
+                                      .replace(/\./g, "")
+                                      .replace(",", ".")
+                                  )
+                                : undefined;
+
+                            const novaDescricao =
+                              window.prompt(
+                                "Descrição (opcional):",
+                                item.descricaoOpcional ?? ""
+                              ) ?? item.descricaoOpcional ?? "";
+
+                            const tipoEscolhido =
+                              window.prompt(
+                                'Tipo (AreaComum, TagAcesso, Multa, Outros):',
+                                item.tipo || "AreaComum"
+                              ) ?? item.tipo;
+
+                            try {
+                              setErro(null);
+                              setLoading(true);
+                              await api.atualizarItemCobrado(token, item.id, {
+                                nome: novoNome.trim(),
+                                tipo: tipoEscolhido || "AreaComum",
+                                financeCategoryId: item.financeCategoryId,
+                                valorPadrao: novoValor,
+                                permiteAlterarValor: item.permiteAlterarValor,
+                                exigeReserva: item.exigeReserva,
+                                geraCobrancaAutomatica:
+                                  item.geraCobrancaAutomatica,
+                                descricaoOpcional:
+                                  novaDescricao.trim().length > 0
+                                    ? novaDescricao.trim()
+                                    : undefined,
+                                ativo: item.ativo
+                              });
+
+                              setItensCobrados((prev) =>
+                                prev.map((i) =>
+                                  i.id === item.id
+                                    ? {
+                                        ...i,
+                                        nome: novoNome.trim(),
+                                        tipo: tipoEscolhido || "AreaComum",
+                                        valorPadrao: novoValor ?? i.valorPadrao,
+                                        descricaoOpcional:
+                                          novaDescricao.trim().length > 0
+                                            ? novaDescricao.trim()
+                                            : undefined
+                                      }
+                                    : i
                                 )
-                              : undefined;
-
-                          const novaDescricao =
-                            window.prompt(
-                              "Descrição (opcional):",
-                              item.descricaoOpcional ?? ""
-                            ) ?? item.descricaoOpcional ?? "";
-
-                          const tipoEscolhido =
-                            window.prompt(
-                              'Tipo (AreaComum, TagAcesso, Multa, Outros):',
-                              item.tipo || "AreaComum"
-                            ) ?? item.tipo;
-
-                          try {
-                            setErro(null);
-                            setLoading(true);
-                            await api.atualizarItemCobrado(token, item.id, {
-                              nome: novoNome.trim(),
-                              tipo: tipoEscolhido || "AreaComum",
-                              financeCategoryId: item.financeCategoryId,
-                              valorPadrao: novoValor,
-                              permiteAlterarValor: item.permiteAlterarValor,
-                              exigeReserva: item.exigeReserva,
-                              geraCobrancaAutomatica:
-                                item.geraCobrancaAutomatica,
-                              descricaoOpcional:
-                                novaDescricao.trim().length > 0
-                                  ? novaDescricao.trim()
-                                  : undefined,
-                              ativo: item.ativo
-                            });
-
-                            setItensCobrados((prev) =>
-                              prev.map((i) =>
-                                i.id === item.id
-                                  ? {
-                                      ...i,
-                                      nome: novoNome.trim(),
-                                      tipo: tipoEscolhido || "AreaComum",
-                                      valorPadrao: novoValor ?? i.valorPadrao,
-                                      descricaoOpcional:
-                                        novaDescricao.trim().length > 0
-                                          ? novaDescricao.trim()
-                                          : undefined
-                                    }
-                                  : i
-                              )
-                            );
-                          } catch (e: any) {
-                            setErro(
-                              e.message || "Erro ao atualizar item cobrado"
-                            );
-                          } finally {
-                            setLoading(false);
-                          }
-                        }}
-                        style={{
-                          marginRight: 8,
-                          backgroundColor: "#e5e7eb",
-                          color: "#111827"
-                        }}
-                      >
-                        Editar
-                      </button>
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          if (!token) return;
-                          const novoAtivo = !item.ativo;
-                          try {
-                            setErro(null);
-                            setLoading(true);
-                            await api.atualizarStatusItemCobrado(
-                              token,
-                              item.id,
-                              novoAtivo
-                            );
-                            setItensCobrados((prev) =>
-                              prev.map((i) =>
-                                i.id === item.id
-                                  ? { ...i, ativo: novoAtivo }
-                                  : i
-                              )
-                            );
-                          } catch (e: any) {
-                            setErro(
-                              e.message ||
-                                "Erro ao atualizar item cobrado"
-                            );
-                          } finally {
-                            setLoading(false);
-                          }
-                        }}
-                        style={{
-                          backgroundColor: item.ativo
-                            ? "#f97316"
-                            : "#22c55e"
-                        }}
-                      >
-                        {item.ativo ? "Desativar" : "Ativar"}
-                      </button>
-                    </td>
+                              );
+                            } catch (e: any) {
+                              setErro(
+                                e.message || "Erro ao atualizar item cobrado"
+                              );
+                            } finally {
+                              setLoading(false);
+                            }
+                          }}
+                          style={{
+                            marginRight: 8,
+                            backgroundColor: "#e5e7eb",
+                            color: "#111827"
+                          }}
+                        >
+                          Editar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (!token) return;
+                            const novoAtivo = !item.ativo;
+                            try {
+                              setErro(null);
+                              setLoading(true);
+                              await api.atualizarStatusItemCobrado(
+                                token,
+                                item.id,
+                                novoAtivo
+                              );
+                              setItensCobrados((prev) =>
+                                prev.map((i) =>
+                                  i.id === item.id
+                                    ? { ...i, ativo: novoAtivo }
+                                    : i
+                                )
+                              );
+                            } catch (e: any) {
+                              setErro(
+                                e.message ||
+                                  "Erro ao atualizar item cobrado"
+                              );
+                            } finally {
+                              setLoading(false);
+                            }
+                          }}
+                          style={{
+                            backgroundColor: item.ativo
+                              ? "#f97316"
+                              : "#22c55e"
+                          }}
+                        >
+                          {item.ativo ? "Desativar" : "Ativar"}
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 ))}
                 {itensCobrados.length === 0 && (
                   <tr>
-                    <td colSpan={5} style={{ textAlign: "center" }}>
+                    <td colSpan={canWrite ? 6 : 5} style={{ textAlign: "center" }}>
                       Nenhum item cadastrado ainda.
                     </td>
                   </tr>
@@ -2621,90 +2665,94 @@ export default function FinanceiroView({
               Emite documento de cobranca para um lancamento de receber.
             </p>
 
-            <form className="form" onSubmit={criarFatura}>
-              <label>
-                Lancamento (receber)
-                <select
-                  value={novaFaturaLancamentoId}
-                  onChange={(e) => setNovaFaturaLancamentoId(e.target.value)}
-                  required
-                >
-                  <option value="">Selecione</option>
-                  {lancamentosReceberElegiveisFatura.map((lanc) => (
-                    <option key={lanc.id} value={lanc.id}>
-                      {lanc.descricao} -{" "}
-                      {lanc.valor.toLocaleString("pt-BR", {
-                        style: "currency",
-                        currency: "BRL"
-                      })}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <div className="finance-form-grid">
+            {canWrite ? (
+              <form className="form" onSubmit={criarFatura}>
                 <label>
-                  Tipo
+                  Lancamento (receber)
                   <select
-                    value={novaFaturaTipo}
-                    onChange={(e) => setNovaFaturaTipo(e.target.value)}
+                    value={novaFaturaLancamentoId}
+                    onChange={(e) => setNovaFaturaLancamentoId(e.target.value)}
+                    required
                   >
-                    <option value="boleto">Boleto</option>
-                    <option value="pix">Pix</option>
-                    <option value="cartao">Cartao</option>
-                    <option value="link">Link de pagamento</option>
+                    <option value="">Selecione</option>
+                    {lancamentosReceberElegiveisFatura.map((lanc) => (
+                      <option key={lanc.id} value={lanc.id}>
+                        {lanc.descricao} -{" "}
+                        {lanc.valor.toLocaleString("pt-BR", {
+                          style: "currency",
+                          currency: "BRL"
+                        })}
+                      </option>
+                    ))}
                   </select>
                 </label>
+
+                <div className="finance-form-grid">
+                  <label>
+                    Tipo
+                    <select
+                      value={novaFaturaTipo}
+                      onChange={(e) => setNovaFaturaTipo(e.target.value)}
+                    >
+                      <option value="boleto">Boleto</option>
+                      <option value="pix">Pix</option>
+                      <option value="cartao">Cartao</option>
+                      <option value="link">Link de pagamento</option>
+                    </select>
+                  </label>
+                  <label>
+                    Vencimento
+                    <input
+                      type="date"
+                      value={novaFaturaVencimento}
+                      onChange={(e) => setNovaFaturaVencimento(e.target.value)}
+                    />
+                  </label>
+                </div>
+
                 <label>
-                  Vencimento
+                  Identificador externo
                   <input
-                    type="date"
-                    value={novaFaturaVencimento}
-                    onChange={(e) => setNovaFaturaVencimento(e.target.value)}
+                    value={novaFaturaIdentificador}
+                    onChange={(e) => setNovaFaturaIdentificador(e.target.value)}
+                    placeholder="Ex.: FAT-2026-0001"
                   />
                 </label>
-              </div>
 
-              <label>
-                Identificador externo
-                <input
-                  value={novaFaturaIdentificador}
-                  onChange={(e) => setNovaFaturaIdentificador(e.target.value)}
-                  placeholder="Ex.: FAT-2026-0001"
-                />
-              </label>
+                <label>
+                  Linha digitavel
+                  <input
+                    value={novaFaturaLinhaDigitavel}
+                    onChange={(e) => setNovaFaturaLinhaDigitavel(e.target.value)}
+                    placeholder="Ex.: 00190.00009 01234.567891 23456.789012 3 98760000010000"
+                  />
+                </label>
 
-              <label>
-                Linha digitavel
-                <input
-                  value={novaFaturaLinhaDigitavel}
-                  onChange={(e) => setNovaFaturaLinhaDigitavel(e.target.value)}
-                  placeholder="Ex.: 00190.00009 01234.567891 23456.789012 3 98760000010000"
-                />
-              </label>
+                <label>
+                  QR Code (texto)
+                  <input
+                    value={novaFaturaQrCode}
+                    onChange={(e) => setNovaFaturaQrCode(e.target.value)}
+                    placeholder="Payload Pix copia e cola"
+                  />
+                </label>
 
-              <label>
-                QR Code (texto)
-                <input
-                  value={novaFaturaQrCode}
-                  onChange={(e) => setNovaFaturaQrCode(e.target.value)}
-                  placeholder="Payload Pix copia e cola"
-                />
-              </label>
+                <label>
+                  URL de pagamento
+                  <input
+                    value={novaFaturaUrlPagamento}
+                    onChange={(e) => setNovaFaturaUrlPagamento(e.target.value)}
+                    placeholder="https://..."
+                  />
+                </label>
 
-              <label>
-                URL de pagamento
-                <input
-                  value={novaFaturaUrlPagamento}
-                  onChange={(e) => setNovaFaturaUrlPagamento(e.target.value)}
-                  placeholder="https://..."
-                />
-              </label>
-
-              <button type="submit" disabled={loading || !novaFaturaLancamentoId}>
-                {loading ? "Emitindo..." : "Emitir fatura"}
-              </button>
-            </form>
+                <button type="submit" disabled={loading || !novaFaturaLancamentoId}>
+                  {loading ? "Emitindo..." : "Emitir fatura"}
+                </button>
+              </form>
+            ) : (
+              <p className="finance-form-sub">Sem acesso para emitir faturas.</p>
+            )}
           </section>
 
           <section className="finance-table-card">
@@ -2729,7 +2777,7 @@ export default function FinanceiroView({
                   <th>Emissao</th>
                   <th>Vencimento</th>
                   <th>Status</th>
-                  <th>Acoes</th>
+                  {canWrite && <th>Ações</th>}
                 </tr>
               </thead>
               <tbody>
@@ -2743,46 +2791,48 @@ export default function FinanceiroView({
                     <td>{new Date(fat.dataEmissao).toLocaleDateString("pt-BR")}</td>
                     <td>{new Date(fat.dataVencimento).toLocaleDateString("pt-BR")}</td>
                     <td>{fat.status}</td>
-                    <td>
-                      <div className="table-actions">
-                        <button
-                          type="button"
-                          className="action-primary"
-                          disabled={loading || fat.status === "paga"}
-                          onClick={() => void atualizarStatusFatura(fat, "paga")}
-                        >
-                          Dar baixa
-                        </button>
-                        <details className="action-menu">
-                          <summary title="Mais acoes" aria-label="Mais acoes">
-                            ⋮
-                          </summary>
-                          <div className="action-menu-panel">
-                            <button
-                              type="button"
-                              className="action-secondary"
-                              disabled={loading || fat.status === "cancelada"}
-                              onClick={() => void atualizarStatusFatura(fat, "cancelada")}
-                            >
-                              Cancelar
-                            </button>
-                            <button
-                              type="button"
-                              className="action-secondary"
-                              disabled={loading || fat.status === "emitida"}
-                              onClick={() => void atualizarStatusFatura(fat, "emitida")}
-                            >
-                              Reabrir
-                            </button>
-                          </div>
-                        </details>
-                      </div>
-                    </td>
+                    {canWrite && (
+                      <td>
+                        <div className="table-actions">
+                          <button
+                            type="button"
+                            className="action-primary"
+                            disabled={loading || fat.status === "paga"}
+                            onClick={() => void atualizarStatusFatura(fat, "paga")}
+                          >
+                            Dar baixa
+                          </button>
+                          <details className="action-menu">
+                            <summary title="Mais acoes" aria-label="Mais acoes">
+                              ⋮
+                            </summary>
+                            <div className="action-menu-panel">
+                              <button
+                                type="button"
+                                className="action-secondary"
+                                disabled={loading || fat.status === "cancelada"}
+                                onClick={() => void atualizarStatusFatura(fat, "cancelada")}
+                              >
+                                Cancelar
+                              </button>
+                              <button
+                                type="button"
+                                className="action-secondary"
+                                disabled={loading || fat.status === "emitida"}
+                                onClick={() => void atualizarStatusFatura(fat, "emitida")}
+                              >
+                                Reabrir
+                              </button>
+                            </div>
+                          </details>
+                        </div>
+                      </td>
+                    )}
                   </tr>
                 ))}
                 {faturas.length === 0 && (
                   <tr>
-                    <td colSpan={6} style={{ textAlign: "center" }}>
+                    <td colSpan={canWrite ? 6 : 5} style={{ textAlign: "center" }}>
                       Nenhuma fatura emitida ainda.
                     </td>
                   </tr>
@@ -2876,41 +2926,47 @@ export default function FinanceiroView({
             </div>
           </div>
 
-          <form
-            className="finance-upload-form"
-            onSubmit={(e) => {
-              setTipoEnvio("extrato");
-              void enviarArquivoFinanceiro(e);
-            }}
-          >
-            <label>
-              Conta bancaria
-              <select
-                value={contaExtratoId}
-                onChange={(e) => setContaExtratoId(e.target.value)}
-              >
-                <option value="">Selecionar</option>
-                {contasAtivasLista.map((conta) => (
-                  <option key={conta.id} value={conta.id}>
-                    {conta.nome}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Extrato bancário
-              <input
-                type="file"
-                accept=".csv,.ofx"
-                onChange={(e) =>
-                  setArquivoEnvio(e.target.files ? e.target.files[0] : null)
-                }
-              />
-            </label>
-            <button type="submit" disabled={loading || !arquivoEnvio}>
-              {loading ? "Importando..." : "Importar extrato"}
-            </button>
-          </form>
+          {canWrite ? (
+            <form
+              className="finance-upload-form"
+              onSubmit={(e) => {
+                setTipoEnvio("extrato");
+                void enviarArquivoFinanceiro(e);
+              }}
+            >
+              <label>
+                Conta bancaria
+                <select
+                  value={contaExtratoId}
+                  onChange={(e) => setContaExtratoId(e.target.value)}
+                >
+                  <option value="">Selecionar</option>
+                  {contasAtivasLista.map((conta) => (
+                    <option key={conta.id} value={conta.id}>
+                      {conta.nome}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Extrato bancário
+                <input
+                  type="file"
+                  accept=".csv,.ofx"
+                  onChange={(e) =>
+                    setArquivoEnvio(e.target.files ? e.target.files[0] : null)
+                  }
+                />
+              </label>
+              <button type="submit" disabled={loading || !arquivoEnvio}>
+                {loading ? "Importando..." : "Importar extrato"}
+              </button>
+            </form>
+          ) : (
+            <p className="finance-form-sub">
+              Sem acesso para importar extratos.
+            </p>
+          )}
 
           {extratoImportado && (
             <div className="finance-card-list" style={{ marginTop: 16 }}>
@@ -2968,18 +3024,22 @@ export default function FinanceiroView({
                     </div>
                     <div className="finance-item-actions">
                       {possuiSugestao ? (
-                        <button
-                          type="button"
-                          className="action-primary"
-                          disabled={conciliado || conciliandoId === chaveItem}
-                          onClick={() => void confirmarConciliacao(item)}
-                        >
-                          {conciliado
-                            ? "Conciliado"
-                            : conciliandoId === chaveItem
-                            ? "Conciliando..."
-                            : "Conciliar"}
-                        </button>
+                        canWrite ? (
+                          <button
+                            type="button"
+                            className="action-primary"
+                            disabled={conciliado || conciliandoId === chaveItem}
+                            onClick={() => void confirmarConciliacao(item)}
+                          >
+                            {conciliado
+                              ? "Conciliado"
+                              : conciliandoId === chaveItem
+                              ? "Conciliando..."
+                              : "Conciliar"}
+                          </button>
+                        ) : (
+                          <span className="finance-item-sub">Somente leitura</span>
+                        )
                       ) : (
                         <span className="finance-item-sub">
                           Sem sugestão automática
@@ -3019,81 +3079,87 @@ export default function FinanceiroView({
           <section className="finance-form-card">
             <h3>Nova categoria financeira</h3>
 
-            <form
-              className="form"
-              onSubmit={async (e) => {
-                e.preventDefault();
-                if (!token) return;
-                if (!novaCategoriaCodigo.trim() || !novaCategoriaNome.trim()) {
-                  return;
-                }
-
-                try {
-                  setErro(null);
-                  setLoading(true);
-                  const criada = await api.criarPlanoContas(token, {
-                    organizacaoId: organizacao.id,
-                    codigo: novaCategoriaCodigo.trim(),
-                    nome: novaCategoriaNome.trim(),
-                    tipo: novaCategoriaTipo,
-                    nivel: 1
-                  });
-
-                  if (criada.tipo === "Receita") {
-                    setCategoriasReceita((prev) => [...prev, criada]);
-                  } else {
-                    setCategoriasDespesa((prev) => [...prev, criada]);
+            {canWrite ? (
+              <form
+                className="form"
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  if (!token) return;
+                  if (!novaCategoriaCodigo.trim() || !novaCategoriaNome.trim()) {
+                    return;
                   }
 
-                  setNovaCategoriaCodigo("");
-                  setNovaCategoriaNome("");
-                  setNovaCategoriaTipo("Receita");
-                } catch (e: any) {
-                  setErro(e.message || "Erro ao criar categoria financeira");
-                } finally {
-                  setLoading(false);
-                }
-              }}
-            >
-              <div className="finance-form-grid">
+                  try {
+                    setErro(null);
+                    setLoading(true);
+                    const criada = await api.criarPlanoContas(token, {
+                      organizacaoId: organizacao.id,
+                      codigo: novaCategoriaCodigo.trim(),
+                      nome: novaCategoriaNome.trim(),
+                      tipo: novaCategoriaTipo,
+                      nivel: 1
+                    });
+
+                    if (criada.tipo === "Receita") {
+                      setCategoriasReceita((prev) => [...prev, criada]);
+                    } else {
+                      setCategoriasDespesa((prev) => [...prev, criada]);
+                    }
+
+                    setNovaCategoriaCodigo("");
+                    setNovaCategoriaNome("");
+                    setNovaCategoriaTipo("Receita");
+                  } catch (e: any) {
+                    setErro(e.message || "Erro ao criar categoria financeira");
+                  } finally {
+                    setLoading(false);
+                  }
+                }}
+              >
+                <div className="finance-form-grid">
+                  <label>
+                    Código
+                    <input
+                      value={novaCategoriaCodigo}
+                      onChange={(e) => setNovaCategoriaCodigo(e.target.value)}
+                      placeholder="Ex.: 1.01.01"
+                      required
+                    />
+                  </label>
+                  <label>
+                    Tipo
+                    <select
+                      value={novaCategoriaTipo}
+                      onChange={(e) =>
+                        setNovaCategoriaTipo(
+                          e.target.value === "Despesa" ? "Despesa" : "Receita"
+                        )
+                      }
+                    >
+                      <option value="Receita">Receita</option>
+                      <option value="Despesa">Despesa</option>
+                    </select>
+                  </label>
+                </div>
+
                 <label>
-                  Código
+                  Nome da categoria
                   <input
-                    value={novaCategoriaCodigo}
-                    onChange={(e) => setNovaCategoriaCodigo(e.target.value)}
-                    placeholder="Ex.: 1.01.01"
+                    value={novaCategoriaNome}
+                    onChange={(e) => setNovaCategoriaNome(e.target.value)}
+                    placeholder="Ex.: Receitas de condomínio"
                     required
                   />
                 </label>
-                <label>
-                  Tipo
-                  <select
-                    value={novaCategoriaTipo}
-                    onChange={(e) =>
-                      setNovaCategoriaTipo(
-                        e.target.value === "Despesa" ? "Despesa" : "Receita"
-                      )
-                    }
-                  >
-                    <option value="Receita">Receita</option>
-                    <option value="Despesa">Despesa</option>
-                  </select>
-                </label>
-              </div>
-
-              <label>
-                Nome da categoria
-                <input
-                  value={novaCategoriaNome}
-                  onChange={(e) => setNovaCategoriaNome(e.target.value)}
-                  placeholder="Ex.: Receitas de condomínio"
-                  required
-                />
-              </label>
-              <button type="submit" disabled={loading || !token}>
-                {loading ? "Salvando..." : "Adicionar categoria"}
-              </button>
-            </form>
+                <button type="submit" disabled={loading || !token}>
+                  {loading ? "Salvando..." : "Adicionar categoria"}
+                </button>
+              </form>
+            ) : (
+              <p className="finance-form-sub">
+                Sem acesso para criar categorias.
+              </p>
+            )}
           </section>
 
           <section className="finance-table-card">
@@ -3137,7 +3203,7 @@ export default function FinanceiroView({
                   <th>Nome</th>
                   <th>Tipo</th>
                   <th>Nível</th>
-                  <th />
+                  {canWrite && <th>Ações</th>}
                 </tr>
               </thead>
               <tbody>
@@ -3149,108 +3215,110 @@ export default function FinanceiroView({
                       <td>{cat.nome}</td>
                       <td>{cat.tipo}</td>
                       <td>{cat.nivel}</td>
-                      <td>
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            if (!token) return;
-                            const novoNome = window.prompt(
-                              "Novo nome da categoria:",
-                              cat.nome
-                            );
-                            if (!novoNome || !novoNome.trim()) return;
-                            try {
-                              setErro(null);
-                              setLoading(true);
-                              const atualizada = await api.atualizarPlanoContas(
-                                token,
-                                cat.id,
-                                {
-                                  codigo: cat.codigo,
-                                  nome: novoNome.trim(),
-                                  tipo: cat.tipo,
-                                  nivel: cat.nivel,
-                                  parentId: cat.parentId
+                      {canWrite && (
+                        <td>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (!token) return;
+                              const novoNome = window.prompt(
+                                "Novo nome da categoria:",
+                                cat.nome
+                              );
+                              if (!novoNome || !novoNome.trim()) return;
+                              try {
+                                setErro(null);
+                                setLoading(true);
+                                const atualizada = await api.atualizarPlanoContas(
+                                  token,
+                                  cat.id,
+                                  {
+                                    codigo: cat.codigo,
+                                    nome: novoNome.trim(),
+                                    tipo: cat.tipo,
+                                    nivel: cat.nivel,
+                                    parentId: cat.parentId
+                                  }
+                                );
+
+                                if (atualizada.tipo === "Receita") {
+                                  setCategoriasReceita((prev) =>
+                                    prev.map((c) =>
+                                      c.id === atualizada.id ? atualizada : c
+                                    )
+                                  );
+                                } else {
+                                  setCategoriasDespesa((prev) =>
+                                    prev.map((c) =>
+                                      c.id === atualizada.id ? atualizada : c
+                                    )
+                                  );
                                 }
-                              );
-
-                              if (atualizada.tipo === "Receita") {
-                                setCategoriasReceita((prev) =>
-                                  prev.map((c) =>
-                                    c.id === atualizada.id ? atualizada : c
-                                  )
+                              } catch (e: any) {
+                                setErro(
+                                  e.message ||
+                                    "Erro ao atualizar categoria financeira"
                                 );
-                              } else {
-                                setCategoriasDespesa((prev) =>
-                                  prev.map((c) =>
-                                    c.id === atualizada.id ? atualizada : c
-                                  )
-                                );
+                              } finally {
+                                setLoading(false);
                               }
-                            } catch (e: any) {
-                              setErro(
-                                e.message ||
-                                  "Erro ao atualizar categoria financeira"
-                              );
-                            } finally {
-                              setLoading(false);
-                            }
-                          }}
-                          style={{
-                            marginRight: 8,
-                            backgroundColor: "#e5e7eb",
-                            color: "#111827"
-                          }}
-                        >
-                          Renomear
-                        </button>
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            if (!token) return;
-                            if (
-                              !window.confirm(
-                                `Remover categoria "${cat.nome}"? (só é possível se não tiver lançamentos)`
-                              )
-                            ) {
-                              return;
-                            }
-                            try {
-                              setErro(null);
-                              setLoading(true);
-                              await api.removerPlanoContas(token, cat.id);
-
-                              if (cat.tipo === "Receita") {
-                                setCategoriasReceita((prev) =>
-                                  prev.filter((c) => c.id !== cat.id)
-                                );
-                              } else {
-                                setCategoriasDespesa((prev) =>
-                                  prev.filter((c) => c.id !== cat.id)
-                                );
+                            }}
+                            style={{
+                              marginRight: 8,
+                              backgroundColor: "#e5e7eb",
+                              color: "#111827"
+                            }}
+                          >
+                            Renomear
+                          </button>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (!token) return;
+                              if (
+                                !window.confirm(
+                                  `Remover categoria "${cat.nome}"? (só é possível se não tiver lançamentos)`
+                                )
+                              ) {
+                                return;
                               }
-                            } catch (e: any) {
-                              setErro(
-                                e.message ||
-                                  "Erro ao remover categoria financeira"
-                              );
-                            } finally {
-                              setLoading(false);
-                            }
-                          }}
-                          style={{
-                            backgroundColor: "#ef4444",
-                            color: "#ffffff"
-                          }}
-                        >
-                          Remover
-                        </button>
-                      </td>
+                              try {
+                                setErro(null);
+                                setLoading(true);
+                                await api.removerPlanoContas(token, cat.id);
+
+                                if (cat.tipo === "Receita") {
+                                  setCategoriasReceita((prev) =>
+                                    prev.filter((c) => c.id !== cat.id)
+                                  );
+                                } else {
+                                  setCategoriasDespesa((prev) =>
+                                    prev.filter((c) => c.id !== cat.id)
+                                  );
+                                }
+                              } catch (e: any) {
+                                setErro(
+                                  e.message ||
+                                    "Erro ao remover categoria financeira"
+                                );
+                              } finally {
+                                setLoading(false);
+                              }
+                            }}
+                            style={{
+                              backgroundColor: "#ef4444",
+                              color: "#ffffff"
+                            }}
+                          >
+                            Remover
+                          </button>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 {categoriasReceita.length + categoriasDespesa.length === 0 && (
                   <tr>
-                    <td colSpan={5} style={{ textAlign: "center" }}>
+                    <td colSpan={canWrite ? 5 : 4} style={{ textAlign: "center" }}>
                       Nenhuma categoria cadastrada ainda.
                     </td>
                   </tr>
