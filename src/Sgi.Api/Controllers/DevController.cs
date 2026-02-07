@@ -31,11 +31,22 @@ public class DevController : ControllerBase
         _env = env;
     }
 
+    private IActionResult? GuardDev()
+    {
+        return _env.IsDevelopment() ? null : NotFound();
+    }
+
     [HttpPost("seed-admin")]
     [HttpGet("seed-admin")]
     [AllowAnonymous]
     public async Task<IActionResult> SeedAdmin()
     {
+        var guard = GuardDev();
+        if (guard is not null)
+        {
+            return guard;
+        }
+
         const string adminEmail = "admin@teste.com";
         const string adminSenha = "Admin@123";
         const string sindicoEmail = "sindico@teste.com";
@@ -119,6 +130,12 @@ public class DevController : ControllerBase
     [AllowAnonymous]
     public async Task<IActionResult> SeedDemoFull()
     {
+        var guard = GuardDev();
+        if (guard is not null)
+        {
+            return guard;
+        }
+
         const string adminEmail = "admin@teste.com";
         const string adminSenha = "Admin@123";
         const string sindicoEmail = "sindico@teste.com";
