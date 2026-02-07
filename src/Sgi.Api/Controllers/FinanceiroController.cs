@@ -68,6 +68,8 @@ public class FinanceiroController : ControllerBase
     private void RegistrarAudit(Guid organizacaoId, Guid entidadeId, string entidade, string acao, object? detalhes = null)
     {
         var userId = Authz.GetUserId(User);
+        var pessoaId = Authz.GetPessoaId(User);
+        var now = DateTime.UtcNow;
         _db.FinanceAudits.Add(new FinanceAudit
         {
             Id = Guid.NewGuid(),
@@ -77,7 +79,27 @@ public class FinanceiroController : ControllerBase
             EntidadeId = entidadeId,
             Acao = acao,
             Detalhes = detalhes is null ? null : JsonSerializer.Serialize(detalhes),
-            DataHora = DateTime.UtcNow
+            DataHora = now
+        });
+
+        var payload = new
+        {
+            PessoaId = pessoaId,
+            Detalhes = detalhes
+        };
+
+        _db.LogsAuditoria.Add(new LogAuditoria
+        {
+            Id = Guid.NewGuid(),
+            UsuarioId = userId,
+            OrganizacaoId = organizacaoId,
+            Entidade = entidade,
+            EntidadeId = entidadeId,
+            Acao = acao,
+            DadosDepoisJson = JsonSerializer.Serialize(payload),
+            DataHora = now,
+            Ip = HttpContext?.Connection?.RemoteIpAddress?.ToString(),
+            UserAgent = HttpContext?.Request?.Headers["User-Agent"].ToString()
         });
     }
 

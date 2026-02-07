@@ -88,7 +88,7 @@ public class OperacaoController : ControllerBase
         return StatusReservaValidos.Contains(valor) ? valor : "PENDENTE";
     }
 
-    private async Task RegistrarHistoricoChamado(Guid organizacaoId, Guid chamadoId, string acao, string? detalhes, Guid? responsavelPessoaId)
+    private void RegistrarHistoricoChamado(Guid organizacaoId, Guid chamadoId, string acao, string? detalhes, Guid? responsavelPessoaId)
     {
         var historico = new ChamadoHistorico
         {
@@ -101,7 +101,37 @@ public class OperacaoController : ControllerBase
             ResponsavelPessoaId = responsavelPessoaId
         };
         _db.ChamadosHistorico.Add(historico);
-        await _db.SaveChangesAsync();
+    }
+
+    private void RegistrarAudit(
+        Guid organizacaoId,
+        Guid entidadeId,
+        string entidade,
+        string acao,
+        Guid? pessoaId,
+        object? detalhes = null)
+    {
+        var userId = Authz.GetUserId(User);
+        var now = DateTime.UtcNow;
+        var payload = new
+        {
+            PessoaId = pessoaId,
+            Detalhes = detalhes
+        };
+
+        _db.LogsAuditoria.Add(new LogAuditoria
+        {
+            Id = Guid.NewGuid(),
+            UsuarioId = userId,
+            OrganizacaoId = organizacaoId,
+            Entidade = entidade,
+            EntidadeId = entidadeId,
+            Acao = acao,
+            DadosDepoisJson = JsonSerializer.Serialize(payload),
+            DataHora = now,
+            Ip = HttpContext?.Connection?.RemoteIpAddress?.ToString(),
+            UserAgent = HttpContext?.Request?.Headers["User-Agent"].ToString()
+        });
     }
 
     [HttpGet("chamados")]
@@ -186,8 +216,16 @@ public class OperacaoController : ControllerBase
         model.SlaHoras ??= CalcularSlaHoras(model.Prioridade ?? "MEDIA");
         model.DataPrazoSla ??= model.DataAbertura.AddHours(model.SlaHoras.Value);
         _db.Chamados.Add(model);
+        RegistrarHistoricoChamado(model.OrganizacaoId, model.Id, "CRIADO", "Chamado criado.", model.ResponsavelPessoaId);
+        RegistrarAudit(model.OrganizacaoId, model.Id, "Chamado", "CRIAR_CHAMADO", auth.PessoaId, new
+        {
+            model.Prioridade,
+            model.Status,
+            model.UnidadeOrganizacionalId,
+            model.PessoaSolicitanteId,
+            model.ResponsavelPessoaId
+        });
         await _db.SaveChangesAsync();
-        await RegistrarHistoricoChamado(model.OrganizacaoId, model.Id, "CRIADO", "Chamado criado.", model.ResponsavelPessoaId);
         return CreatedAtAction(nameof(ListarChamados), new { id = model.Id }, model);
     }
 
@@ -267,13 +305,18 @@ public class OperacaoController : ControllerBase
             chamado.ResponsavelPessoaId = request.ResponsavelPessoaId.Value;
         }
 
-        await _db.SaveChangesAsync();
-        await RegistrarHistoricoChamado(
+        RegistrarHistoricoChamado(
             chamado.OrganizacaoId,
             chamado.Id,
             "ATUALIZADO",
             request.Observacao ?? (detalhes.Count > 0 ? string.Join(" | ", detalhes) : "Atualizacao de chamado."),
             request.ResponsavelPessoaId ?? chamado.ResponsavelPessoaId);
+        RegistrarAudit(chamado.OrganizacaoId, chamado.Id, "Chamado", "ATUALIZAR_CHAMADO", auth.PessoaId, new
+        {
+            Alteracoes = detalhes,
+            request.Observacao
+        });
+        await _db.SaveChangesAsync();
 
         return Ok(chamado);
     }
@@ -294,12 +337,17 @@ public class OperacaoController : ControllerBase
             return BadRequest("Mensagem e obrigatoria.");
         }
 
-        await RegistrarHistoricoChamado(
+        RegistrarHistoricoChamado(
             auth.OrganizacaoId ?? Guid.Empty,
             id,
             "COMENTARIO",
             request.Mensagem.Trim(),
             auth.PessoaId);
+        RegistrarAudit(auth.OrganizacaoId ?? Guid.Empty, id, "Chamado", "COMENTAR_CHAMADO", auth.PessoaId, new
+        {
+            Mensagem = request.Mensagem.Trim()
+        });
+        await _db.SaveChangesAsync();
 
         return NoContent();
     }
@@ -658,6 +706,15 @@ public class OperacaoController : ControllerBase
             model.DataAprovacao = DateTime.UtcNow;
         }
         _db.Reservas.Add(model);
+        RegistrarAudit(model.OrganizacaoId, model.Id, "Reserva", "CRIAR_RESERVA", auth.PessoaId, new
+        {
+            model.RecursoReservavelId,
+            model.DataInicio,
+            model.DataFim,
+            model.Status,
+            model.UnidadeOrganizacionalId,
+            model.PessoaSolicitanteId
+        });
         await _db.SaveChangesAsync();
         return CreatedAtAction(nameof(ListarReservas), new { id = model.Id }, model);
     }
@@ -715,6 +772,12 @@ public class OperacaoController : ControllerBase
             }
         }
 
+        RegistrarAudit(reserva.OrganizacaoId, reserva.Id, "Reserva", "ATUALIZAR_RESERVA", auth.PessoaId, new
+        {
+            request.Status,
+            request.Observacao,
+            reserva.AprovadorPessoaId
+        });
         await _db.SaveChangesAsync();
         return Ok(reserva);
     }
