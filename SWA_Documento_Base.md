@@ -1,5 +1,11 @@
 # SISTEMA SWA – DOCUMENTO BASE (VERSÃO ORGANIZAÇÕES)
 
+## BASELINE CONGELADA (v1)
+Referencia oficial do estado atual do sistema: `SGI_BASELINE.md` (2026-02-07, commit d3e5241).
+Este documento segue como base conceitual e de roadmap.
+
+---
+
 ## 1. Visão Geral
 
 O **Sistema SWA** é uma plataforma de **gestão organizacional** voltada para condomínios, empresas, igrejas, associações, pousadas e outros empreendimentos que precisam controlar operações, finanças e comunicação em um único lugar.
@@ -446,4 +452,5 @@ Próximos passos:
 - status (pendente, aprovada, rejeitada, cancelada, concluida)
 - valor_total (se pago)
 - lancamento_financeiro_id (opcional, quando a reserva gera cobrança)
+
 

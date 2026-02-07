@@ -1,3 +1,7 @@
+[OBSOLETO] Este resumo foi congelado em 2026-02-07 e substituido por SGI_BASELINE.md.
+Use SGI_BASELINE.md como referencia oficial do estado atual.
+
+---
 # STATUS GERAL DO PROJETO SGI (Resumo Completo)
 
 Este documento registra **tudo o que foi feito até agora**, **o que já existe em código**, **o que está ativo**, **o que está desativado (mas preservado)** e **o que ainda falta**, para garantir que **nada se perca** mesmo que a conversa seja interrompida.
@@ -202,3 +206,4 @@ Nada foi perdido.
 **Este arquivo é o registro oficial do estado do projeto.**
 
 Salve este documento. A partir daqui, seguimos com segurança.
+
