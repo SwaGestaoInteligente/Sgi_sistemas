@@ -4,6 +4,7 @@ import { useAuth } from "../hooks/useAuth";
 
 export const LoginPage: React.FC = () => {
   const { setToken, setSession } = useAuth();
+
   const [email, setEmail] = useState("admin@teste.com");
   const [senha, setSenha] = useState("Admin@123");
   const [loading, setLoading] = useState(false);
@@ -13,17 +14,20 @@ export const LoginPage: React.FC = () => {
     e.preventDefault();
     setErro(null);
     setLoading(true);
+
     try {
       const res = await api.login(email, senha);
+
       setToken(res.accessToken);
+
       setSession({
         userId: res.userId,
         pessoaId: res.pessoaId,
         isPlatformAdmin: res.isPlatformAdmin,
-        memberships: res.memberships
+        memberships: res.memberships,
       });
     } catch (err: any) {
-      setErro(err.message || "Falha no login");
+      setErro(err?.message || "Falha no login");
     } finally {
       setLoading(false);
     }
@@ -39,6 +43,7 @@ export const LoginPage: React.FC = () => {
             className="brand-logo"
           />
         </div>
+
         <h1 className="auth-title">Bem-vindo!</h1>
 
         <form onSubmit={handleSubmit} className="form">
@@ -51,6 +56,7 @@ export const LoginPage: React.FC = () => {
               required
             />
           </label>
+
           <label>
             Sua senha
             <input
@@ -60,9 +66,11 @@ export const LoginPage: React.FC = () => {
               required
             />
           </label>
+
           <button type="submit" className="primary-button" disabled={loading}>
             {loading ? "Entrando..." : "Entrar"}
           </button>
+
           {erro && <p className="error">{erro}</p>}
 
           <div className="auth-links-row">
@@ -78,3 +86,6 @@ export const LoginPage: React.FC = () => {
     </div>
   );
 };
+
+export default LoginPage;
+
