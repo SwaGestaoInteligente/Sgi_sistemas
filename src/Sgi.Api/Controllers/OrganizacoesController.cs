@@ -19,6 +19,8 @@ public class OrganizacoesController : ControllerBase
         _db = db;
     }
 
+    private AuthorizationGuard Guard() => new(_db, User);
+
     [HttpGet]
     public async Task<ActionResult<IEnumerable<Organizacao>>> GetAll()
     {
@@ -86,7 +88,7 @@ public class OrganizacoesController : ControllerBase
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<Organizacao>> GetById(Guid id)
     {
-        var auth = await Authz.EnsureMembershipAsync(_db, User, id, UserRole.CONDO_ADMIN, UserRole.CONDO_STAFF, UserRole.RESIDENT);
+        var auth = await Guard().RequireOrgAccess(id);
         if (auth.Error is not null)
         {
             return auth.Error;
@@ -104,18 +106,10 @@ public class OrganizacoesController : ControllerBase
     [HttpPost]
     public async Task<ActionResult<Organizacao>> Create(Organizacao model)
     {
-        var userId = Authz.GetUserId(User);
-        if (!userId.HasValue)
+        var auth = await Guard().RequirePlatformAdmin();
+        if (auth.Error is not null)
         {
-            return Unauthorized();
-        }
-
-        var isPlatformAdmin = await _db.UserCondoMemberships
-            .AsNoTracking()
-            .AnyAsync(m => m.UsuarioId == userId.Value && m.Role == UserRole.PLATFORM_ADMIN && m.IsActive);
-        if (!isPlatformAdmin)
-        {
-            return Forbid();
+            return auth.Error;
         }
 
         model.Id = Guid.NewGuid();
@@ -136,18 +130,10 @@ public class OrganizacoesController : ControllerBase
     [HttpPut("{id:guid}")]
     public async Task<ActionResult<Organizacao>> Update(Guid id, AtualizarOrganizacaoRequest request)
     {
-        var userId = Authz.GetUserId(User);
-        if (!userId.HasValue)
+        var auth = await Guard().RequirePlatformAdmin();
+        if (auth.Error is not null)
         {
-            return Unauthorized();
-        }
-
-        var isPlatformAdmin = await _db.UserCondoMemberships
-            .AsNoTracking()
-            .AnyAsync(m => m.UsuarioId == userId.Value && m.Role == UserRole.PLATFORM_ADMIN && m.IsActive);
-        if (!isPlatformAdmin)
-        {
-            return Forbid();
+            return auth.Error;
         }
 
         var item = await _db.Organizacoes.FindAsync(id);

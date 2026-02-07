@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Sgi.Domain.Core;
 using Sgi.Infrastructure.Data;
@@ -18,36 +19,88 @@ public class FinanceiroAccessFilter : IAsyncActionFilter
     public async Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
     {
         var user = context.HttpContext.User;
-        var userId = Authz.GetUserId(user);
-        if (!userId.HasValue)
-        {
-            context.Result = new UnauthorizedResult();
-            return;
-        }
-
-        var orgId = ExtractOrganizacaoId(context);
-        if (!orgId.HasValue || orgId.Value == Guid.Empty)
-        {
-            orgId = await TryResolveOrganizacaoIdByRoute(context);
-        }
-
-        if (!orgId.HasValue || orgId.Value == Guid.Empty)
-        {
-            context.Result = new BadRequestObjectResult("OrganizacaoId e obrigatorio.");
-            return;
-        }
+        var guard = new AuthorizationGuard(_db, user);
 
         var action = context.ActionDescriptor.RouteValues.TryGetValue("action", out var actionName)
             ? actionName ?? string.Empty
             : string.Empty;
-        var roles = action switch
+
+        var residentActions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-            nameof(Controllers.FinanceiroController.ListarCobrancasUnidade) =>
-                new[] { UserRole.CONDO_ADMIN, UserRole.CONDO_STAFF, UserRole.RESIDENT },
-            _ => new[] { UserRole.CONDO_ADMIN, UserRole.CONDO_STAFF }
+            nameof(Controllers.FinanceiroController.ListarCobrancasUnidade),
+            nameof(Controllers.FinanceiroController.ListarPagamentosCobranca),
+            nameof(Controllers.FinanceiroController.PagarCobrancaUnidade)
         };
 
-        var auth = await Authz.EnsureMembershipAsync(_db, user, orgId.Value, roles);
+        AuthzContext auth;
+        if (residentActions.Contains(action))
+        {
+            if (action == nameof(Controllers.FinanceiroController.ListarCobrancasUnidade))
+            {
+                if (context.ActionArguments.TryGetValue("unidadeId", out var unidadeValue) &&
+                    unidadeValue is Guid unidadeId &&
+                    unidadeId != Guid.Empty)
+                {
+                    auth = await guard.RequireUnitAccess(unidadeId);
+                }
+                else
+                {
+                    context.Result = new BadRequestObjectResult("UnidadeId e obrigatorio.");
+                    return;
+                }
+            }
+            else
+            {
+                if (!context.ActionArguments.TryGetValue("id", out var idValue) ||
+                    idValue is not Guid cobrancaId ||
+                    cobrancaId == Guid.Empty)
+                {
+                    context.Result = new BadRequestObjectResult("Id e obrigatorio.");
+                    return;
+                }
+
+                auth = await guard.RequireEntityAccess("cobranca_unidade", cobrancaId);
+            }
+        }
+        else
+        {
+            var orgId = ExtractOrganizacaoId(context);
+            if (!orgId.HasValue || orgId.Value == Guid.Empty)
+            {
+                orgId = await TryResolveOrganizacaoIdByRoute(context);
+            }
+
+            if (!orgId.HasValue || orgId.Value == Guid.Empty)
+            {
+                context.Result = new BadRequestObjectResult("OrganizacaoId e obrigatorio.");
+                return;
+            }
+
+            auth = await guard.RequireOrgAccess(orgId.Value);
+        }
+
+        if (auth.Error is not null)
+        {
+            context.Result = auth.Error;
+            return;
+        }
+
+        var isRead = HttpMethods.IsGet(context.HttpContext.Request.Method);
+        UserRole[] roles;
+        if (residentActions.Contains(action))
+        {
+            roles = isRead
+                ? new[] { UserRole.CONDO_ADMIN, UserRole.CONDO_STAFF, UserRole.RESIDENT }
+                : new[] { UserRole.CONDO_ADMIN, UserRole.RESIDENT };
+        }
+        else
+        {
+            roles = isRead
+                ? new[] { UserRole.CONDO_ADMIN, UserRole.CONDO_STAFF }
+                : new[] { UserRole.CONDO_ADMIN };
+        }
+
+        auth.RequireRole(roles);
         if (auth.Error is not null)
         {
             context.Result = auth.Error;

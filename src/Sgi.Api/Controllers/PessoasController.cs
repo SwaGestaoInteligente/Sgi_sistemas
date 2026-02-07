@@ -19,6 +19,8 @@ public class PessoasController : ControllerBase
         _db = db;
     }
 
+    private AuthorizationGuard Guard() => new(_db, User);
+
     public record PessoaDto(
         Guid Id,
         string Nome,
@@ -57,12 +59,7 @@ public class PessoasController : ControllerBase
             return BadRequest("organizacaoId e obrigatorio.");
         }
 
-        var auth = await Authz.EnsureMembershipAsync(
-            _db,
-            User,
-            organizacaoId,
-            UserRole.CONDO_ADMIN,
-            UserRole.CONDO_STAFF);
+        var auth = await Guard().RequireOrgAccess(organizacaoId);
         if (auth.Error is not null)
         {
             return auth.Error;
@@ -90,6 +87,20 @@ public class PessoasController : ControllerBase
                 u != null ? u.CodigoInterno : null
             );
 
+        if (!auth.IsPlatformAdmin && auth.Membership?.Role == UserRole.RESIDENT)
+        {
+            if (!auth.Membership.UnidadeOrganizacionalId.HasValue && !auth.PessoaId.HasValue)
+            {
+                return Forbid();
+            }
+
+            var unidadeId = auth.Membership.UnidadeOrganizacionalId;
+            var pessoaId = auth.PessoaId;
+            query = query.Where(v =>
+                (unidadeId.HasValue && v.UnidadeOrganizacionalId == unidadeId.Value) ||
+                (pessoaId.HasValue && v.PessoaId == pessoaId.Value));
+        }
+
         var pessoas = await query.AsNoTracking().ToListAsync();
         return Ok(pessoas);
     }
@@ -102,11 +113,13 @@ public class PessoasController : ControllerBase
             return BadRequest("OrganizacaoId e obrigatorio.");
         }
 
-        var auth = await Authz.EnsureMembershipAsync(
-            _db,
-            User,
-            request.OrganizacaoId,
-            UserRole.CONDO_ADMIN);
+        var auth = await Guard().RequireOrgAccess(request.OrganizacaoId);
+        if (auth.Error is not null)
+        {
+            return auth.Error;
+        }
+
+        auth.RequireRole(UserRole.CONDO_ADMIN);
         if (auth.Error is not null)
         {
             return auth.Error;
@@ -214,11 +227,13 @@ public class PessoasController : ControllerBase
             return BadRequest("Vinculo da pessoa com a organizacao nao encontrado.");
         }
 
-        var auth = await Authz.EnsureMembershipAsync(
-            _db,
-            User,
-            organizacaoId,
-            UserRole.CONDO_ADMIN);
+        var auth = await Guard().RequireOrgAccess(organizacaoId);
+        if (auth.Error is not null)
+        {
+            return auth.Error;
+        }
+
+        auth.RequireRole(UserRole.CONDO_ADMIN);
         if (auth.Error is not null)
         {
             return auth.Error;
@@ -284,11 +299,13 @@ public class PessoasController : ControllerBase
             return NotFound();
         }
 
-        var auth = await Authz.EnsureMembershipAsync(
-            _db,
-            User,
-            organizacaoId,
-            UserRole.CONDO_ADMIN);
+        var auth = await Guard().RequireOrgAccess(organizacaoId);
+        if (auth.Error is not null)
+        {
+            return auth.Error;
+        }
+
+        auth.RequireRole(UserRole.CONDO_ADMIN);
         if (auth.Error is not null)
         {
             return auth.Error;

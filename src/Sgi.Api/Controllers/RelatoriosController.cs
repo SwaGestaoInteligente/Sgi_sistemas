@@ -24,6 +24,8 @@ public class RelatoriosController : ControllerBase
         _db = db;
     }
 
+    private AuthorizationGuard Guard() => new(_db, User);
+
     [HttpGet("chamados")]
     public async Task<IActionResult> RelatorioChamados(
         [FromQuery] Guid organizacaoId,
@@ -32,12 +34,13 @@ public class RelatoriosController : ControllerBase
         [FromQuery] string? status,
         [FromQuery] string? formato)
     {
-        var auth = await Authz.EnsureMembershipAsync(
-            _db,
-            User,
-            organizacaoId,
-            UserRole.CONDO_ADMIN,
-            UserRole.CONDO_STAFF);
+        var auth = await Guard().RequireOrgAccess(organizacaoId);
+        if (auth.Error is not null)
+        {
+            return auth.Error;
+        }
+
+        auth.RequireRole(UserRole.CONDO_ADMIN, UserRole.CONDO_STAFF);
         if (auth.Error is not null)
         {
             return auth.Error;
@@ -98,12 +101,13 @@ public class RelatoriosController : ControllerBase
         [FromQuery] Guid? recursoId,
         [FromQuery] string? formato)
     {
-        var auth = await Authz.EnsureMembershipAsync(
-            _db,
-            User,
-            organizacaoId,
-            UserRole.CONDO_ADMIN,
-            UserRole.CONDO_STAFF);
+        var auth = await Guard().RequireOrgAccess(organizacaoId);
+        if (auth.Error is not null)
+        {
+            return auth.Error;
+        }
+
+        auth.RequireRole(UserRole.CONDO_ADMIN, UserRole.CONDO_STAFF);
         if (auth.Error is not null)
         {
             return auth.Error;
@@ -159,12 +163,13 @@ public class RelatoriosController : ControllerBase
         [FromQuery] Guid organizacaoId,
         [FromQuery] string? formato)
     {
-        var auth = await Authz.EnsureMembershipAsync(
-            _db,
-            User,
-            organizacaoId,
-            UserRole.CONDO_ADMIN,
-            UserRole.CONDO_STAFF);
+        var auth = await Guard().RequireOrgAccess(organizacaoId);
+        if (auth.Error is not null)
+        {
+            return auth.Error;
+        }
+
+        auth.RequireRole(UserRole.CONDO_ADMIN, UserRole.CONDO_STAFF);
         if (auth.Error is not null)
         {
             return auth.Error;
@@ -199,12 +204,13 @@ public class RelatoriosController : ControllerBase
         [FromQuery] Guid organizacaoId,
         [FromQuery] string? formato)
     {
-        var auth = await Authz.EnsureMembershipAsync(
-            _db,
-            User,
-            organizacaoId,
-            UserRole.CONDO_ADMIN,
-            UserRole.CONDO_STAFF);
+        var auth = await Guard().RequireOrgAccess(organizacaoId);
+        if (auth.Error is not null)
+        {
+            return auth.Error;
+        }
+
+        auth.RequireRole(UserRole.CONDO_ADMIN, UserRole.CONDO_STAFF);
         if (auth.Error is not null)
         {
             return auth.Error;

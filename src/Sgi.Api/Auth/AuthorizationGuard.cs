@@ -99,6 +99,31 @@ public sealed class AuthorizationGuard
         return Cache(ctx);
     }
 
+    public async Task<AuthzContext> RequirePlatformAdmin()
+    {
+        var userId = Authz.GetUserId(_user);
+        if (!userId.HasValue)
+        {
+            return Cache(AuthzContext.Fail(new UnauthorizedResult()));
+        }
+
+        var isPlatformAdmin = await _db.UserCondoMemberships
+            .AsNoTracking()
+            .AnyAsync(m =>
+                m.UsuarioId == userId.Value &&
+                m.IsActive &&
+                m.Role == UserRole.PLATFORM_ADMIN);
+
+        if (!isPlatformAdmin)
+        {
+            return Cache(AuthzContext.Fail(new ForbidResult()));
+        }
+
+        var pessoaId = await ResolvePessoaIdAsync(userId.Value, Authz.GetPessoaId(_user));
+        var ctx = new AuthzContext(userId.Value, pessoaId, true, null, null);
+        return Cache(ctx);
+    }
+
     public AuthzContext RequireRole(params UserRole[] roles)
     {
         if (_context is null)

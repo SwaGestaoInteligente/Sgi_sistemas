@@ -19,6 +19,8 @@ public class PetsController : ControllerBase
         _db = db;
     }
 
+    private AuthorizationGuard Guard() => new(_db, User);
+
     [HttpGet]
     public async Task<ActionResult<IEnumerable<Pet>>> Listar(
         [FromQuery] Guid organizacaoId,
@@ -31,19 +33,27 @@ public class PetsController : ControllerBase
             return BadRequest("OrganizacaoId e obrigatorio.");
         }
 
-        var auth = await Authz.EnsureMembershipAsync(
-            _db,
-            User,
-            organizacaoId,
-            UserRole.CONDO_ADMIN,
-            UserRole.CONDO_STAFF,
-            UserRole.RESIDENT);
+        var auth = await Guard().RequireOrgAccess(organizacaoId);
         if (auth.Error is not null)
         {
             return auth.Error;
         }
 
         var query = _db.Pets.AsNoTracking().Where(p => p.OrganizacaoId == organizacaoId);
+
+        if (!auth.IsPlatformAdmin && auth.Membership?.Role == UserRole.RESIDENT)
+        {
+            if (!auth.Membership.UnidadeOrganizacionalId.HasValue && !auth.PessoaId.HasValue)
+            {
+                return Forbid();
+            }
+
+            var unidadeFiltro = auth.Membership.UnidadeOrganizacionalId;
+            var pessoaFiltro = auth.PessoaId;
+            query = query.Where(p =>
+                (unidadeFiltro.HasValue && p.UnidadeOrganizacionalId == unidadeFiltro.Value) ||
+                (pessoaFiltro.HasValue && p.PessoaId == pessoaFiltro.Value));
+        }
 
         if (unidadeId.HasValue && unidadeId.Value != Guid.Empty)
         {
@@ -85,12 +95,13 @@ public class PetsController : ControllerBase
             return BadRequest("OrganizacaoId e obrigatorio.");
         }
 
-        var auth = await Authz.EnsureMembershipAsync(
-            _db,
-            User,
-            request.OrganizacaoId,
-            UserRole.CONDO_ADMIN,
-            UserRole.CONDO_STAFF);
+        var auth = await Guard().RequireOrgAccess(request.OrganizacaoId);
+        if (auth.Error is not null)
+        {
+            return auth.Error;
+        }
+
+        auth.RequireRole(UserRole.CONDO_ADMIN);
         if (auth.Error is not null)
         {
             return auth.Error;
@@ -140,12 +151,18 @@ public class PetsController : ControllerBase
             return NotFound();
         }
 
-        var auth = await Authz.EnsureMembershipAsync(
-            _db,
-            User,
-            request.OrganizacaoId,
-            UserRole.CONDO_ADMIN,
-            UserRole.CONDO_STAFF);
+        if (pet.OrganizacaoId != request.OrganizacaoId)
+        {
+            return BadRequest("OrganizacaoId invalido.");
+        }
+
+        var auth = await Guard().RequireOrgAccess(pet.OrganizacaoId);
+        if (auth.Error is not null)
+        {
+            return auth.Error;
+        }
+
+        auth.RequireRole(UserRole.CONDO_ADMIN);
         if (auth.Error is not null)
         {
             return auth.Error;
@@ -177,12 +194,18 @@ public class PetsController : ControllerBase
             return NotFound();
         }
 
-        var auth = await Authz.EnsureMembershipAsync(
-            _db,
-            User,
-            organizacaoId,
-            UserRole.CONDO_ADMIN,
-            UserRole.CONDO_STAFF);
+        if (pet.OrganizacaoId != organizacaoId)
+        {
+            return BadRequest("OrganizacaoId invalido.");
+        }
+
+        var auth = await Guard().RequireOrgAccess(pet.OrganizacaoId);
+        if (auth.Error is not null)
+        {
+            return auth.Error;
+        }
+
+        auth.RequireRole(UserRole.CONDO_ADMIN);
         if (auth.Error is not null)
         {
             return auth.Error;

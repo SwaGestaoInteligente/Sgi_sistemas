@@ -19,6 +19,8 @@ public class UnidadesOrganizacionaisController : ControllerBase
         _db = db;
     }
 
+    private AuthorizationGuard Guard() => new(_db, User);
+
     // GET /api/unidades?organizacaoId=...
     [HttpGet]
     public async Task<ActionResult<IEnumerable<UnidadeOrganizacional>>> Listar(
@@ -29,13 +31,7 @@ public class UnidadesOrganizacionaisController : ControllerBase
             return BadRequest("Organizacao e obrigatoria.");
         }
 
-        var auth = await Authz.EnsureMembershipAsync(
-            _db,
-            User,
-            organizacaoId,
-            UserRole.CONDO_ADMIN,
-            UserRole.CONDO_STAFF,
-            UserRole.RESIDENT);
+        var auth = await Guard().RequireOrgAccess(organizacaoId);
         if (auth.Error is not null)
         {
             return auth.Error;
@@ -45,10 +41,13 @@ public class UnidadesOrganizacionaisController : ControllerBase
             .AsNoTracking()
             .Where(u => u.OrganizacaoId == organizacaoId && u.Status == "ativo");
 
-        if (!auth.IsPlatformAdmin &&
-            auth.Membership?.Role == UserRole.RESIDENT &&
-            auth.Membership.UnidadeOrganizacionalId.HasValue)
+        if (!auth.IsPlatformAdmin && auth.Membership?.Role == UserRole.RESIDENT)
         {
+            if (!auth.Membership.UnidadeOrganizacionalId.HasValue)
+            {
+                return Forbid();
+            }
+
             query = query.Where(u => u.Id == auth.Membership.UnidadeOrganizacionalId.Value);
         }
 
@@ -77,11 +76,13 @@ public class UnidadesOrganizacionaisController : ControllerBase
             return BadRequest("Organizacao e obrigatoria.");
         }
 
-        var auth = await Authz.EnsureMembershipAsync(
-            _db,
-            User,
-            request.OrganizacaoId,
-            UserRole.CONDO_ADMIN);
+        var auth = await Guard().RequireOrgAccess(request.OrganizacaoId);
+        if (auth.Error is not null)
+        {
+            return auth.Error;
+        }
+
+        auth.RequireRole(UserRole.CONDO_ADMIN);
         if (auth.Error is not null)
         {
             return auth.Error;
@@ -134,11 +135,13 @@ public class UnidadesOrganizacionaisController : ControllerBase
             return NotFound("Unidade nao encontrada.");
         }
 
-        var auth = await Authz.EnsureMembershipAsync(
-            _db,
-            User,
-            unidade.OrganizacaoId,
-            UserRole.CONDO_ADMIN);
+        var auth = await Guard().RequireOrgAccess(unidade.OrganizacaoId);
+        if (auth.Error is not null)
+        {
+            return auth.Error;
+        }
+
+        auth.RequireRole(UserRole.CONDO_ADMIN);
         if (auth.Error is not null)
         {
             return auth.Error;
@@ -165,11 +168,13 @@ public class UnidadesOrganizacionaisController : ControllerBase
             return NotFound("Unidade nao encontrada.");
         }
 
-        var auth = await Authz.EnsureMembershipAsync(
-            _db,
-            User,
-            unidade.OrganizacaoId,
-            UserRole.CONDO_ADMIN);
+        var auth = await Guard().RequireOrgAccess(unidade.OrganizacaoId);
+        if (auth.Error is not null)
+        {
+            return auth.Error;
+        }
+
+        auth.RequireRole(UserRole.CONDO_ADMIN);
         if (auth.Error is not null)
         {
             return auth.Error;

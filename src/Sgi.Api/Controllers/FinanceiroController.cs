@@ -1405,11 +1405,13 @@ public class FinanceiroController : ControllerBase
             return auth.Error;
         }
 
-        if (!auth.IsPlatformAdmin && auth.Membership?.Role == UserRole.RESIDENT &&
-            auth.Membership.UnidadeOrganizacionalId.HasValue &&
-            auth.Membership.UnidadeOrganizacionalId != unidadeId)
+        if (!auth.IsPlatformAdmin && auth.Membership?.Role == UserRole.RESIDENT)
         {
-            return Forbid();
+            if (!auth.Membership.UnidadeOrganizacionalId.HasValue ||
+                auth.Membership.UnidadeOrganizacionalId.Value != unidadeId)
+            {
+                return Forbid();
+            }
         }
 
         var query = _db.UnidadesCobrancas.AsNoTracking()
@@ -1444,7 +1446,7 @@ public class FinanceiroController : ControllerBase
         }
 
         request.OrganizacaoId = request.OrganizacaoId == Guid.Empty ? unidade.OrganizacaoId : request.OrganizacaoId;
-        var auth = await EnsureRoleAsync(request.OrganizacaoId, UserRole.CONDO_ADMIN, UserRole.CONDO_STAFF);
+        var auth = await EnsureRoleAsync(request.OrganizacaoId, UserRole.CONDO_ADMIN);
         if (auth.Error is not null)
         {
             return auth.Error;
@@ -1506,7 +1508,7 @@ public class FinanceiroController : ControllerBase
             return NotFound();
         }
 
-        var auth = await EnsureRoleAsync(cobranca.OrganizacaoId, UserRole.CONDO_ADMIN, UserRole.CONDO_STAFF);
+        var auth = await EnsureRoleAsync(cobranca.OrganizacaoId, UserRole.CONDO_ADMIN);
         if (auth.Error is not null)
         {
             return auth.Error;
@@ -1585,10 +1587,22 @@ public class FinanceiroController : ControllerBase
             return NotFound();
         }
 
-        var auth = await EnsureRoleAsync(cobranca.OrganizacaoId, UserRole.CONDO_ADMIN, UserRole.CONDO_STAFF);
+        var auth = await EnsureRoleAsync(
+            cobranca.OrganizacaoId,
+            UserRole.CONDO_ADMIN,
+            UserRole.RESIDENT);
         if (auth.Error is not null)
         {
             return auth.Error;
+        }
+
+        if (!auth.IsPlatformAdmin && auth.Membership?.Role == UserRole.RESIDENT)
+        {
+            if (!auth.Membership.UnidadeOrganizacionalId.HasValue ||
+                auth.Membership.UnidadeOrganizacionalId.Value != cobranca.UnidadeOrganizacionalId)
+            {
+                return Forbid();
+            }
         }
 
         if (request.ValorPago <= 0)
@@ -1653,10 +1667,23 @@ public class FinanceiroController : ControllerBase
             return NotFound();
         }
 
-        var auth = await EnsureRoleAsync(cobranca.OrganizacaoId, UserRole.CONDO_ADMIN, UserRole.CONDO_STAFF);
+        var auth = await EnsureRoleAsync(
+            cobranca.OrganizacaoId,
+            UserRole.CONDO_ADMIN,
+            UserRole.CONDO_STAFF,
+            UserRole.RESIDENT);
         if (auth.Error is not null)
         {
             return auth.Error;
+        }
+
+        if (!auth.IsPlatformAdmin && auth.Membership?.Role == UserRole.RESIDENT)
+        {
+            if (!auth.Membership.UnidadeOrganizacionalId.HasValue ||
+                auth.Membership.UnidadeOrganizacionalId.Value != cobranca.UnidadeOrganizacionalId)
+            {
+                return Forbid();
+            }
         }
 
         var pagamentos = await _db.UnidadesPagamentos.AsNoTracking()
@@ -1834,8 +1861,7 @@ public class FinanceiroController : ControllerBase
 
         var auth = await EnsureRoleAsync(
             request.OrganizacaoId,
-            UserRole.CONDO_ADMIN,
-            UserRole.CONDO_STAFF);
+            UserRole.CONDO_ADMIN);
         if (auth.Error is not null)
         {
             return auth.Error;
@@ -1912,7 +1938,7 @@ public class FinanceiroController : ControllerBase
             return BadRequest("Organizacao e obrigatoria.");
         }
 
-        var auth = await EnsureRoleAsync(request.OrganizacaoId, UserRole.CONDO_ADMIN, UserRole.CONDO_STAFF);
+        var auth = await EnsureRoleAsync(request.OrganizacaoId, UserRole.CONDO_ADMIN);
         if (auth.Error is not null)
         {
             return auth.Error;

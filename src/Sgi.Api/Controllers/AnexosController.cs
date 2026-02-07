@@ -24,6 +24,8 @@ public class AnexosController : ControllerBase
         _logger = logger;
     }
 
+    private AuthorizationGuard Guard() => new(_db, User);
+
     private const long MaxFileSizeBytes = 10 * 1024 * 1024;
 
     private static readonly HashSet<string> AllowedMimeTypes = new(StringComparer.OrdinalIgnoreCase)
@@ -298,13 +300,7 @@ public class AnexosController : ControllerBase
             return BadRequest("Tipo de arquivo nao permitido. Use PDF ou imagens (JPG/PNG/WEBP).");
         }
 
-        var auth = await Authz.EnsureMembershipAsync(
-            _db,
-            User,
-            organizacaoId,
-            UserRole.CONDO_ADMIN,
-            UserRole.CONDO_STAFF,
-            UserRole.RESIDENT);
+        var auth = await Guard().RequireOrgAccess(organizacaoId);
         if (auth.Error is not null)
         {
             return auth.Error;
@@ -314,7 +310,7 @@ public class AnexosController : ControllerBase
         var isResident = !auth.IsPlatformAdmin && auth.Membership?.Role == UserRole.RESIDENT;
         if (isResident)
         {
-            var pessoaId = await ResolvePessoaIdAsync(Authz.GetUserId(User));
+            var pessoaId = auth.PessoaId ?? await ResolvePessoaIdAsync(Authz.GetUserId(User));
             var permitido = await ResidentPodeAcessarEntidadeAsync(
                 tipoSeguro,
                 entidadeId,
@@ -381,13 +377,7 @@ public class AnexosController : ControllerBase
             return BadRequest("OrganizacaoId e obrigatorio.");
         }
 
-        var auth = await Authz.EnsureMembershipAsync(
-            _db,
-            User,
-            organizacaoId,
-            UserRole.CONDO_ADMIN,
-            UserRole.CONDO_STAFF,
-            UserRole.RESIDENT);
+        var auth = await Guard().RequireOrgAccess(organizacaoId);
         if (auth.Error is not null)
         {
             return auth.Error;
@@ -405,7 +395,7 @@ public class AnexosController : ControllerBase
             var tipo = NormalizeTipo(tipoEntidade);
             query = query.Where(a => a.TipoEntidade == tipo);
 
-            var pessoaId = await ResolvePessoaIdAsync(Authz.GetUserId(User));
+            var pessoaId = auth.PessoaId ?? await ResolvePessoaIdAsync(Authz.GetUserId(User));
             var unidadeId = auth.Membership?.UnidadeOrganizacionalId;
 
             if (entidadeId.HasValue && entidadeId.Value != Guid.Empty)
@@ -466,13 +456,7 @@ public class AnexosController : ControllerBase
             return NotFound();
         }
 
-        var auth = await Authz.EnsureMembershipAsync(
-            _db,
-            User,
-            anexo.OrganizacaoId,
-            UserRole.CONDO_ADMIN,
-            UserRole.CONDO_STAFF,
-            UserRole.RESIDENT);
+        var auth = await Guard().RequireOrgAccess(anexo.OrganizacaoId);
         if (auth.Error is not null)
         {
             return auth.Error;
@@ -481,7 +465,7 @@ public class AnexosController : ControllerBase
         var isResident = !auth.IsPlatformAdmin && auth.Membership?.Role == UserRole.RESIDENT;
         if (isResident)
         {
-            var pessoaId = await ResolvePessoaIdAsync(Authz.GetUserId(User));
+            var pessoaId = auth.PessoaId ?? await ResolvePessoaIdAsync(Authz.GetUserId(User));
             var permitido = await ResidentPodeAcessarEntidadeAsync(
                 anexo.TipoEntidade,
                 anexo.EntidadeId,
@@ -532,13 +516,7 @@ public class AnexosController : ControllerBase
             return NotFound();
         }
 
-        var auth = await Authz.EnsureMembershipAsync(
-            _db,
-            User,
-            anexo.OrganizacaoId,
-            UserRole.CONDO_ADMIN,
-            UserRole.CONDO_STAFF,
-            UserRole.RESIDENT);
+        var auth = await Guard().RequireOrgAccess(anexo.OrganizacaoId);
         if (auth.Error is not null)
         {
             return auth.Error;
@@ -547,7 +525,7 @@ public class AnexosController : ControllerBase
         var isResident = !auth.IsPlatformAdmin && auth.Membership?.Role == UserRole.RESIDENT;
         if (isResident)
         {
-            var pessoaId = await ResolvePessoaIdAsync(Authz.GetUserId(User));
+            var pessoaId = auth.PessoaId ?? await ResolvePessoaIdAsync(Authz.GetUserId(User));
             var permitido = await ResidentPodeAcessarEntidadeAsync(
                 anexo.TipoEntidade,
                 anexo.EntidadeId,

@@ -21,15 +21,18 @@ public class NotificacoesController : ControllerBase
         _logger = logger;
     }
 
+    private AuthorizationGuard Guard() => new(_db, User);
+
     [HttpGet]
     public async Task<ActionResult<IEnumerable<NotificacaoConfig>>> Listar([FromQuery] Guid organizacaoId)
     {
-        var auth = await Authz.EnsureMembershipAsync(
-            _db,
-            User,
-            organizacaoId,
-            UserRole.CONDO_ADMIN,
-            UserRole.CONDO_STAFF);
+        var auth = await Guard().RequireOrgAccess(organizacaoId);
+        if (auth.Error is not null)
+        {
+            return auth.Error;
+        }
+
+        auth.RequireRole(UserRole.CONDO_ADMIN, UserRole.CONDO_STAFF);
         if (auth.Error is not null)
         {
             return auth.Error;
@@ -50,11 +53,13 @@ public class NotificacoesController : ControllerBase
             return BadRequest("OrganizacaoId e obrigatorio.");
         }
 
-        var auth = await Authz.EnsureMembershipAsync(
-            _db,
-            User,
-            model.OrganizacaoId,
-            UserRole.CONDO_ADMIN);
+        var auth = await Guard().RequireOrgAccess(model.OrganizacaoId);
+        if (auth.Error is not null)
+        {
+            return auth.Error;
+        }
+
+        auth.RequireRole(UserRole.CONDO_ADMIN);
         if (auth.Error is not null)
         {
             return auth.Error;
@@ -86,11 +91,13 @@ public class NotificacoesController : ControllerBase
             return NotFound();
         }
 
-        var auth = await Authz.EnsureMembershipAsync(
-            _db,
-            User,
-            config.OrganizacaoId,
-            UserRole.CONDO_ADMIN);
+        var auth = await Guard().RequireOrgAccess(config.OrganizacaoId);
+        if (auth.Error is not null)
+        {
+            return auth.Error;
+        }
+
+        auth.RequireRole(UserRole.CONDO_ADMIN);
         if (auth.Error is not null)
         {
             return auth.Error;
@@ -139,11 +146,13 @@ public class NotificacoesController : ControllerBase
             return NotFound();
         }
 
-        var auth = await Authz.EnsureMembershipAsync(
-            _db,
-            User,
-            config.OrganizacaoId,
-            UserRole.CONDO_ADMIN);
+        var auth = await Guard().RequireOrgAccess(config.OrganizacaoId);
+        if (auth.Error is not null)
+        {
+            return auth.Error;
+        }
+
+        auth.RequireRole(UserRole.CONDO_ADMIN);
         if (auth.Error is not null)
         {
             return auth.Error;
@@ -159,13 +168,13 @@ public class NotificacoesController : ControllerBase
         [FromQuery] Guid organizacaoId,
         [FromQuery] int? limit)
     {
-        var auth = await Authz.EnsureMembershipAsync(
-            _db,
-            User,
-            organizacaoId,
-            UserRole.CONDO_ADMIN,
-            UserRole.CONDO_STAFF,
-            UserRole.RESIDENT);
+        var auth = await Guard().RequireOrgAccess(organizacaoId);
+        if (auth.Error is not null)
+        {
+            return auth.Error;
+        }
+
+        auth.RequireRole(UserRole.CONDO_ADMIN, UserRole.CONDO_STAFF);
         if (auth.Error is not null)
         {
             return auth.Error;
@@ -189,13 +198,13 @@ public class NotificacoesController : ControllerBase
             return NotFound();
         }
 
-        var auth = await Authz.EnsureMembershipAsync(
-            _db,
-            User,
-            evento.OrganizacaoId,
-            UserRole.CONDO_ADMIN,
-            UserRole.CONDO_STAFF,
-            UserRole.RESIDENT);
+        var auth = await Guard().RequireOrgAccess(evento.OrganizacaoId);
+        if (auth.Error is not null)
+        {
+            return auth.Error;
+        }
+
+        auth.RequireRole(UserRole.CONDO_ADMIN, UserRole.CONDO_STAFF);
         if (auth.Error is not null)
         {
             return auth.Error;
