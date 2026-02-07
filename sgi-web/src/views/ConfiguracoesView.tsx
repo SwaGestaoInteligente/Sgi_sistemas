@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { api, Organizacao, UnidadeOrganizacional } from "../api";
+import { api, NotificacaoConfig, Organizacao, UnidadeOrganizacional } from "../api";
 import { useAuth } from "../hooks/useAuth";
 
 export type ConfiguracoesTab =
@@ -38,7 +38,9 @@ const eventosPadrao: EventoNotificacao[] = [
   { id: "aviso_novo", label: "Aviso -> Novo aviso", email: true, app: true },
   { id: "chamado_novo", label: "Chamado -> Novo chamado", email: true, app: true },
   { id: "chamado_acao", label: "Chamado -> Nova acao", email: false, app: true },
-  { id: "chamado_encerrado", label: "Chamado -> Chamado encerrado", email: true, app: false }
+  { id: "chamado_encerrado", label: "Chamado -> Chamado encerrado", email: true, app: false },
+  { id: "conta_pagar_vencendo", label: "Financeiro -> Conta a pagar vencendo", email: true, app: true },
+  { id: "cobranca_unidade_vencendo", label: "Financeiro -> Cobranca de unidade vencendo", email: true, app: true }
 ];
 
 type UnidadesConfigProps = {
@@ -329,7 +331,10 @@ const ConfiguracoesUnidadesTable: React.FC<UnidadesConfigProps> = ({
 
 export default function ConfiguracoesView(props: ConfiguracoesViewProps) {
   const { organizacao, abaSelecionada, readOnly = false } = props;
-  const [eventos, setEventos] = useState<EventoNotificacao[]>(eventosPadrao);
+  const { token } = useAuth();
+  const [notificacoes, setNotificacoes] = useState<NotificacaoConfig[]>([]);
+  const [loadingNotificacoes, setLoadingNotificacoes] = useState(false);
+  const [erroNotificacoes, setErroNotificacoes] = useState<string | null>(null);
 
   const abaAtual: ConfiguracoesTab = abaSelecionada ?? "blocos";
 
@@ -389,12 +394,131 @@ export default function ConfiguracoesView(props: ConfiguracoesViewProps) {
     return mapa[abaAtual];
   }, [abaAtual]);
 
-  const atualizarEvento = (id: string, campo: "email" | "app") => {
-    setEventos((prev) =>
-      prev.map((item) =>
-        item.id === id ? { ...item, [campo]: !item[campo] } : item
-      )
-    );
+  const carregarNotificacoes = useCallback(async () => {
+    if (!token) return;
+    try {
+      setErroNotificacoes(null);
+      setLoadingNotificacoes(true);
+      const lista = await api.listarNotificacoesConfig(token, organizacao.id);
+      if (lista.length === 0) {
+        const criadas: NotificacaoConfig[] = [];
+        for (const evento of eventosPadrao) {
+          if (evento.email) {
+            criadas.push(
+              await api.criarNotificacaoConfig(token, {
+                organizacaoId: organizacao.id,
+                tipo: evento.id,
+                canal: "email",
+                ativo: true
+              })
+            );
+          }
+          if (evento.app) {
+            criadas.push(
+              await api.criarNotificacaoConfig(token, {
+                organizacaoId: organizacao.id,
+                tipo: evento.id,
+                canal: "app",
+                ativo: true,
+                diasAntesVencimento:
+                  evento.id === "conta_pagar_vencendo"
+                    ? 5
+                    : evento.id === "cobranca_unidade_vencendo"
+                    ? 3
+                    : undefined
+              })
+            );
+          }
+        }
+        setNotificacoes(criadas);
+      } else {
+        setNotificacoes(lista);
+      }
+    } catch (e: any) {
+      setErroNotificacoes(e.message || "Erro ao carregar notificacoes");
+    } finally {
+      setLoadingNotificacoes(false);
+    }
+  }, [organizacao.id, token]);
+
+  useEffect(() => {
+    if (abaAtual === "notificacoes") {
+      void carregarNotificacoes();
+    }
+  }, [abaAtual, carregarNotificacoes]);
+
+  const getConfig = (tipo: string, canal: "email" | "app") =>
+    notificacoes.find((n) => n.tipo === tipo && n.canal === canal);
+
+  const toggleNotificacao = async (tipo: string, canal: "email" | "app") => {
+    if (!token) return;
+    const existente = getConfig(tipo, canal);
+    try {
+      setErroNotificacoes(null);
+      setLoadingNotificacoes(true);
+      if (existente) {
+        const atualizada = await api.atualizarNotificacaoConfig(
+          token,
+          existente.id,
+          { ativo: !existente.ativo }
+        );
+        setNotificacoes((prev) =>
+          prev.map((n) => (n.id === atualizada.id ? atualizada : n))
+        );
+      } else {
+        const criada = await api.criarNotificacaoConfig(token, {
+          organizacaoId: organizacao.id,
+          tipo,
+          canal,
+          ativo: true
+        });
+        setNotificacoes((prev) => [...prev, criada]);
+      }
+    } catch (e: any) {
+      setErroNotificacoes(e.message || "Erro ao salvar notificacao");
+    } finally {
+      setLoadingNotificacoes(false);
+    }
+  };
+
+  const atualizarCampoNotificacao = async (
+    tipo: string,
+    canal: "email" | "app",
+    campo: "diasAntesVencimento" | "limiteValor",
+    valor: number
+  ) => {
+    if (!token) return;
+    const existente = getConfig(tipo, canal);
+    if (!existente) return;
+    try {
+      const atualizada = await api.atualizarNotificacaoConfig(token, existente.id, {
+        [campo]: valor
+      });
+      setNotificacoes((prev) =>
+        prev.map((n) => (n.id === atualizada.id ? atualizada : n))
+      );
+    } catch (e: any) {
+      setErroNotificacoes(e.message || "Erro ao atualizar notificacao");
+    }
+  };
+
+  const restaurarPadrao = async () => {
+    if (!token) return;
+    try {
+      setErroNotificacoes(null);
+      setLoadingNotificacoes(true);
+      for (const cfg of notificacoes) {
+        if (cfg.ativo) {
+          await api.atualizarNotificacaoConfig(token, cfg.id, { ativo: false });
+        }
+      }
+      setNotificacoes([]);
+      await carregarNotificacoes();
+    } catch (e: any) {
+      setErroNotificacoes(e.message || "Erro ao restaurar notificacoes");
+    } finally {
+      setLoadingNotificacoes(false);
+    }
   };
 
   if (abaAtual !== "notificacoes") {
@@ -420,11 +544,17 @@ export default function ConfiguracoesView(props: ConfiguracoesViewProps) {
           <button
             type="button"
             className="button-secondary"
-            onClick={() => setEventos(eventosPadrao)}
+            onClick={() => void restaurarPadrao()}
           >
             Restaurar padrao
           </button>
         </div>
+
+        {erroNotificacoes && (
+          <p className="error" style={{ marginBottom: 12 }}>
+            {erroNotificacoes}
+          </p>
+        )}
 
         <table className="table finance-table">
           <thead>
@@ -432,28 +562,84 @@ export default function ConfiguracoesView(props: ConfiguracoesViewProps) {
               <th>Evento</th>
               <th>Enviar e-mail</th>
               <th>Enviar notificacao no app</th>
+              <th>Dias antes</th>
+              <th>Limite (R$)</th>
             </tr>
           </thead>
           <tbody>
-            {eventos.map((evento) => (
-              <tr key={evento.id}>
-                <td>{evento.label}</td>
-                <td>
-                  <input
-                    type="checkbox"
-                    checked={evento.email}
-                    onChange={() => atualizarEvento(evento.id, "email")}
-                  />
-                </td>
-                <td>
-                  <input
-                    type="checkbox"
-                    checked={evento.app}
-                    onChange={() => atualizarEvento(evento.id, "app")}
-                  />
-                </td>
-              </tr>
-            ))}
+            {eventosPadrao.map((evento) => {
+              const emailCfg = getConfig(evento.id, "email");
+              const appCfg = getConfig(evento.id, "app");
+              const dias =
+                appCfg?.diasAntesVencimento ?? emailCfg?.diasAntesVencimento ?? "";
+              const limite =
+                appCfg?.limiteValor ?? emailCfg?.limiteValor ?? "";
+              const permiteAjuste =
+                evento.id === "conta_pagar_vencendo" ||
+                evento.id === "cobranca_unidade_vencendo";
+
+              return (
+                <tr key={evento.id}>
+                  <td>{evento.label}</td>
+                  <td>
+                    <input
+                      type="checkbox"
+                      checked={emailCfg?.ativo ?? false}
+                      disabled={loadingNotificacoes}
+                      onChange={() => toggleNotificacao(evento.id, "email")}
+                    />
+                  </td>
+                  <td>
+                    <input
+                      type="checkbox"
+                      checked={appCfg?.ativo ?? false}
+                      disabled={loadingNotificacoes}
+                      onChange={() => toggleNotificacao(evento.id, "app")}
+                    />
+                  </td>
+                  <td>
+                    {permiteAjuste ? (
+                      <input
+                        type="number"
+                        min={0}
+                        value={dias}
+                        onChange={(e) =>
+                          atualizarCampoNotificacao(
+                            evento.id,
+                            "app",
+                            "diasAntesVencimento",
+                            Number(e.target.value)
+                          )
+                        }
+                        style={{ maxWidth: 90 }}
+                      />
+                    ) : (
+                      "-"
+                    )}
+                  </td>
+                  <td>
+                    {permiteAjuste ? (
+                      <input
+                        type="number"
+                        min={0}
+                        value={limite}
+                        onChange={(e) =>
+                          atualizarCampoNotificacao(
+                            evento.id,
+                            "app",
+                            "limiteValor",
+                            Number(e.target.value)
+                          )
+                        }
+                        style={{ maxWidth: 120 }}
+                      />
+                    ) : (
+                      "-"
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </section>

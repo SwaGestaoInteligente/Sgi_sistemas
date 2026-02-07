@@ -1,6 +1,7 @@
 using System.Data;
 using System.Data.Common;
 using System.IO;
+using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -127,27 +128,7 @@ public class DevController : ControllerBase
         const string moradorEmail = "morador@teste.com";
         const string moradorSenha = "Morador@123";
 
-        await _db.Database.EnsureCreatedAsync();
-        await _db.Database.ExecuteSqlRawAsync("""
-            CREATE TABLE IF NOT EXISTS UserCondoMemberships (
-                Id TEXT NOT NULL PRIMARY KEY,
-                UsuarioId TEXT NOT NULL,
-                OrganizacaoId TEXT NULL,
-                UnidadeOrganizacionalId TEXT NULL,
-                Role TEXT NOT NULL,
-                IsActive INTEGER NOT NULL DEFAULT 1,
-                CreatedAt TEXT NOT NULL,
-                UpdatedAt TEXT NOT NULL
-            );
-            """);
-        try
-        {
-            await _db.Database.ExecuteSqlRawAsync("ALTER TABLE UserCondoMemberships ADD COLUMN Source TEXT");
-        }
-        catch
-        {
-            // Ignora se coluna ja existir.
-        }
+        await _db.Database.MigrateAsync();
 
         var demoOrgIds = await _db.Organizacoes.AsNoTracking()
             .Where(o =>
@@ -161,10 +142,16 @@ public class DevController : ControllerBase
 
         foreach (var orgId in demoOrgIds)
         {
-            var uploadsPath = Path.Combine(_env.ContentRootPath, "Uploads", "Financeiro", orgId.ToString());
-            if (Directory.Exists(uploadsPath))
+            var uploadsRoot = Path.Combine(_env.ContentRootPath, "Uploads", orgId.ToString());
+            if (Directory.Exists(uploadsRoot))
             {
-                Directory.Delete(uploadsPath, true);
+                Directory.Delete(uploadsRoot, true);
+            }
+
+            var uploadsFinanceiro = Path.Combine(_env.ContentRootPath, "Uploads", "Financeiro", orgId.ToString());
+            if (Directory.Exists(uploadsFinanceiro))
+            {
+                Directory.Delete(uploadsFinanceiro, true);
             }
         }
 
@@ -335,6 +322,15 @@ public class DevController : ControllerBase
                 {
                     antecedenciaDias = 7,
                     duracaoHoras = 4
+                }),
+                LimitePorUnidadePorMes = dep.Nome.Contains("Salao") ? 2 : 3,
+                ExigeAprovacao = dep.Nome.Contains("Salao") || dep.Nome.Contains("Churrasqueira"),
+                JanelaHorarioInicio = "08:00",
+                JanelaHorarioFim = "22:00",
+                BloqueiosJson = JsonSerializer.Serialize(new[]
+                {
+                    DateTime.UtcNow.AddDays(10).ToString("yyyy-MM-dd"),
+                    DateTime.UtcNow.AddDays(25).ToString("yyyy-MM-dd")
                 }),
                 Ativo = true
             };
@@ -842,6 +838,58 @@ public class DevController : ControllerBase
             }
         }
 
+        var cobrancasUnidade = new List<UnidadeCobranca>();
+        var pagamentosUnidade = new List<UnidadePagamento>();
+        var unidadesCompletas = unidadesOrdenadas.Take(3).ToList();
+        foreach (var unidade in unidadesOrdenadas)
+        {
+            var completo = unidadesCompletas.Contains(unidade);
+            var meses = completo ? 12 : 3;
+            var inicio = completo ? 0 : 9;
+            for (var mes = 0; mes < meses; mes++)
+            {
+                var competencia = inicioMes.AddMonths(inicio + mes);
+                var valor = 470 + random.Next(0, 160);
+                var vencimento = competencia.AddDays(12);
+                var status = random.NextDouble() > 0.25 ? "PAGA" : "ATRASADA";
+                var cobranca = new UnidadeCobranca
+                {
+                    Id = Guid.NewGuid(),
+                    OrganizacaoId = demoOrg.Id,
+                    UnidadeOrganizacionalId = unidade.Id,
+                    Competencia = competencia.ToString("yyyy-MM"),
+                    Descricao = $"Cobranca condominial {unidade.CodigoInterno}",
+                    CategoriaId = planosReceita[0].Id,
+                    CentroCustoId = null,
+                    Valor = valor,
+                    Vencimento = vencimento,
+                    Status = status,
+                    ContaBancariaId = contas[0].Id
+                };
+                _db.UnidadesCobrancas.Add(cobranca);
+                MarkDemo(cobranca);
+                cobrancasUnidade.Add(cobranca);
+
+                if (status == "PAGA")
+                {
+                    var pagamento = new UnidadePagamento
+                    {
+                        Id = Guid.NewGuid(),
+                        OrganizacaoId = demoOrg.Id,
+                        CobrancaId = cobranca.Id,
+                        ValorPago = valor,
+                        DataPagamento = vencimento.AddDays(2),
+                        ContaBancariaId = contas[0].Id,
+                        Observacao = "Pagamento automatico demo"
+                    };
+                    _db.UnidadesPagamentos.Add(pagamento);
+                    MarkDemo(pagamento);
+                    pagamentosUnidade.Add(pagamento);
+                    cobranca.PagoEm = pagamento.DataPagamento;
+                }
+            }
+        }
+
         for (var i = 0; i < 6; i++)
         {
             var contaOrigem = contas[i % contas.Length];
@@ -894,6 +942,48 @@ public class DevController : ControllerBase
 
             lancamentos.Add(saida);
             lancamentos.Add(entrada);
+        }
+
+        var movimentosBancarios = new List<MovimentoBancario>();
+        var movimentosFonte = lancamentos.Where(l => l.Situacao == "pago").Take(12).ToList();
+        for (var i = 0; i < movimentosFonte.Count; i++)
+        {
+            var lanc = movimentosFonte[i];
+            var valorMov = lanc.Tipo == "pagar" ? -lanc.Valor : lanc.Valor;
+            var movimento = new MovimentoBancario
+            {
+                Id = Guid.NewGuid(),
+                OrganizacaoId = demoOrg.Id,
+                ContaBancariaId = lanc.ContaFinanceiraId ?? contas[0].Id,
+                Data = lanc.DataPagamento ?? lanc.DataCompetencia,
+                Descricao = lanc.Descricao,
+                Valor = valorMov,
+                Hash = Guid.NewGuid().ToString("N"),
+                Status = i % 2 == 0 ? "CONCILIADO" : "PENDENTE",
+                LancamentoFinanceiroId = i % 2 == 0 ? lanc.Id : null
+            };
+            _db.MovimentosBancarios.Add(movimento);
+            MarkDemo(movimento);
+            movimentosBancarios.Add(movimento);
+        }
+
+        foreach (var pagamento in pagamentosUnidade.Take(6))
+        {
+            var movimento = new MovimentoBancario
+            {
+                Id = Guid.NewGuid(),
+                OrganizacaoId = demoOrg.Id,
+                ContaBancariaId = pagamento.ContaBancariaId ?? contas[0].Id,
+                Data = pagamento.DataPagamento,
+                Descricao = "Recebimento taxa condominial",
+                Valor = pagamento.ValorPago,
+                Hash = Guid.NewGuid().ToString("N"),
+                Status = "CONCILIADO",
+                UnidadePagamentoId = pagamento.Id
+            };
+            _db.MovimentosBancarios.Add(movimento);
+            MarkDemo(movimento);
+            movimentosBancarios.Add(movimento);
         }
 
         var regraRateio = new RegraRateio
@@ -966,6 +1056,14 @@ public class DevController : ControllerBase
             var responsavel = responsaveisChamado.Count > 0
                 ? responsaveisChamado[i % responsaveisChamado.Count]
                 : (Guid?)null;
+            var slaHoras = prioridadeAtual switch
+            {
+                "URGENTE" => 8,
+                "ALTA" => 24,
+                "MEDIA" => 48,
+                "BAIXA" => 72,
+                _ => 48
+            };
             var chamado = new Chamado
             {
                 Id = Guid.NewGuid(),
@@ -978,7 +1076,9 @@ public class DevController : ControllerBase
                 Status = statusAtual,
                 Prioridade = prioridadeAtual,
                 ResponsavelPessoaId = responsavel,
-                DataAbertura = DateTime.UtcNow.AddDays(-20 + i)
+                DataAbertura = DateTime.UtcNow.AddDays(-20 + i),
+                SlaHoras = slaHoras,
+                DataPrazoSla = DateTime.UtcNow.AddDays(-20 + i).AddHours(slaHoras)
             };
             if (statusAtual is "RESOLVIDO" or "ENCERRADO")
             {
@@ -1018,7 +1118,7 @@ public class DevController : ControllerBase
 
         var reservas = new List<Reserva>();
         var dataBase = DateTime.UtcNow.Date.AddDays(-12);
-        var statusReservas = new[] { "SOLICITADA", "CONFIRMADA", "CONCLUIDA", "CANCELADA" };
+        var statusReservas = new[] { "PENDENTE", "APROVADA", "CONCLUIDA", "CANCELADA" };
         for (var i = 0; i < 24; i++)
         {
             var recurso = recursos[i % recursos.Count];
@@ -1030,6 +1130,7 @@ public class DevController : ControllerBase
             var dia = dataBase.AddDays(i * 2);
             var inicio = dia.AddHours(10 + (i % 3) * 3);
             var fim = inicio.AddHours(3);
+            var statusAtual = statusReservas[i % statusReservas.Length];
             var reserva = new Reserva
             {
                 Id = Guid.NewGuid(),
@@ -1039,13 +1140,121 @@ public class DevController : ControllerBase
                 UnidadeOrganizacionalId = unidade.Id,
                 DataInicio = inicio,
                 DataFim = fim,
-                Status = statusReservas[i % statusReservas.Length],
+                Status = statusAtual,
                 ValorTotal = 150 + (i % 4) * 50,
-                LancamentoFinanceiroId = null
+                LancamentoFinanceiroId = null,
+                DataSolicitacao = inicio.AddDays(-2),
+                DataAprovacao = statusAtual == "APROVADA" ? inicio.AddDays(-1) : null,
+                AprovadorPessoaId = statusAtual == "APROVADA" ? sindicoPessoa?.Id : null
             };
             _db.Reservas.Add(reserva);
             MarkDemo(reserva);
             reservas.Add(reserva);
+        }
+
+        var notificacoesConfig = new[]
+        {
+            new NotificacaoConfig
+            {
+                Id = Guid.NewGuid(),
+                OrganizacaoId = demoOrg.Id,
+                Tipo = "conta_pagar_vencendo",
+                Canal = "app",
+                Ativo = true,
+                DiasAntesVencimento = 5,
+                LimiteValor = 500,
+                DestinatariosJson = JsonSerializer.Serialize(new { roles = new[] { "CONDO_ADMIN" } })
+            },
+            new NotificacaoConfig
+            {
+                Id = Guid.NewGuid(),
+                OrganizacaoId = demoOrg.Id,
+                Tipo = "cobranca_unidade_vencendo",
+                Canal = "app",
+                Ativo = true,
+                DiasAntesVencimento = 3,
+                LimiteValor = 300,
+                DestinatariosJson = JsonSerializer.Serialize(new { roles = new[] { "CONDO_ADMIN", "CONDO_STAFF" } })
+            }
+        };
+
+        foreach (var cfg in notificacoesConfig)
+        {
+            _db.NotificacoesConfig.Add(cfg);
+            MarkDemo(cfg);
+        }
+
+        var eventosNotificacao = new[]
+        {
+            new NotificacaoEvento
+            {
+                Id = Guid.NewGuid(),
+                OrganizacaoId = demoOrg.Id,
+                Tipo = "conta_pagar_vencendo",
+                Canal = "app",
+                Titulo = "Conta a pagar vencendo",
+                Mensagem = "Despesa de manutencao vence em 3 dias.",
+                CriadoEm = DateTime.UtcNow.AddHours(-4)
+            },
+            new NotificacaoEvento
+            {
+                Id = Guid.NewGuid(),
+                OrganizacaoId = demoOrg.Id,
+                Tipo = "cobranca_unidade_vencendo",
+                Canal = "app",
+                Titulo = "Cobranca de unidade vencendo",
+                Mensagem = "Apto A101 com cobranca pendente.",
+                CriadoEm = DateTime.UtcNow.AddHours(-2)
+            }
+        };
+
+        foreach (var ev in eventosNotificacao)
+        {
+            _db.NotificacoesEventos.Add(ev);
+            MarkDemo(ev);
+        }
+
+        var pdfBytes = Encoding.ASCII.GetBytes("%PDF-1.4\n1 0 obj <<>> endobj\ntrailer <<>>\n%%EOF");
+        var pngBytes = Convert.FromBase64String(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg==");
+
+        foreach (var chamado in chamados.Take(5))
+        {
+            var anexo = await CriarAnexoDemoAsync(
+                demoOrg.Id,
+                "chamado",
+                chamado.Id,
+                $"chamado-{chamado.Id.ToString()[..6]}.pdf",
+                "application/pdf",
+                pdfBytes);
+            _db.Anexos.Add(anexo);
+            MarkDemo(anexo);
+        }
+
+        foreach (var lanc in lancamentos.Where(l => l.Tipo == "pagar").Take(5))
+        {
+            var anexo = await CriarAnexoDemoAsync(
+                demoOrg.Id,
+                "lancamento_financeiro",
+                lanc.Id,
+                $"conta-{lanc.Id.ToString()[..6]}.pdf",
+                "application/pdf",
+                pdfBytes);
+            _db.Anexos.Add(anexo);
+            MarkDemo(anexo);
+        }
+
+        foreach (var reserva in reservas.Take(3))
+        {
+            var anexo = await CriarAnexoDemoAsync(
+                demoOrg.Id,
+                "reserva",
+                reserva.Id,
+                $"reserva-{reserva.Id.ToString()[..6]}.png",
+                "image/png",
+                pngBytes);
+            _db.Anexos.Add(anexo);
+            MarkDemo(anexo);
         }
 
         await _db.SaveChangesAsync();
@@ -1078,6 +1287,18 @@ public class DevController : ControllerBase
 
         await using var transacao = await _db.Database.BeginTransactionAsync();
 
+        await _db.Database.ExecuteSqlRawAsync(
+            $"DELETE FROM Anexos WHERE {BuildSourceOrOrgFilter("OrganizacaoId", orgIds)}");
+        await _db.Database.ExecuteSqlRawAsync(
+            $"DELETE FROM NotificacoesEventos WHERE {BuildSourceOrOrgFilter("OrganizacaoId", orgIds)}");
+        await _db.Database.ExecuteSqlRawAsync(
+            $"DELETE FROM NotificacoesConfig WHERE {BuildSourceOrOrgFilter("OrganizacaoId", orgIds)}");
+        await _db.Database.ExecuteSqlRawAsync(
+            $"DELETE FROM MovimentosBancarios WHERE {BuildSourceOrOrgFilter("OrganizacaoId", orgIds)}");
+        await _db.Database.ExecuteSqlRawAsync(
+            $"DELETE FROM UnidadesPagamentos WHERE {BuildSourceOrOrgFilter("OrganizacaoId", orgIds)}");
+        await _db.Database.ExecuteSqlRawAsync(
+            $"DELETE FROM UnidadesCobrancas WHERE {BuildSourceOrOrgFilter("OrganizacaoId", orgIds)}");
         await _db.Database.ExecuteSqlRawAsync(
             $"DELETE FROM LancamentosRateados WHERE Source = '{DemoSource}' OR LancamentoOriginalId IN (SELECT Id FROM LancamentosFinanceiros WHERE {orgFilter})");
         await _db.Database.ExecuteSqlRawAsync(
@@ -1238,6 +1459,42 @@ public class DevController : ControllerBase
         {
             entry.Property("Source").CurrentValue = DemoSource;
         }
+    }
+
+    private async Task<Anexo> CriarAnexoDemoAsync(
+        Guid organizacaoId,
+        string tipoEntidade,
+        Guid entidadeId,
+        string nomeArquivo,
+        string mimeType,
+        byte[] conteudo)
+    {
+        var pasta = Path.Combine(
+            _env.ContentRootPath,
+            "Uploads",
+            organizacaoId.ToString(),
+            tipoEntidade,
+            entidadeId.ToString());
+        Directory.CreateDirectory(pasta);
+
+        var uniqueName = $"{DateTime.UtcNow:yyyyMMddHHmmssfff}-{Guid.NewGuid():N}-{nomeArquivo}";
+        var caminho = Path.Combine(pasta, uniqueName);
+        await System.IO.File.WriteAllBytesAsync(caminho, conteudo);
+
+        var anexo = new Anexo
+        {
+            Id = Guid.NewGuid(),
+            OrganizacaoId = organizacaoId,
+            TipoEntidade = tipoEntidade,
+            EntidadeId = entidadeId,
+            NomeArquivo = nomeArquivo,
+            MimeType = mimeType,
+            Tamanho = conteudo.Length,
+            Caminho = caminho,
+            CriadoEm = DateTime.UtcNow
+        };
+
+        return anexo;
     }
 
     private static string BuildSourceOrOrgFilter(string column, IReadOnlyCollection<Guid> orgIds)

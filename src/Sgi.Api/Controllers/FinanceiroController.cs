@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
@@ -27,6 +28,15 @@ public class FinanceiroController : ControllerBase
     private const string SituacaoFechado = "fechado";
     private const string SituacaoCancelado = "cancelado";
 
+    private static readonly HashSet<string> StatusCobrancaValidos = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "ABERTA",
+        "PAGA",
+        "ATRASADA",
+        "CANCELADA",
+        "FECHADA"
+    };
+
     public FinanceiroController(SgiDbContext db, IWebHostEnvironment env)
     {
         _db = db;
@@ -42,6 +52,17 @@ public class FinanceiroController : ControllerBase
 
         var normalizada = situacao.Trim().ToLowerInvariant();
         return normalizada == "pendente" ? SituacaoAberto : normalizada;
+    }
+
+    private static string NormalizarStatusCobranca(string? status)
+    {
+        if (string.IsNullOrWhiteSpace(status))
+        {
+            return "ABERTA";
+        }
+
+        var normalizado = status.Trim().ToUpperInvariant();
+        return StatusCobrancaValidos.Contains(normalizado) ? normalizado : "ABERTA";
     }
 
     private void RegistrarAudit(Guid organizacaoId, Guid entidadeId, string entidade, string acao, object? detalhes = null)
@@ -1338,6 +1359,314 @@ public class FinanceiroController : ControllerBase
     }
 
     // ---------------------------
+    // Cobrancas por unidade
+    // ---------------------------
+
+    public class CriarCobrancaUnidadeRequest
+    {
+        public Guid OrganizacaoId { get; set; }
+        public string Competencia { get; set; } = string.Empty;
+        public string Descricao { get; set; } = string.Empty;
+        public Guid? CategoriaId { get; set; }
+        public Guid? CentroCustoId { get; set; }
+        public decimal Valor { get; set; }
+        public DateTime Vencimento { get; set; }
+        public string? Status { get; set; }
+        public string? FormaPagamento { get; set; }
+        public Guid? ContaBancariaId { get; set; }
+    }
+
+    [HttpGet("unidades/{unidadeId:guid}/cobrancas")]
+    public async Task<ActionResult<IEnumerable<UnidadeCobranca>>> ListarCobrancasUnidade(
+        Guid unidadeId,
+        [FromQuery] string? competencia)
+    {
+        if (unidadeId == Guid.Empty)
+        {
+            return BadRequest("UnidadeId e obrigatorio.");
+        }
+
+        var unidade = await _db.UnidadesOrganizacionais.AsNoTracking()
+            .FirstOrDefaultAsync(u => u.Id == unidadeId);
+        if (unidade is null)
+        {
+            return NotFound("Unidade nao encontrada.");
+        }
+
+        var auth = await Authz.EnsureMembershipAsync(
+            _db,
+            User,
+            unidade.OrganizacaoId,
+            UserRole.CONDO_ADMIN,
+            UserRole.CONDO_STAFF,
+            UserRole.RESIDENT);
+        if (auth.Error is not null)
+        {
+            return auth.Error;
+        }
+
+        if (!auth.IsPlatformAdmin && auth.Membership?.Role == UserRole.RESIDENT &&
+            auth.Membership.UnidadeOrganizacionalId.HasValue &&
+            auth.Membership.UnidadeOrganizacionalId != unidadeId)
+        {
+            return Forbid();
+        }
+
+        var query = _db.UnidadesCobrancas.AsNoTracking()
+            .Where(c => c.UnidadeOrganizacionalId == unidadeId);
+
+        if (!string.IsNullOrWhiteSpace(competencia))
+        {
+            query = query.Where(c => c.Competencia == competencia.Trim());
+        }
+
+        var itens = await query
+            .OrderByDescending(c => c.Vencimento)
+            .ToListAsync();
+        return Ok(itens);
+    }
+
+    [HttpPost("unidades/{unidadeId:guid}/cobrancas")]
+    public async Task<ActionResult<UnidadeCobranca>> CriarCobrancaUnidade(
+        Guid unidadeId,
+        CriarCobrancaUnidadeRequest request)
+    {
+        if (unidadeId == Guid.Empty)
+        {
+            return BadRequest("UnidadeId e obrigatorio.");
+        }
+
+        var unidade = await _db.UnidadesOrganizacionais.AsNoTracking()
+            .FirstOrDefaultAsync(u => u.Id == unidadeId);
+        if (unidade is null)
+        {
+            return NotFound("Unidade nao encontrada.");
+        }
+
+        request.OrganizacaoId = request.OrganizacaoId == Guid.Empty ? unidade.OrganizacaoId : request.OrganizacaoId;
+        var auth = await EnsureRoleAsync(request.OrganizacaoId, UserRole.CONDO_ADMIN, UserRole.CONDO_STAFF);
+        if (auth.Error is not null)
+        {
+            return auth.Error;
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Descricao))
+        {
+            return BadRequest("Descricao e obrigatoria.");
+        }
+
+        var competencia = string.IsNullOrWhiteSpace(request.Competencia)
+            ? request.Vencimento.ToString("yyyy-MM")
+            : request.Competencia.Trim();
+
+        var cobranca = new UnidadeCobranca
+        {
+            Id = Guid.NewGuid(),
+            OrganizacaoId = request.OrganizacaoId,
+            UnidadeOrganizacionalId = unidadeId,
+            Competencia = competencia,
+            Descricao = request.Descricao.Trim(),
+            CategoriaId = request.CategoriaId,
+            CentroCustoId = request.CentroCustoId,
+            Valor = request.Valor,
+            Vencimento = request.Vencimento,
+            Status = NormalizarStatusCobranca(request.Status),
+            FormaPagamento = request.FormaPagamento,
+            ContaBancariaId = request.ContaBancariaId
+        };
+
+        _db.UnidadesCobrancas.Add(cobranca);
+        RegistrarAudit(request.OrganizacaoId, cobranca.Id, "UnidadeCobranca", "CRIAR_COBRANCA_UNIDADE", new
+        {
+            cobranca.Descricao,
+            cobranca.Valor,
+            cobranca.Vencimento
+        });
+        await _db.SaveChangesAsync();
+        return CreatedAtAction(nameof(ListarCobrancasUnidade), new { unidadeId }, cobranca);
+    }
+
+    public class AtualizarCobrancaUnidadeRequest
+    {
+        public string? Status { get; set; }
+        public DateTime? Vencimento { get; set; }
+        public decimal? Valor { get; set; }
+        public string? FormaPagamento { get; set; }
+        public Guid? ContaBancariaId { get; set; }
+    }
+
+    [HttpPatch("cobrancas/{id:guid}")]
+    public async Task<ActionResult<UnidadeCobranca>> AtualizarCobrancaUnidade(
+        Guid id,
+        AtualizarCobrancaUnidadeRequest request)
+    {
+        var cobranca = await _db.UnidadesCobrancas.FindAsync(id);
+        if (cobranca is null)
+        {
+            return NotFound();
+        }
+
+        var auth = await EnsureRoleAsync(cobranca.OrganizacaoId, UserRole.CONDO_ADMIN, UserRole.CONDO_STAFF);
+        if (auth.Error is not null)
+        {
+            return auth.Error;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Status))
+        {
+            var novoStatus = NormalizarStatusCobranca(request.Status);
+            if (!StatusCobrancaValidos.Contains(novoStatus))
+            {
+                return BadRequest("Status invalido.");
+            }
+
+            if (string.Equals(cobranca.Status, "FECHADA", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(novoStatus, "FECHADA", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!auth.IsPlatformAdmin)
+                {
+                    return Forbid();
+                }
+            }
+
+            cobranca.Status = novoStatus;
+            if (novoStatus == "PAGA")
+            {
+                cobranca.PagoEm ??= DateTime.UtcNow;
+            }
+        }
+
+        if (request.Vencimento.HasValue)
+        {
+            cobranca.Vencimento = request.Vencimento.Value;
+        }
+
+        if (request.Valor.HasValue)
+        {
+            cobranca.Valor = request.Valor.Value;
+        }
+
+        if (request.FormaPagamento is not null)
+        {
+            cobranca.FormaPagamento = request.FormaPagamento;
+        }
+
+        if (request.ContaBancariaId.HasValue)
+        {
+            cobranca.ContaBancariaId = request.ContaBancariaId.Value;
+        }
+
+        RegistrarAudit(cobranca.OrganizacaoId, cobranca.Id, "UnidadeCobranca", "ATUALIZAR_COBRANCA_UNIDADE", new
+        {
+            cobranca.Status,
+            cobranca.Valor,
+            cobranca.Vencimento
+        });
+        await _db.SaveChangesAsync();
+        return Ok(cobranca);
+    }
+
+    public class PagarCobrancaUnidadeRequest
+    {
+        public decimal ValorPago { get; set; }
+        public DateTime? DataPagamento { get; set; }
+        public Guid? ContaBancariaId { get; set; }
+        public Guid? ComprovanteAnexoId { get; set; }
+        public string? FormaPagamento { get; set; }
+        public string? Observacao { get; set; }
+    }
+
+    [HttpPost("cobrancas/{id:guid}/pagar")]
+    public async Task<ActionResult<UnidadePagamento>> PagarCobrancaUnidade(Guid id, PagarCobrancaUnidadeRequest request)
+    {
+        var cobranca = await _db.UnidadesCobrancas.FindAsync(id);
+        if (cobranca is null)
+        {
+            return NotFound();
+        }
+
+        var auth = await EnsureRoleAsync(cobranca.OrganizacaoId, UserRole.CONDO_ADMIN, UserRole.CONDO_STAFF);
+        if (auth.Error is not null)
+        {
+            return auth.Error;
+        }
+
+        if (request.ValorPago <= 0)
+        {
+            return BadRequest("Valor pago deve ser maior que zero.");
+        }
+
+        var pagamento = new UnidadePagamento
+        {
+            Id = Guid.NewGuid(),
+            OrganizacaoId = cobranca.OrganizacaoId,
+            CobrancaId = cobranca.Id,
+            ValorPago = request.ValorPago,
+            DataPagamento = request.DataPagamento ?? DateTime.UtcNow,
+            ContaBancariaId = request.ContaBancariaId,
+            ComprovanteAnexoId = request.ComprovanteAnexoId,
+            Observacao = request.Observacao
+        };
+
+        _db.UnidadesPagamentos.Add(pagamento);
+
+        var totalPago = await _db.UnidadesPagamentos.AsNoTracking()
+            .Where(p => p.CobrancaId == cobranca.Id)
+            .SumAsync(p => p.ValorPago);
+        totalPago += request.ValorPago;
+
+        if (totalPago >= cobranca.Valor)
+        {
+            cobranca.Status = "PAGA";
+            cobranca.PagoEm = pagamento.DataPagamento;
+        }
+        else
+        {
+            cobranca.Status = "ABERTA";
+        }
+
+        if (request.ContaBancariaId.HasValue)
+        {
+            cobranca.ContaBancariaId = request.ContaBancariaId.Value;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.FormaPagamento))
+        {
+            cobranca.FormaPagamento = request.FormaPagamento;
+        }
+
+        RegistrarAudit(cobranca.OrganizacaoId, cobranca.Id, "UnidadeCobranca", "PAGAR_COBRANCA_UNIDADE", new
+        {
+            pagamento.ValorPago,
+            pagamento.DataPagamento
+        });
+        await _db.SaveChangesAsync();
+        return Ok(pagamento);
+    }
+
+    [HttpGet("cobrancas/{id:guid}/pagamentos")]
+    public async Task<ActionResult<IEnumerable<UnidadePagamento>>> ListarPagamentosCobranca(Guid id)
+    {
+        var cobranca = await _db.UnidadesCobrancas.AsNoTracking().FirstOrDefaultAsync(c => c.Id == id);
+        if (cobranca is null)
+        {
+            return NotFound();
+        }
+
+        var auth = await EnsureRoleAsync(cobranca.OrganizacaoId, UserRole.CONDO_ADMIN, UserRole.CONDO_STAFF);
+        if (auth.Error is not null)
+        {
+            return auth.Error;
+        }
+
+        var pagamentos = await _db.UnidadesPagamentos.AsNoTracking()
+            .Where(p => p.CobrancaId == id)
+            .OrderByDescending(p => p.DataPagamento)
+            .ToListAsync();
+        return Ok(pagamentos);
+    }
+
+    // ---------------------------
     // Uploads e conciliação bancária
     // ---------------------------
 
@@ -1399,8 +1728,11 @@ public class FinanceiroController : ControllerBase
         string Descricao,
         decimal Valor,
         string? Documento,
+        Guid? MovimentoId,
         Guid? SugestaoLancamentoId,
-        string? SugestaoDescricao);
+        Guid? SugestaoCobrancaId,
+        string? SugestaoDescricao,
+        string? SugestaoTipo);
 
     public record ConciliacaoImportResponse(
         string Arquivo,
@@ -1411,6 +1743,7 @@ public class FinanceiroController : ControllerBase
     [RequestSizeLimit(25_000_000)]
     public async Task<ActionResult<ConciliacaoImportResponse>> ImportarExtrato(
         [FromForm] Guid organizacaoId,
+        [FromForm] Guid? contaBancariaId,
         [FromForm] IFormFile arquivo)
     {
         if (organizacaoId == Guid.Empty)
@@ -1433,8 +1766,10 @@ public class FinanceiroController : ControllerBase
         var itensBase = Path.GetExtension(arquivo.FileName).Equals(".ofx", StringComparison.OrdinalIgnoreCase)
             ? ParseOfx(content)
             : ParseCsv(content);
+        var contaId = contaBancariaId ?? Guid.Empty;
 
-        var itens = await SugerirLancamentosAsync(organizacaoId, itensBase);
+        var movimentos = await RegistrarMovimentosAsync(organizacaoId, contaId, itensBase);
+        var itens = await SugerirLancamentosAsync(organizacaoId, itensBase, movimentos);
 
         RegistrarAudit(organizacaoId, Guid.NewGuid(), "ConciliacaoBancaria", "IMPORTAR_EXTRATO", new
         {
@@ -1446,12 +1781,47 @@ public class FinanceiroController : ControllerBase
         return Ok(new ConciliacaoImportResponse(arquivo.FileName, itens.Count, itens));
     }
 
+    [HttpGet("conciliacao/movimentos")]
+    public async Task<ActionResult<IEnumerable<MovimentoBancario>>> ListarMovimentos(
+        [FromQuery] Guid organizacaoId,
+        [FromQuery] Guid? contaBancariaId,
+        [FromQuery] string? status)
+    {
+        if (organizacaoId == Guid.Empty)
+        {
+            return BadRequest("Organizacao e obrigatoria.");
+        }
+
+        var auth = await EnsureRoleAsync(organizacaoId, UserRole.CONDO_ADMIN, UserRole.CONDO_STAFF);
+        if (auth.Error is not null)
+        {
+            return auth.Error;
+        }
+
+        var query = _db.MovimentosBancarios.AsNoTracking()
+            .Where(m => m.OrganizacaoId == organizacaoId);
+
+        if (contaBancariaId.HasValue && contaBancariaId.Value != Guid.Empty)
+        {
+            query = query.Where(m => m.ContaBancariaId == contaBancariaId.Value);
+        }
+
+        if (!string.IsNullOrWhiteSpace(status))
+        {
+            query = query.Where(m => m.Status == status.Trim().ToUpperInvariant());
+        }
+
+        var itens = await query.OrderByDescending(m => m.Data).ToListAsync();
+        return Ok(itens);
+    }
+
     public class ConfirmarConciliacaoRequest
     {
         public Guid OrganizacaoId { get; set; }
         public DateTime? DataConciliacao { get; set; }
         public string? Referencia { get; set; }
         public string? Documento { get; set; }
+        public Guid? MovimentoBancarioId { get; set; }
     }
 
     [HttpPost("conciliacao/{id:guid}/confirmar")]
@@ -1511,8 +1881,96 @@ public class FinanceiroController : ControllerBase
             request.Documento
         });
 
+        if (request.MovimentoBancarioId.HasValue)
+        {
+            var movimento = await _db.MovimentosBancarios.FindAsync(request.MovimentoBancarioId.Value);
+            if (movimento is not null && movimento.OrganizacaoId == request.OrganizacaoId)
+            {
+                movimento.Status = "CONCILIADO";
+                movimento.LancamentoFinanceiroId = lancamento.Id;
+            }
+        }
+
         await _db.SaveChangesAsync();
 
+        return NoContent();
+    }
+
+    public class VincularMovimentoRequest
+    {
+        public Guid OrganizacaoId { get; set; }
+        public Guid? LancamentoId { get; set; }
+        public Guid? CobrancaUnidadeId { get; set; }
+        public Guid? ContaBancariaId { get; set; }
+    }
+
+    [HttpPost("conciliacao/movimentos/{id:guid}/vincular")]
+    public async Task<IActionResult> VincularMovimento(Guid id, VincularMovimentoRequest request)
+    {
+        if (request.OrganizacaoId == Guid.Empty)
+        {
+            return BadRequest("Organizacao e obrigatoria.");
+        }
+
+        var auth = await EnsureRoleAsync(request.OrganizacaoId, UserRole.CONDO_ADMIN, UserRole.CONDO_STAFF);
+        if (auth.Error is not null)
+        {
+            return auth.Error;
+        }
+
+        var movimento = await _db.MovimentosBancarios.FindAsync(id);
+        if (movimento is null || movimento.OrganizacaoId != request.OrganizacaoId)
+        {
+            return NotFound();
+        }
+
+        if (request.LancamentoId is null && request.CobrancaUnidadeId is null)
+        {
+            return BadRequest("Informe um lancamento ou cobranca.");
+        }
+
+        if (request.LancamentoId.HasValue)
+        {
+            var lancamento = await _db.LancamentosFinanceiros.FindAsync(request.LancamentoId.Value);
+            if (lancamento is null || lancamento.OrganizacaoId != request.OrganizacaoId)
+            {
+                return NotFound("Lancamento nao encontrado.");
+            }
+
+            lancamento.Situacao = SituacaoConciliado;
+            lancamento.DataPagamento ??= DateTime.UtcNow;
+            movimento.LancamentoFinanceiroId = lancamento.Id;
+            movimento.Status = "CONCILIADO";
+        }
+
+        if (request.CobrancaUnidadeId.HasValue)
+        {
+            var cobranca = await _db.UnidadesCobrancas.FindAsync(request.CobrancaUnidadeId.Value);
+            if (cobranca is null || cobranca.OrganizacaoId != request.OrganizacaoId)
+            {
+                return NotFound("Cobranca nao encontrada.");
+            }
+
+            var pagamento = new UnidadePagamento
+            {
+                Id = Guid.NewGuid(),
+                OrganizacaoId = request.OrganizacaoId,
+                CobrancaId = cobranca.Id,
+                ValorPago = Math.Abs(movimento.Valor),
+                DataPagamento = movimento.Data,
+                ContaBancariaId = request.ContaBancariaId ?? movimento.ContaBancariaId,
+                Observacao = "Conciliado automaticamente."
+            };
+            _db.UnidadesPagamentos.Add(pagamento);
+            movimento.UnidadePagamentoId = pagamento.Id;
+            movimento.Status = "CONCILIADO";
+
+            cobranca.Status = "PAGA";
+            cobranca.PagoEm = pagamento.DataPagamento;
+            cobranca.ContaBancariaId = pagamento.ContaBancariaId;
+        }
+
+        await _db.SaveChangesAsync();
         return NoContent();
     }
 
@@ -1625,7 +2083,56 @@ public class FinanceiroController : ControllerBase
         return itens;
     }
 
-    private async Task<List<ExtratoItemDto>> SugerirLancamentosAsync(Guid organizacaoId, List<ExtratoItemBase> itens)
+    private async Task<Dictionary<int, MovimentoBancario>> RegistrarMovimentosAsync(
+        Guid organizacaoId,
+        Guid contaBancariaId,
+        List<ExtratoItemBase> itens)
+    {
+        var movimentos = new Dictionary<int, MovimentoBancario>();
+        if (itens.Count == 0)
+        {
+            return movimentos;
+        }
+
+        var hashes = itens.Select(i => ComputeMovimentoHash(i.Data, i.Valor, i.Descricao, i.Documento)).ToList();
+        var existentes = await _db.MovimentosBancarios.AsNoTracking()
+            .Where(m => m.OrganizacaoId == organizacaoId && hashes.Contains(m.Hash))
+            .ToListAsync();
+        var porHash = existentes.ToDictionary(m => m.Hash, m => m);
+
+        foreach (var item in itens)
+        {
+            var hash = ComputeMovimentoHash(item.Data, item.Valor, item.Descricao, item.Documento);
+            if (porHash.TryGetValue(hash, out var existente))
+            {
+                movimentos[item.Index] = existente;
+                continue;
+            }
+
+            var movimento = new MovimentoBancario
+            {
+                Id = Guid.NewGuid(),
+                OrganizacaoId = organizacaoId,
+                ContaBancariaId = contaBancariaId,
+                Data = item.Data,
+                Descricao = item.Descricao,
+                Valor = item.Valor,
+                Hash = hash,
+                Status = "PENDENTE"
+            };
+            _db.MovimentosBancarios.Add(movimento);
+            porHash[hash] = movimento;
+            movimentos[item.Index] = movimento;
+        }
+
+        await _db.SaveChangesAsync();
+        return movimentos;
+    }
+
+    private async Task<List<ExtratoItemDto>> SugerirLancamentosAsync(
+        Guid organizacaoId,
+        List<ExtratoItemBase> itens,
+        IReadOnlyDictionary<int, MovimentoBancario> movimentos)
     {
         if (itens.Count == 0)
         {
@@ -1641,13 +2148,19 @@ public class FinanceiroController : ControllerBase
             .Where(l => l.DataCompetencia >= minDate && l.DataCompetencia <= maxDate)
             .ToListAsync();
 
+        var cobrancas = await _db.UnidadesCobrancas
+            .AsNoTracking()
+            .Where(c => c.OrganizacaoId == organizacaoId)
+            .Where(c => c.Vencimento >= minDate && c.Vencimento <= maxDate)
+            .ToListAsync();
+
         var resposta = new List<ExtratoItemDto>();
         foreach (var item in itens)
         {
             var tipoEsperado = item.Valor < 0 ? "pagar" : "receber";
             var valorAbs = Math.Abs(item.Valor);
 
-            var sugestao = candidatos
+            var sugestaoLancamento = candidatos
                 .Select(c => new
                 {
                     Lancamento = c,
@@ -1660,17 +2173,43 @@ public class FinanceiroController : ControllerBase
                 .OrderBy(c => Math.Abs((c.DataBase.Date - item.Data.Date).TotalDays))
                 .FirstOrDefault();
 
+            var sugestaoCobranca = item.Valor > 0
+                ? cobrancas
+                    .Where(c => (c.Status == "ABERTA" || c.Status == "ATRASADA"))
+                    .Where(c => Math.Abs(c.Valor - valorAbs) <= 0.01m)
+                    .OrderBy(c => Math.Abs((c.Vencimento.Date - item.Data.Date).TotalDays))
+                    .FirstOrDefault()
+                : null;
+
+            var escolherCobranca = sugestaoCobranca is not null &&
+                                   (sugestaoLancamento is null ||
+                                    Math.Abs((sugestaoCobranca.Vencimento.Date - item.Data.Date).TotalDays) <=
+                                    Math.Abs((sugestaoLancamento.DataBase.Date - item.Data.Date).TotalDays));
+
+            movimentos.TryGetValue(item.Index, out var movimento);
+
             resposta.Add(new ExtratoItemDto(
                 item.Index,
                 item.Data,
                 item.Descricao,
                 item.Valor,
                 item.Documento,
-                sugestao?.Lancamento.Id,
-                sugestao?.Lancamento.Descricao));
+                movimento?.Id,
+                escolherCobranca ? null : sugestaoLancamento?.Lancamento.Id,
+                escolherCobranca ? sugestaoCobranca?.Id : null,
+                escolherCobranca ? sugestaoCobranca?.Descricao : sugestaoLancamento?.Lancamento.Descricao,
+                escolherCobranca ? "cobranca_unidade" : sugestaoLancamento is null ? null : "lancamento"));
         }
 
         return resposta;
+    }
+
+    private static string ComputeMovimentoHash(DateTime data, decimal valor, string descricao, string? documento)
+    {
+        var raw = $"{data:yyyyMMdd}|{valor:0.00}|{descricao.Trim().ToLowerInvariant()}|{documento?.Trim().ToLowerInvariant()}";
+        using var sha = SHA256.Create();
+        var bytes = sha.ComputeHash(Encoding.UTF8.GetBytes(raw));
+        return Convert.ToHexString(bytes);
     }
 
     private static bool TryParseDate(string raw, out DateTime data)

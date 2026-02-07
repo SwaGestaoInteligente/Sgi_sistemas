@@ -127,6 +127,8 @@ export interface Chamado {
   prioridade?: string | null;
   responsavelPessoaId?: string | null;
   dataAbertura?: string;
+  slaHoras?: number | null;
+  dataPrazoSla?: string | null;
   dataFechamento?: string | null;
 }
 
@@ -140,6 +142,10 @@ export interface Reserva {
   dataFim: string;
   status: string;
   valorTotal?: number | null;
+  dataSolicitacao?: string | null;
+  dataAprovacao?: string | null;
+  aprovadorPessoaId?: string | null;
+  observacao?: string | null;
 }
 
 export interface RecursoReservavel {
@@ -150,6 +156,11 @@ export interface RecursoReservavel {
   tipo?: string;
   capacidade?: number | null;
   regrasJson?: string | null;
+  limitePorUnidadePorMes?: number | null;
+  exigeAprovacao?: boolean;
+  janelaHorarioInicio?: string | null;
+  janelaHorarioFim?: string | null;
+  bloqueiosJson?: string | null;
   ativo?: boolean;
 }
 
@@ -248,14 +259,92 @@ export interface FinanceUploadResponse {
   tipo: string;
 }
 
+export interface Anexo {
+  id: string;
+  organizacaoId: string;
+  tipoEntidade: string;
+  entidadeId: string;
+  nomeArquivo: string;
+  mimeType: string;
+  tamanho: number;
+  caminho: string;
+  criadoEm: string;
+  criadoPorUserId?: string | null;
+}
+
+export interface NotificacaoConfig {
+  id: string;
+  organizacaoId: string;
+  tipo: string;
+  canal: string;
+  ativo: boolean;
+  diasAntesVencimento?: number | null;
+  limiteValor?: number | null;
+  destinatariosJson?: string | null;
+}
+
+export interface NotificacaoEvento {
+  id: string;
+  organizacaoId: string;
+  tipo: string;
+  canal: string;
+  titulo: string;
+  mensagem: string;
+  criadoEm: string;
+  lidoEm?: string | null;
+  destinatariosJson?: string | null;
+}
+
+export interface UnidadeCobranca {
+  id: string;
+  organizacaoId: string;
+  unidadeOrganizacionalId: string;
+  competencia: string;
+  descricao: string;
+  categoriaId?: string | null;
+  centroCustoId?: string | null;
+  valor: number;
+  vencimento: string;
+  status: string;
+  pagoEm?: string | null;
+  formaPagamento?: string | null;
+  contaBancariaId?: string | null;
+}
+
+export interface UnidadePagamento {
+  id: string;
+  organizacaoId: string;
+  cobrancaId: string;
+  valorPago: number;
+  dataPagamento: string;
+  contaBancariaId?: string | null;
+  comprovanteAnexoId?: string | null;
+  observacao?: string | null;
+}
+
+export interface MovimentoBancario {
+  id: string;
+  organizacaoId: string;
+  contaBancariaId: string;
+  data: string;
+  descricao: string;
+  valor: number;
+  status: string;
+  lancamentoFinanceiroId?: string | null;
+  unidadePagamentoId?: string | null;
+}
+
 export interface ConciliacaoExtratoItem {
   index: number;
   data: string;
   descricao: string;
   valor: number;
   documento?: string;
+  movimentoId?: string;
   sugestaoLancamentoId?: string;
+  sugestaoCobrancaId?: string;
   sugestaoDescricao?: string;
+  sugestaoTipo?: string;
 }
 
 export interface ConciliacaoImportResponse {
@@ -309,6 +398,38 @@ async function request<T>(
   }
 
   return JSON.parse(text) as T;
+}
+
+async function requestBlob(path: string, token?: string): Promise<Blob> {
+  const headers: HeadersInit = {
+    "ngrok-skip-browser-warning": "true"
+  };
+
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}${path}`, { headers });
+  } catch (error) {
+    const origemAtual =
+      typeof window !== "undefined" ? window.location.origin : "origem atual";
+    const detalhe =
+      error instanceof Error && error.message
+        ? ` Detalhe tecnico: ${error.message}.`
+        : "";
+    throw new Error(
+      `Nao foi possivel conectar com a API (${API_BASE_URL}). Verifique se o backend esta ativo e se o CORS permite ${origemAtual}.${detalhe}`
+    );
+  }
+
+  if (!res.ok) {
+    const text = await res.text();
+    throwHttpError(res.status, text);
+  }
+
+  return await res.blob();
 }
 
 export const api = {
@@ -587,6 +708,21 @@ export const api = {
     );
   },
 
+  async adicionarComentarioChamado(
+    token: string,
+    id: string,
+    mensagem: string
+  ): Promise<void> {
+    await request<void>(
+      `/api/operacao/chamados/${encodeURIComponent(id)}/comentarios`,
+      {
+        method: "POST",
+        body: JSON.stringify({ mensagem })
+      },
+      token
+    );
+  },
+
   async listarHistoricoChamado(
     token: string,
     id: string
@@ -615,6 +751,11 @@ export const api = {
       tipo?: string;
       capacidade?: number | null;
       regrasJson?: string | null;
+      limitePorUnidadePorMes?: number | null;
+      exigeAprovacao?: boolean;
+      janelaHorarioInicio?: string | null;
+      janelaHorarioFim?: string | null;
+      bloqueiosJson?: string | null;
       ativo?: boolean;
     }
   ): Promise<RecursoReservavel> {
@@ -638,6 +779,11 @@ export const api = {
       tipo?: string;
       capacidade?: number | null;
       regrasJson?: string | null;
+      limitePorUnidadePorMes?: number | null;
+      exigeAprovacao?: boolean;
+      janelaHorarioInicio?: string | null;
+      janelaHorarioFim?: string | null;
+      bloqueiosJson?: string | null;
       ativo?: boolean;
     }
   ): Promise<RecursoReservavel> {
@@ -696,7 +842,7 @@ export const api = {
   async atualizarReserva(
     token: string,
     id: string,
-    payload: { status: string }
+    payload: { status: string; observacao?: string }
   ): Promise<Reserva> {
     return request<Reserva>(
       `/api/operacao/reservas/${encodeURIComponent(id)}`,
@@ -1286,10 +1432,14 @@ export const api = {
   async importarExtrato(
     token: string,
     organizacaoId: string,
-    arquivo: File
+    arquivo: File,
+    contaBancariaId?: string
   ): Promise<ConciliacaoImportResponse> {
     const formData = new FormData();
     formData.append("organizacaoId", organizacaoId);
+    if (contaBancariaId) {
+      formData.append("contaBancariaId", contaBancariaId);
+    }
     formData.append("arquivo", arquivo);
 
     const headers: HeadersInit = {
@@ -1318,7 +1468,12 @@ export const api = {
     token: string,
     lancamentoId: string,
     organizacaoId: string,
-    payload?: { dataConciliacao?: string; referencia?: string; documento?: string }
+    payload?: {
+      dataConciliacao?: string;
+      referencia?: string;
+      documento?: string;
+      movimentoBancarioId?: string;
+    }
   ): Promise<void> {
     await request<void>(
       `/api/financeiro/conciliacao/${encodeURIComponent(lancamentoId)}/confirmar`,
@@ -1328,11 +1483,115 @@ export const api = {
           organizacaoId,
           dataConciliacao: payload?.dataConciliacao,
           referencia: payload?.referencia,
-          documento: payload?.documento
+          documento: payload?.documento,
+          movimentoBancarioId: payload?.movimentoBancarioId
         })
       },
       token
     );
+  },
+
+  async listarMovimentosBancarios(
+    token: string,
+    organizacaoId: string,
+    params?: { contaBancariaId?: string; status?: string }
+  ): Promise<MovimentoBancario[]> {
+    const search = new URLSearchParams({ organizacaoId });
+    if (params?.contaBancariaId) {
+      search.set("contaBancariaId", params.contaBancariaId);
+    }
+    if (params?.status) {
+      search.set("status", params.status);
+    }
+    return request<MovimentoBancario[]>(
+      `/api/financeiro/conciliacao/movimentos?${search.toString()}`,
+      {},
+      token
+    );
+  },
+
+  async vincularMovimentoBancario(
+    token: string,
+    movimentoId: string,
+    payload: {
+      organizacaoId: string;
+      lancamentoId?: string;
+      cobrancaUnidadeId?: string;
+      contaBancariaId?: string;
+    }
+  ): Promise<void> {
+    await request<void>(
+      `/api/financeiro/conciliacao/movimentos/${encodeURIComponent(movimentoId)}/vincular`,
+      {
+        method: "POST",
+        body: JSON.stringify(payload)
+      },
+      token
+    );
+  },
+
+  async relatorioChamados(
+    token: string,
+    organizacaoId: string,
+    params: {
+      de?: string;
+      ate?: string;
+      status?: string;
+      formato: "csv" | "pdf";
+    }
+  ): Promise<Blob> {
+    const search = new URLSearchParams({ organizacaoId, formato: params.formato });
+    if (params.de) {
+      search.set("de", params.de);
+    }
+    if (params.ate) {
+      search.set("ate", params.ate);
+    }
+    if (params.status) {
+      search.set("status", params.status);
+    }
+    return requestBlob(`/api/relatorios/chamados?${search.toString()}`, token);
+  },
+
+  async relatorioReservas(
+    token: string,
+    organizacaoId: string,
+    params: {
+      de?: string;
+      ate?: string;
+      recursoId?: string;
+      formato: "csv" | "pdf";
+    }
+  ): Promise<Blob> {
+    const search = new URLSearchParams({ organizacaoId, formato: params.formato });
+    if (params.de) {
+      search.set("de", params.de);
+    }
+    if (params.ate) {
+      search.set("ate", params.ate);
+    }
+    if (params.recursoId) {
+      search.set("recursoId", params.recursoId);
+    }
+    return requestBlob(`/api/relatorios/reservas?${search.toString()}`, token);
+  },
+
+  async relatorioVeiculos(
+    token: string,
+    organizacaoId: string,
+    formato: "csv" = "csv"
+  ): Promise<Blob> {
+    const search = new URLSearchParams({ organizacaoId, formato });
+    return requestBlob(`/api/relatorios/veiculos?${search.toString()}`, token);
+  },
+
+  async relatorioPets(
+    token: string,
+    organizacaoId: string,
+    formato: "csv" = "csv"
+  ): Promise<Blob> {
+    const search = new URLSearchParams({ organizacaoId, formato });
+    return requestBlob(`/api/relatorios/pets?${search.toString()}`, token);
   },
 
   async transferirEntreContas(
@@ -1414,5 +1673,245 @@ export const api = {
       const text = await res.text();
       throwHttpError(res.status, text);
     }
+  },
+
+  async listarCobrancasUnidade(
+    token: string,
+    unidadeId: string,
+    competencia?: string
+  ): Promise<UnidadeCobranca[]> {
+    const search = new URLSearchParams();
+    if (competencia) {
+      search.set("competencia", competencia);
+    }
+    const path = `/api/financeiro/unidades/${encodeURIComponent(unidadeId)}/cobrancas${
+      search.toString() ? `?${search.toString()}` : ""
+    }`;
+    return request<UnidadeCobranca[]>(path, {}, token);
+  },
+
+  async criarCobrancaUnidade(
+    token: string,
+    unidadeId: string,
+    payload: Omit<UnidadeCobranca, "id" | "unidadeOrganizacionalId" | "pagoEm">
+  ): Promise<UnidadeCobranca> {
+    return request<UnidadeCobranca>(
+      `/api/financeiro/unidades/${encodeURIComponent(unidadeId)}/cobrancas`,
+      {
+        method: "POST",
+        body: JSON.stringify(payload)
+      },
+      token
+    );
+  },
+
+  async atualizarCobrancaUnidade(
+    token: string,
+    cobrancaId: string,
+    payload: {
+      status?: string;
+      vencimento?: string;
+      valor?: number;
+      formaPagamento?: string;
+      contaBancariaId?: string;
+    }
+  ): Promise<UnidadeCobranca> {
+    return request<UnidadeCobranca>(
+      `/api/financeiro/cobrancas/${encodeURIComponent(cobrancaId)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(payload)
+      },
+      token
+    );
+  },
+
+  async pagarCobrancaUnidade(
+    token: string,
+    cobrancaId: string,
+    payload: {
+      valorPago: number;
+      dataPagamento?: string;
+      contaBancariaId?: string;
+      comprovanteAnexoId?: string;
+      formaPagamento?: string;
+      observacao?: string;
+    }
+  ): Promise<UnidadePagamento> {
+    return request<UnidadePagamento>(
+      `/api/financeiro/cobrancas/${encodeURIComponent(cobrancaId)}/pagar`,
+      {
+        method: "POST",
+        body: JSON.stringify(payload)
+      },
+      token
+    );
+  },
+
+  async listarPagamentosCobranca(
+    token: string,
+    cobrancaId: string
+  ): Promise<UnidadePagamento[]> {
+    return request<UnidadePagamento[]>(
+      `/api/financeiro/cobrancas/${encodeURIComponent(cobrancaId)}/pagamentos`,
+      {},
+      token
+    );
+  },
+
+  async listarNotificacoesConfig(
+    token: string,
+    organizacaoId: string
+  ): Promise<NotificacaoConfig[]> {
+    const path = `/api/config/notificacoes?organizacaoId=${encodeURIComponent(
+      organizacaoId
+    )}`;
+    return request<NotificacaoConfig[]>(path, {}, token);
+  },
+
+  async criarNotificacaoConfig(
+    token: string,
+    payload: Omit<NotificacaoConfig, "id">
+  ): Promise<NotificacaoConfig> {
+    return request<NotificacaoConfig>(
+      "/api/config/notificacoes",
+      {
+        method: "POST",
+        body: JSON.stringify(payload)
+      },
+      token
+    );
+  },
+
+  async atualizarNotificacaoConfig(
+    token: string,
+    id: string,
+    payload: Partial<NotificacaoConfig>
+  ): Promise<NotificacaoConfig> {
+    return request<NotificacaoConfig>(
+      `/api/config/notificacoes/${encodeURIComponent(id)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(payload)
+      },
+      token
+    );
+  },
+
+  async removerNotificacaoConfig(token: string, id: string): Promise<void> {
+    await request<void>(
+      `/api/config/notificacoes/${encodeURIComponent(id)}`,
+      { method: "DELETE" },
+      token
+    );
+  },
+
+  async listarNotificacoesEventos(
+    token: string,
+    organizacaoId: string,
+    limit?: number
+  ): Promise<NotificacaoEvento[]> {
+    const search = new URLSearchParams({ organizacaoId });
+    if (limit) {
+      search.set("limit", String(limit));
+    }
+    return request<NotificacaoEvento[]>(
+      `/api/config/notificacoes/eventos?${search.toString()}`,
+      {},
+      token
+    );
+  },
+
+  async marcarNotificacaoEventoLido(
+    token: string,
+    eventoId: string
+  ): Promise<NotificacaoEvento> {
+    return request<NotificacaoEvento>(
+      `/api/config/notificacoes/eventos/${encodeURIComponent(eventoId)}/lido`,
+      { method: "PATCH" },
+      token
+    );
+  },
+
+  async uploadAnexo(
+    token: string,
+    payload: {
+      organizacaoId: string;
+      tipoEntidade: string;
+      entidadeId: string;
+      arquivo: File;
+    }
+  ): Promise<Anexo> {
+    const formData = new FormData();
+    formData.append("organizacaoId", payload.organizacaoId);
+    formData.append("tipoEntidade", payload.tipoEntidade);
+    formData.append("entidadeId", payload.entidadeId);
+    formData.append("arquivo", payload.arquivo);
+
+    const headers: HeadersInit = {
+      "ngrok-skip-browser-warning": "true"
+    };
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+
+    const res = await fetch(`${API_BASE_URL}/api/anexos/upload`, {
+      method: "POST",
+      headers,
+      body: formData
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      throwHttpError(res.status, text);
+    }
+
+    return (await res.json()) as Anexo;
+  },
+
+  async listarAnexos(
+    token: string,
+    organizacaoId: string,
+    tipoEntidade?: string,
+    entidadeId?: string
+  ): Promise<Anexo[]> {
+    const search = new URLSearchParams({ organizacaoId });
+    if (tipoEntidade) {
+      search.set("tipoEntidade", tipoEntidade);
+    }
+    if (entidadeId) {
+      search.set("entidadeId", entidadeId);
+    }
+    return request<Anexo[]>(
+      `/api/anexos?${search.toString()}`,
+      {},
+      token
+    );
+  },
+
+  async baixarAnexo(token: string, anexoId: string): Promise<Blob> {
+    const headers: HeadersInit = {
+      "ngrok-skip-browser-warning": "true"
+    };
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+    const res = await fetch(
+      `${API_BASE_URL}/api/anexos/${encodeURIComponent(anexoId)}/download`,
+      { headers }
+    );
+    if (!res.ok) {
+      const text = await res.text();
+      throwHttpError(res.status, text);
+    }
+    return await res.blob();
+  },
+
+  async removerAnexo(token: string, anexoId: string): Promise<void> {
+    await request<void>(
+      `/api/anexos/${encodeURIComponent(anexoId)}`,
+      { method: "DELETE" },
+      token
+    );
   }
 };

@@ -588,6 +588,41 @@ button:not(:disabled):active {
   align-items: end;
 }
 
+.finance-form-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+}
+
+.finance-form-inline label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  color: #475569;
+}
+
+.finance-form-inline input,
+.finance-form-inline select {
+  min-width: 160px;
+}
+
+.inline-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.checkbox-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #111827;
+}
+
 .finance-card-list {
   display: flex;
   flex-direction: column;
@@ -862,6 +897,11 @@ button:not(:disabled):active {
 .badge-status--inativo {
   background-color: #fee2e2;
   color: #991b1b;
+}
+
+.badge-status--alerta {
+  background-color: #fde2e1;
+  color: #b91c1c;
 }
 
 /* Layout com menu lateral para o dashboard */
@@ -1344,6 +1384,44 @@ button:not(:disabled):active {
   font-size: 12px;
   color: #6b7280;
   margin-top: 4px;
+}
+
+.dashboard-alerts {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: var(--radius-lg);
+  padding: 12px 16px;
+}
+
+.dashboard-alerts h4 {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+
+.dashboard-alerts ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dashboard-alerts li {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: var(--radius-md);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: #0f172a;
+}
+
+.dashboard-alerts li span {
+  color: #64748b;
+  font-size: 12px;
 }
 /* Pessoas */
 .people-page {

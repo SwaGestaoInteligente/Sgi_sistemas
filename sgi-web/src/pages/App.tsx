@@ -2,17 +2,21 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { AuthProvider, useAuth } from "../hooks/useAuth";
 import {
   api,
+  Anexo,
   Chamado,
   ChamadoHistorico,
   ContaFinanceira,
   LancamentoFinanceiro,
   Membership,
+  NotificacaoEvento,
   Organizacao,
   Pessoa,
   Pet,
   Reserva,
   RecursoReservavel,
   UserRole,
+  UnidadeCobranca,
+  UnidadePagamento,
   Veiculo
 } from "../api";
 import { LoginPage } from "./LoginPage";
@@ -209,6 +213,7 @@ const Dashboard: React.FC<{
   const [contas, setContas] = useState<ContaFinanceira[]>([]);
   const [chamados, setChamados] = useState<any[]>([]);
   const [reservas, setReservas] = useState<any[]>([]);
+  const [alertas, setAlertas] = useState<NotificacaoEvento[]>([]);
 
   const carregar = async () => {
     if (!token || !organizacao) return;
@@ -218,20 +223,27 @@ const Dashboard: React.FC<{
       const promises: Promise<any>[] = [];
       if (mostrarFinanceiro) {
         promises.push(api.listarContas(token, organizacao.id));
+        promises.push(api.listarNotificacoesEventos(token, organizacao.id, 5));
       } else {
+        promises.push(Promise.resolve([]));
         promises.push(Promise.resolve([]));
       }
       promises.push(api.listarChamados(token, organizacao.id));
       promises.push(api.listarReservas(token, organizacao.id));
 
-      const [contasRes, chamadosRes, reservasRes] = await Promise.allSettled(
-        promises
-      );
+      const [contasRes, alertasRes, chamadosRes, reservasRes] =
+        await Promise.allSettled(promises);
 
       if (contasRes.status === "fulfilled") {
         setContas(contasRes.value);
       } else {
         throw contasRes.reason;
+      }
+
+      if (alertasRes.status === "fulfilled") {
+        setAlertas(alertasRes.value);
+      } else {
+        setAlertas([]);
       }
 
       if (chamadosRes.status === "fulfilled") {
@@ -318,8 +330,32 @@ const Dashboard: React.FC<{
           </div>
           <div className="dashboard-card-value">{reservas.length}</div>
         </div>
+
+        <div className="dashboard-card">
+          <div className="dashboard-card-label">
+            <span className="dashboard-card-icon">AL</span>
+            <span>Alertas recentes</span>
+          </div>
+          <div className="dashboard-card-value">{alertas.length}</div>
+          <div className="dashboard-card-sub">
+            {alertas[0]?.titulo ?? "Sem alertas no momento."}
+          </div>
+        </div>
       </div>
 
+      {alertas.length > 0 && (
+        <div className="dashboard-alerts">
+          <h4>Alertas</h4>
+          <ul>
+            {alertas.map((alerta) => (
+              <li key={alerta.id}>
+                <strong>{alerta.titulo}</strong>
+                <span>{alerta.mensagem}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       {erro && (
         <p className="error" style={{ marginTop: 8 }}>
           {erro}
@@ -355,7 +391,11 @@ const MinhaUnidadeView: React.FC<{
   const [moradores, setMoradores] = useState<Pessoa[]>([]);
   const [veiculos, setVeiculos] = useState<Veiculo[]>([]);
   const [pets, setPets] = useState<Pet[]>([]);
-  const [lancamentos, setLancamentos] = useState<LancamentoFinanceiro[]>([]);
+  const [cobrancas, setCobrancas] = useState<UnidadeCobranca[]>([]);
+  const [anexosCobrancas, setAnexosCobrancas] = useState<
+    Record<string, Anexo[]>
+  >({});
+  const [competenciaFiltro, setCompetenciaFiltro] = useState("");
   const [erro, setErro] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -364,14 +404,25 @@ const MinhaUnidadeView: React.FC<{
       if (!token || !unidadeId) return;
       try {
         setLoading(true);
-        const [listaUnidades, listaPessoas, listaVeiculos, listaPets, listaLanc] =
-          await Promise.all([
-            api.listarUnidades(token, organizacao.id),
-            api.listarPessoas(token, organizacao.id),
-            api.listarVeiculos(token, organizacao.id, { unidadeId }),
-            api.listarPets(token, organizacao.id, { unidadeId }),
-            api.listarLancamentos(token, organizacao.id, { tipo: "receber" })
-          ]);
+        const [
+          listaUnidades,
+          listaPessoas,
+          listaVeiculos,
+          listaPets,
+          listaCobrancas,
+          listaAnexos
+        ] = await Promise.all([
+          api.listarUnidades(token, organizacao.id),
+          api.listarPessoas(token, organizacao.id),
+          api.listarVeiculos(token, organizacao.id, { unidadeId }),
+          api.listarPets(token, organizacao.id, { unidadeId }),
+          api.listarCobrancasUnidade(
+            token,
+            unidadeId,
+            competenciaFiltro || undefined
+          ),
+          api.listarAnexos(token, organizacao.id, "cobranca_unidade")
+        ]);
 
         setUnidade(listaUnidades.find((u) => u.id === unidadeId) ?? null);
 
@@ -381,10 +432,16 @@ const MinhaUnidadeView: React.FC<{
         setMoradores(moradoresUnidade);
         setVeiculos(listaVeiculos);
         setPets(listaPets);
+        setCobrancas(listaCobrancas);
 
-        const pessoaIds = new Set(moradoresUnidade.map((p) => p.id));
-        const lancUnidade = listaLanc.filter((l) => pessoaIds.has(l.pessoaId));
-        setLancamentos(lancUnidade);
+        const anexosPorCobranca: Record<string, Anexo[]> = {};
+        listaAnexos.forEach((anexo) => {
+          if (!anexosPorCobranca[anexo.entidadeId]) {
+            anexosPorCobranca[anexo.entidadeId] = [];
+          }
+          anexosPorCobranca[anexo.entidadeId].push(anexo);
+        });
+        setAnexosCobrancas(anexosPorCobranca);
       } catch (e: any) {
         setErro(e.message || "Erro ao carregar unidade");
       } finally {
@@ -392,7 +449,7 @@ const MinhaUnidadeView: React.FC<{
       }
     };
     void carregar();
-  }, [token, organizacao.id, unidadeId]);
+  }, [token, organizacao.id, unidadeId, competenciaFiltro]);
 
   if (!unidadeId) {
     return <p className="error">Unidade nao vinculada.</p>;
@@ -406,14 +463,17 @@ const MinhaUnidadeView: React.FC<{
     return <p>{loading ? "Carregando unidade..." : "Unidade nao encontrada."}</p>;
   }
 
-  const pendentes = lancamentos.filter(
-    (l) => (l.situacao ?? "").toLowerCase() !== "pago"
+  const pendentes = cobrancas.filter(
+    (c) => (c.status ?? "").toUpperCase() !== "PAGA"
   );
-  const ultimasCobrancas = lancamentos
+  const ultimasCobrancas = cobrancas
     .slice()
-    .sort((a, b) => (a.dataVencimento ?? "").localeCompare(b.dataVencimento ?? ""))
+    .sort((a, b) => (a.vencimento ?? "").localeCompare(b.vencimento ?? ""))
     .slice(-5)
     .reverse();
+  const competencias = Array.from(
+    new Set(cobrancas.map((c) => c.competencia))
+  ).sort((a, b) => b.localeCompare(a));
 
   return (
     <div className="finance-layout">
@@ -529,8 +589,24 @@ const MinhaUnidadeView: React.FC<{
           <div>
             <h3>Cobrancas e pendencias</h3>
             <p className="finance-form-sub">
-              {pendentes.length} lancamento(s) pendente(s).
+              {pendentes.length} cobranca(s) pendente(s).
             </p>
+          </div>
+          <div className="finance-form-inline">
+            <label>
+              Competencia
+              <select
+                value={competenciaFiltro}
+                onChange={(e) => setCompetenciaFiltro(e.target.value)}
+              >
+                <option value="">Todas</option>
+                {competencias.map((comp) => (
+                  <option key={comp} value={comp}>
+                    {comp}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
         </div>
         <table className="table finance-table">
@@ -540,25 +616,46 @@ const MinhaUnidadeView: React.FC<{
               <th>Vencimento</th>
               <th>Status</th>
               <th className="finance-value-header">Valor</th>
+              <th>Comprovante</th>
             </tr>
           </thead>
           <tbody>
-            {ultimasCobrancas.map((l) => (
-              <tr key={l.id}>
-                <td>{l.descricao}</td>
-                <td>{l.dataVencimento ?? "-"}</td>
-                <td>{l.situacao}</td>
-                <td className="finance-value-cell">
-                  {l.valor.toLocaleString("pt-BR", {
-                    style: "currency",
-                    currency: "BRL"
-                  })}
-                </td>
-              </tr>
-            ))}
+            {ultimasCobrancas.map((c) => {
+              const anexos = anexosCobrancas[c.id] ?? [];
+              return (
+                <tr key={c.id}>
+                  <td>{c.descricao}</td>
+                  <td>{c.vencimento?.slice(0, 10) ?? "-"}</td>
+                  <td>{c.status}</td>
+                  <td className="finance-value-cell">
+                    {c.valor.toLocaleString("pt-BR", {
+                      style: "currency",
+                      currency: "BRL"
+                    })}
+                  </td>
+                  <td>
+                    {anexos.length > 0 ? (
+                      <button
+                        type="button"
+                        className="button-secondary"
+                        onClick={async () => {
+                          const blob = await api.baixarAnexo(token!, anexos[0].id);
+                          const url = URL.createObjectURL(blob);
+                          window.open(url, "_blank");
+                        }}
+                      >
+                        Baixar
+                      </button>
+                    ) : (
+                      "-"
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
             {ultimasCobrancas.length === 0 && (
               <tr>
-                <td colSpan={4} style={{ textAlign: "center" }}>
+                <td colSpan={5} style={{ textAlign: "center" }}>
                   Nenhuma cobranca encontrada.
                 </td>
               </tr>
@@ -585,6 +682,9 @@ const ChamadosView: React.FC<{
   const [categoria, setCategoria] = useState("geral");
   const [prioridade, setPrioridade] = useState("MEDIA");
   const [responsavelPessoaId, setResponsavelPessoaId] = useState("");
+  const [comentario, setComentario] = useState("");
+  const [anexosChamado, setAnexosChamado] = useState<Anexo[]>([]);
+  const [arquivoChamado, setArquivoChamado] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
@@ -625,6 +725,21 @@ const ChamadosView: React.FC<{
     }
   };
 
+  const carregarAnexos = async (chamadoId: string) => {
+    if (!token) return;
+    try {
+      const lista = await api.listarAnexos(
+        token,
+        organizacao.id,
+        "chamado",
+        chamadoId
+      );
+      setAnexosChamado(lista);
+    } catch {
+      setAnexosChamado([]);
+    }
+  };
+
   useEffect(() => {
     void carregar();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -640,7 +755,41 @@ const ChamadosView: React.FC<{
     if (!selecionado) return;
     setResponsavelPessoaId(selecionado.responsavelPessoaId ?? "");
     void carregarHistorico(selecionado.id);
+    void carregarAnexos(selecionado.id);
   }, [selecionado]);
+
+  const adicionarComentario = async () => {
+    if (!token || !selecionado || !comentario.trim()) return;
+    try {
+      setLoading(true);
+      await api.adicionarComentarioChamado(token, selecionado.id, comentario);
+      setComentario("");
+      await carregarHistorico(selecionado.id);
+    } catch (e: any) {
+      setErro(e.message || "Erro ao adicionar comentario");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const enviarAnexo = async () => {
+    if (!token || !selecionado || !arquivoChamado) return;
+    try {
+      setLoading(true);
+      await api.uploadAnexo(token, {
+        organizacaoId: organizacao.id,
+        tipoEntidade: "chamado",
+        entidadeId: selecionado.id,
+        arquivo: arquivoChamado
+      });
+      setArquivoChamado(null);
+      await carregarAnexos(selecionado.id);
+    } catch (e: any) {
+      setErro(e.message || "Erro ao enviar anexo");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const criarChamado = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -781,6 +930,21 @@ const ChamadosView: React.FC<{
                 <strong>Prioridade</strong>
                 <p>{selecionado.prioridade ?? "-"}</p>
               </div>
+              <div className="finance-card">
+                <strong>SLA</strong>
+                <p>
+                  {selecionado.dataPrazoSla
+                    ? new Date(selecionado.dataPrazoSla).toLocaleString("pt-BR")
+                    : "-"}
+                </p>
+                {selecionado.dataPrazoSla &&
+                  !["RESOLVIDO", "ENCERRADO"].includes(selecionado.status) &&
+                  new Date(selecionado.dataPrazoSla) < new Date() && (
+                    <span className="badge-status badge-status--alerta">
+                      Atrasado
+                    </span>
+                  )}
+              </div>
             </div>
 
             {canEditar && (
@@ -834,6 +998,63 @@ const ChamadosView: React.FC<{
                 ))}
               </ul>
             </div>
+
+            <div className="finance-form-card" style={{ marginTop: 16 }}>
+              <h4>Comentarios</h4>
+              <textarea
+                value={comentario}
+                onChange={(e) => setComentario(e.target.value)}
+                placeholder="Escreva uma atualizacao..."
+              />
+              <button
+                type="button"
+                className="button-secondary"
+                onClick={adicionarComentario}
+                disabled={loading}
+              >
+                Adicionar comentario
+              </button>
+            </div>
+
+            <div className="finance-form-card" style={{ marginTop: 16 }}>
+              <h4>Anexos</h4>
+              <div className="finance-form-inline">
+                <input
+                  type="file"
+                  onChange={(e) =>
+                    setArquivoChamado(e.target.files?.[0] ?? null)
+                  }
+                />
+                <button
+                  type="button"
+                  className="button-secondary"
+                  onClick={enviarAnexo}
+                  disabled={!arquivoChamado || loading}
+                >
+                  Enviar
+                </button>
+              </div>
+              <ul className="list">
+                {anexosChamado.map((a) => (
+                  <li key={a.id}>
+                    <button
+                      type="button"
+                      className="link-button"
+                      onClick={async () => {
+                        const blob = await api.baixarAnexo(token!, a.id);
+                        const url = URL.createObjectURL(blob);
+                        window.open(url, "_blank");
+                      }}
+                    >
+                      {a.nomeArquivo}
+                    </button>
+                  </li>
+                ))}
+                {anexosChamado.length === 0 && (
+                  <li className="empty">Nenhum anexo.</li>
+                )}
+              </ul>
+            </div>
           </>
         )}
       </section>
@@ -846,17 +1067,31 @@ const ReservasView: React.FC<{
   pessoaId: string;
   unidadeId?: string | null;
 }> = ({ organizacao, pessoaId, unidadeId }) => {
-  const { token } = useAuth();
+  const { token, session } = useAuth();
   const [reservas, setReservas] = useState<Reserva[]>([]);
   const [recursos, setRecursos] = useState<RecursoReservavel[]>([]);
   const [dataInicio, setDataInicio] = useState("");
   const [dataFim, setDataFim] = useState("");
-  const [status, setStatus] = useState("SOLICITADA");
+  const [status, setStatus] = useState("PENDENTE");
   const [recursoId, setRecursoId] = useState("");
   const [novoRecursoNome, setNovoRecursoNome] = useState("");
   const [novoRecursoCapacidade, setNovoRecursoCapacidade] = useState("");
+  const [novoRecursoLimite, setNovoRecursoLimite] = useState("");
+  const [novoRecursoExigeAprovacao, setNovoRecursoExigeAprovacao] =
+    useState(false);
+  const [novoRecursoJanelaInicio, setNovoRecursoJanelaInicio] = useState("08:00");
+  const [novoRecursoJanelaFim, setNovoRecursoJanelaFim] = useState("22:00");
+  const [novoRecursoBloqueios, setNovoRecursoBloqueios] = useState("");
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+
+  const membershipAtual = session?.memberships?.find(
+    (m) => m.condoId === organizacao.id && m.isActive
+  );
+  const canEditar =
+    session?.isPlatformAdmin ||
+    membershipAtual?.role === "CONDO_ADMIN" ||
+    membershipAtual?.role === "CONDO_STAFF";
 
   const carregar = async () => {
     if (!token) return;
@@ -906,6 +1141,25 @@ const ReservasView: React.FC<{
     }
   };
 
+  const atualizarStatusReserva = async (reservaId: string, novoStatus: string) => {
+    if (!token) return;
+    try {
+      setErro(null);
+      setLoading(true);
+      const atualizada = await api.atualizarReserva(token, reservaId, {
+        status: novoStatus,
+        observacao: `Atualizado para ${novoStatus}`
+      });
+      setReservas((prev) =>
+        prev.map((r) => (r.id === atualizada.id ? atualizada : r))
+      );
+    } catch (e: any) {
+      setErro(e.message || "Erro ao atualizar reserva");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const criarRecurso = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!token) return;
@@ -919,15 +1173,30 @@ const ReservasView: React.FC<{
       const capacidade = novoRecursoCapacidade.trim()
         ? Number(novoRecursoCapacidade)
         : undefined;
+      const limite = novoRecursoLimite.trim()
+        ? Number(novoRecursoLimite)
+        : undefined;
+      const bloqueios = novoRecursoBloqueios
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean);
       const criado = await api.criarRecurso(token, {
         organizacaoId: organizacao.id,
         nome: novoRecursoNome.trim(),
         capacidade: Number.isFinite(capacidade) ? capacidade : undefined,
-        regrasJson: JSON.stringify({ antecedenciaDias: 7, duracaoHoras: 4 })
+        regrasJson: JSON.stringify({ antecedenciaDias: 7, duracaoHoras: 4 }),
+        limitePorUnidadePorMes: Number.isFinite(limite) ? limite : undefined,
+        exigeAprovacao: novoRecursoExigeAprovacao,
+        janelaHorarioInicio: novoRecursoJanelaInicio,
+        janelaHorarioFim: novoRecursoJanelaFim,
+        bloqueiosJson: bloqueios.length > 0 ? JSON.stringify(bloqueios) : undefined
       });
       setRecursos((prev) => [...prev, criado]);
       setNovoRecursoNome("");
       setNovoRecursoCapacidade("");
+      setNovoRecursoLimite("");
+      setNovoRecursoExigeAprovacao(false);
+      setNovoRecursoBloqueios("");
     } catch (e: any) {
       setErro(e.message || "Erro ao criar recurso");
     } finally {
@@ -970,8 +1239,8 @@ const ReservasView: React.FC<{
           <label>
             Status
             <select value={status} onChange={(e) => setStatus(e.target.value)}>
-              <option value="SOLICITADA">Solicitada</option>
-              <option value="CONFIRMADA">Confirmada</option>
+              <option value="PENDENTE">Pendente</option>
+              <option value="APROVADA">Aprovada</option>
               <option value="CANCELADA">Cancelada</option>
               <option value="CONCLUIDA">Concluida</option>
             </select>
@@ -1001,6 +1270,46 @@ const ReservasView: React.FC<{
               placeholder="80"
             />
           </label>
+          <label>
+            Limite por unidade/mes
+            <input
+              value={novoRecursoLimite}
+              onChange={(e) => setNovoRecursoLimite(e.target.value)}
+              placeholder="2"
+            />
+          </label>
+          <label className="checkbox-row">
+            <input
+              type="checkbox"
+              checked={novoRecursoExigeAprovacao}
+              onChange={(e) => setNovoRecursoExigeAprovacao(e.target.checked)}
+            />
+            Exige aprovacao
+          </label>
+          <label>
+            Janela horario (inicio)
+            <input
+              value={novoRecursoJanelaInicio}
+              onChange={(e) => setNovoRecursoJanelaInicio(e.target.value)}
+              placeholder="08:00"
+            />
+          </label>
+          <label>
+            Janela horario (fim)
+            <input
+              value={novoRecursoJanelaFim}
+              onChange={(e) => setNovoRecursoJanelaFim(e.target.value)}
+              placeholder="22:00"
+            />
+          </label>
+          <label>
+            Bloqueios (datas YYYY-MM-DD)
+            <input
+              value={novoRecursoBloqueios}
+              onChange={(e) => setNovoRecursoBloqueios(e.target.value)}
+              placeholder="2026-02-15,2026-03-01"
+            />
+          </label>
           <button type="submit" disabled={loading}>
             {loading ? "Salvando..." : "Criar recurso"}
           </button>
@@ -1021,6 +1330,7 @@ const ReservasView: React.FC<{
               <th>Inicio</th>
               <th>Fim</th>
               <th>Status</th>
+              {canEditar && <th>Acoes</th>}
             </tr>
           </thead>
           <tbody>
@@ -1030,11 +1340,52 @@ const ReservasView: React.FC<{
                 <td>{r.dataInicio}</td>
                 <td>{r.dataFim}</td>
                 <td>{r.status}</td>
+                {canEditar && (
+                  <td>
+                    {r.status === "PENDENTE" && (
+                      <div className="inline-actions">
+                        <button
+                          type="button"
+                          className="button-secondary"
+                          onClick={() => atualizarStatusReserva(r.id, "APROVADA")}
+                        >
+                          Aprovar
+                        </button>
+                        <button
+                          type="button"
+                          className="button-secondary"
+                          onClick={() => atualizarStatusReserva(r.id, "CANCELADA")}
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                    )}
+                    {r.status === "APROVADA" && (
+                      <div className="inline-actions">
+                        <button
+                          type="button"
+                          className="button-secondary"
+                          onClick={() => atualizarStatusReserva(r.id, "CONCLUIDA")}
+                        >
+                          Concluir
+                        </button>
+                        <button
+                          type="button"
+                          className="button-secondary"
+                          onClick={() => atualizarStatusReserva(r.id, "CANCELADA")}
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                    )}
+                    {r.status !== "PENDENTE" && r.status !== "APROVADA" && "-"}
+                  </td>
+                )}
               </tr>
             ))}
             {reservas.length === 0 && (
               <tr>
-                <td colSpan={4} style={{ textAlign: "center" }}>
+                <td colSpan={canEditar ? 5 : 4} style={{ textAlign: "center" }}>
                   Nenhuma reserva encontrada.
                 </td>
               </tr>

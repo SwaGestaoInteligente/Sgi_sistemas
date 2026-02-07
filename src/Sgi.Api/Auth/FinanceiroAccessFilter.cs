@@ -37,12 +37,17 @@ public class FinanceiroAccessFilter : IAsyncActionFilter
             return;
         }
 
-        var auth = await Authz.EnsureMembershipAsync(
-            _db,
-            user,
-            orgId.Value,
-            UserRole.CONDO_ADMIN,
-            UserRole.CONDO_STAFF);
+        var action = context.ActionDescriptor.RouteValues.TryGetValue("action", out var actionName)
+            ? actionName ?? string.Empty
+            : string.Empty;
+        var roles = action switch
+        {
+            nameof(Controllers.FinanceiroController.ListarCobrancasUnidade) =>
+                new[] { UserRole.CONDO_ADMIN, UserRole.CONDO_STAFF, UserRole.RESIDENT },
+            _ => new[] { UserRole.CONDO_ADMIN, UserRole.CONDO_STAFF }
+        };
+
+        var auth = await Authz.EnsureMembershipAsync(_db, user, orgId.Value, roles);
         if (auth.Error is not null)
         {
             context.Result = auth.Error;
@@ -95,6 +100,24 @@ public class FinanceiroAccessFilter : IAsyncActionFilter
 
     private async Task<Guid?> TryResolveOrganizacaoIdByRoute(ActionExecutingContext context)
     {
+        var action = context.ActionDescriptor.RouteValues.TryGetValue("action", out var actionName)
+            ? actionName ?? string.Empty
+            : string.Empty;
+
+        if (context.ActionArguments.TryGetValue("unidadeId", out var unidadeValue) &&
+            unidadeValue is Guid unidadeId &&
+            unidadeId != Guid.Empty)
+        {
+            if (action is nameof(Controllers.FinanceiroController.ListarCobrancasUnidade) ||
+                action is nameof(Controllers.FinanceiroController.CriarCobrancaUnidade))
+            {
+                return await _db.UnidadesOrganizacionais.AsNoTracking()
+                    .Where(u => u.Id == unidadeId)
+                    .Select(u => (Guid?)u.OrganizacaoId)
+                    .FirstOrDefaultAsync();
+            }
+        }
+
         if (!context.ActionArguments.TryGetValue("id", out var idValue))
         {
             return null;
@@ -105,9 +128,6 @@ public class FinanceiroAccessFilter : IAsyncActionFilter
             return null;
         }
 
-        var action = context.ActionDescriptor.RouteValues.TryGetValue("action", out var actionName)
-            ? actionName ?? string.Empty
-            : string.Empty;
         return action switch
         {
             nameof(Controllers.FinanceiroController.RemoverConta) =>
@@ -169,6 +189,21 @@ public class FinanceiroAccessFilter : IAsyncActionFilter
                 await _db.LancamentosFinanceiros.AsNoTracking()
                     .Where(l => l.Id == id)
                     .Select(l => (Guid?)l.OrganizacaoId)
+                    .FirstOrDefaultAsync(),
+            nameof(Controllers.FinanceiroController.AtualizarCobrancaUnidade) =>
+                await _db.UnidadesCobrancas.AsNoTracking()
+                    .Where(c => c.Id == id)
+                    .Select(c => (Guid?)c.OrganizacaoId)
+                    .FirstOrDefaultAsync(),
+            nameof(Controllers.FinanceiroController.PagarCobrancaUnidade) =>
+                await _db.UnidadesCobrancas.AsNoTracking()
+                    .Where(c => c.Id == id)
+                    .Select(c => (Guid?)c.OrganizacaoId)
+                    .FirstOrDefaultAsync(),
+            nameof(Controllers.FinanceiroController.ListarPagamentosCobranca) =>
+                await _db.UnidadesCobrancas.AsNoTracking()
+                    .Where(c => c.Id == id)
+                    .Select(c => (Guid?)c.OrganizacaoId)
                     .FirstOrDefaultAsync(),
             _ => null
         };

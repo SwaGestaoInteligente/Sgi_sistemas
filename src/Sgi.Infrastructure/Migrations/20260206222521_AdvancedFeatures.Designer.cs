@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Sgi.Infrastructure.Data;
 
@@ -10,9 +11,11 @@ using Sgi.Infrastructure.Data;
 namespace Sgi.Infrastructure.Migrations
 {
     [DbContext(typeof(SgiDbContext))]
-    partial class SgiDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260206222521_AdvancedFeatures")]
+    partial class AdvancedFeatures
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "8.0.0");

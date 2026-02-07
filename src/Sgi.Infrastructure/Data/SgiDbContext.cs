@@ -23,6 +23,9 @@ public class SgiDbContext : DbContext
     public DbSet<UsuarioPapelOrganizacao> UsuariosPapeisOrganizacao => Set<UsuarioPapelOrganizacao>();
     public DbSet<Endereco> Enderecos => Set<Endereco>();
     public DbSet<LogAuditoria> LogsAuditoria => Set<LogAuditoria>();
+    public DbSet<Anexo> Anexos => Set<Anexo>();
+    public DbSet<NotificacaoConfig> NotificacoesConfig => Set<NotificacaoConfig>();
+    public DbSet<NotificacaoEvento> NotificacoesEventos => Set<NotificacaoEvento>();
     public DbSet<Veiculo> Veiculos => Set<Veiculo>();
     public DbSet<Pet> Pets => Set<Pet>();
 
@@ -36,6 +39,9 @@ public class SgiDbContext : DbContext
     public DbSet<RegraRateio> RegrasRateio => Set<RegraRateio>();
     public DbSet<LancamentoRateado> LancamentosRateados => Set<LancamentoRateado>();
     public DbSet<FinanceAudit> FinanceAudits => Set<FinanceAudit>();
+    public DbSet<UnidadeCobranca> UnidadesCobrancas => Set<UnidadeCobranca>();
+    public DbSet<UnidadePagamento> UnidadesPagamentos => Set<UnidadePagamento>();
+    public DbSet<MovimentoBancario> MovimentosBancarios => Set<MovimentoBancario>();
 
     public DbSet<Chamado> Chamados => Set<Chamado>();
     public DbSet<ChamadoHistorico> ChamadosHistorico => Set<ChamadoHistorico>();
@@ -63,6 +69,9 @@ public class SgiDbContext : DbContext
             .HasConversion<string>();
         modelBuilder.Entity<Endereco>().ToTable("Enderecos");
         modelBuilder.Entity<LogAuditoria>().ToTable("LogsAuditoria");
+        modelBuilder.Entity<Anexo>().ToTable("Anexos");
+        modelBuilder.Entity<NotificacaoConfig>().ToTable("NotificacoesConfig");
+        modelBuilder.Entity<NotificacaoEvento>().ToTable("NotificacoesEventos");
         modelBuilder.Entity<Veiculo>().ToTable("Veiculos");
         modelBuilder.Entity<Pet>().ToTable("Pets");
 
@@ -76,6 +85,9 @@ public class SgiDbContext : DbContext
         modelBuilder.Entity<RegraRateio>().ToTable("RegrasRateio");
         modelBuilder.Entity<LancamentoRateado>().ToTable("LancamentosRateados");
         modelBuilder.Entity<FinanceAudit>().ToTable("FinanceAudits");
+        modelBuilder.Entity<UnidadeCobranca>().ToTable("UnidadesCobrancas");
+        modelBuilder.Entity<UnidadePagamento>().ToTable("UnidadesPagamentos");
+        modelBuilder.Entity<MovimentoBancario>().ToTable("MovimentosBancarios");
 
         modelBuilder.Entity<Chamado>().ToTable("Chamados");
         modelBuilder.Entity<ChamadoHistorico>().ToTable("ChamadoHistoricos");
@@ -93,6 +105,9 @@ public class SgiDbContext : DbContext
         AddSource<UserCondoMembership>(modelBuilder);
         AddSource<VinculoPessoaOrganizacao>(modelBuilder);
         AddSource<Endereco>(modelBuilder);
+        AddSource<Anexo>(modelBuilder);
+        AddSource<NotificacaoConfig>(modelBuilder);
+        AddSource<NotificacaoEvento>(modelBuilder);
         AddSource<Veiculo>(modelBuilder);
         AddSource<Pet>(modelBuilder);
 
@@ -106,6 +121,9 @@ public class SgiDbContext : DbContext
         AddSource<RegraRateio>(modelBuilder);
         AddSource<LancamentoRateado>(modelBuilder);
         AddSource<FinanceAudit>(modelBuilder);
+        AddSource<UnidadeCobranca>(modelBuilder);
+        AddSource<UnidadePagamento>(modelBuilder);
+        AddSource<MovimentoBancario>(modelBuilder);
 
         AddSource<Chamado>(modelBuilder);
         AddSource<ChamadoHistorico>(modelBuilder);

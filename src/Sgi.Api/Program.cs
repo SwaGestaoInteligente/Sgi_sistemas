@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Sgi.Api.Auth;
+using Sgi.Api.Services;
 using Sgi.Infrastructure.Data;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -101,121 +102,24 @@ builder.Services.AddSwaggerGen();
 
 builder.Services.AddControllers();
 builder.Services.AddScoped<FinanceiroAccessFilter>();
+builder.Services.AddHostedService<NotificacoesJob>();
 
 var app = builder.Build();
 
-// garante criação do banco/tabelas em ambiente de desenvolvimento simples (SQLite)
-using (var scope = app.Services.CreateScope())
+if (app.Environment.IsDevelopment())
 {
+    using var scope = app.Services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<SgiDbContext>();
-    db.Database.EnsureCreated();
-    db.Database.ExecuteSqlRaw("""
-        CREATE TABLE IF NOT EXISTS UserCondoMemberships (
-            Id TEXT NOT NULL PRIMARY KEY,
-            UsuarioId TEXT NOT NULL,
-            OrganizacaoId TEXT NULL,
-            UnidadeOrganizacionalId TEXT NULL,
-            Role TEXT NOT NULL,
-            IsActive INTEGER NOT NULL DEFAULT 1,
-            CreatedAt TEXT NOT NULL,
-            UpdatedAt TEXT NOT NULL
-        );
-        """);
-    db.Database.ExecuteSqlRaw("""
-        CREATE TABLE IF NOT EXISTS FinanceAudits (
-            Id TEXT NOT NULL PRIMARY KEY,
-            OrganizacaoId TEXT NOT NULL,
-            UsuarioId TEXT NULL,
-            Acao TEXT NOT NULL,
-            Entidade TEXT NOT NULL,
-            EntidadeId TEXT NOT NULL,
-            Detalhes TEXT NULL,
-            DataHora TEXT NOT NULL
-        );
-        """);
-    db.Database.ExecuteSqlRaw("""
-        CREATE TABLE IF NOT EXISTS Veiculos (
-            Id TEXT NOT NULL PRIMARY KEY,
-            OrganizacaoId TEXT NOT NULL,
-            UnidadeOrganizacionalId TEXT NULL,
-            PessoaId TEXT NULL,
-            Placa TEXT NOT NULL,
-            Marca TEXT NOT NULL,
-            Modelo TEXT NOT NULL,
-            Cor TEXT NOT NULL,
-            Status TEXT NOT NULL
-        );
-        """);
-    db.Database.ExecuteSqlRaw("""
-        CREATE TABLE IF NOT EXISTS Pets (
-            Id TEXT NOT NULL PRIMARY KEY,
-            OrganizacaoId TEXT NOT NULL,
-            UnidadeOrganizacionalId TEXT NULL,
-            PessoaId TEXT NULL,
-            Nome TEXT NOT NULL,
-            Especie TEXT NOT NULL,
-            Raca TEXT NULL,
-            Porte TEXT NOT NULL,
-            Status TEXT NOT NULL
-        );
-        """);
-    db.Database.ExecuteSqlRaw("""
-        CREATE TABLE IF NOT EXISTS ChamadoHistoricos (
-            Id TEXT NOT NULL PRIMARY KEY,
-            OrganizacaoId TEXT NOT NULL,
-            ChamadoId TEXT NOT NULL,
-            DataHora TEXT NOT NULL,
-            Acao TEXT NOT NULL,
-            Detalhes TEXT NULL,
-            ResponsavelPessoaId TEXT NULL
-        );
-        """);
-    try
+    if (db.Database.CanConnect())
     {
-        db.Database.ExecuteSqlRaw("ALTER TABLE Chamados ADD COLUMN ResponsavelPessoaId TEXT");
-    }
-    catch
-    {
-        // Ignora se coluna ja existir.
-    }
-
-    var tabelasDemoSource = new[]
-    {
-        "Organizacoes",
-        "UnidadesOrganizacionais",
-        "Pessoas",
-        "UserCondoMemberships",
-        "VinculosPessoaOrganizacao",
-        "Enderecos",
-        "Veiculos",
-        "Pets",
-        "ContasFinanceiras",
-        "PlanosContas",
-        "ItensCobrados",
-        "CentrosCusto",
-        "LancamentosFinanceiros",
-        "DocumentosCobranca",
-        "CotasCondominio",
-        "RegrasRateio",
-        "LancamentosRateados",
-        "FinanceAudits",
-        "Chamados",
-        "ChamadoHistoricos",
-        "RecursosReservaveis",
-        "Reservas"
-    };
-
-    foreach (var tabela in tabelasDemoSource)
-    {
-        try
+        var applied = db.Database.GetAppliedMigrations().ToList();
+        if (applied.Count == 0)
         {
-            db.Database.ExecuteSqlRaw($"ALTER TABLE {tabela} ADD COLUMN Source TEXT");
-        }
-        catch
-        {
-            // Ignora se coluna já existir ou tabela não suportar alteração no momento.
+            await db.Database.EnsureDeletedAsync();
         }
     }
+
+    await db.Database.MigrateAsync();
 }
 
 if (app.Environment.IsDevelopment())

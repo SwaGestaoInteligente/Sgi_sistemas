@@ -14,5 +14,7 @@ public class Chamado
     public Guid? ResponsavelUsuarioId { get; set; }
     public Guid? ResponsavelPessoaId { get; set; }
     public DateTime DataAbertura { get; set; }
+    public int? SlaHoras { get; set; }
+    public DateTime? DataPrazoSla { get; set; }
     public DateTime? DataFechamento { get; set; }
 }

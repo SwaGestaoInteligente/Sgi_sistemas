@@ -12,7 +12,8 @@ import {
   LancamentoFinanceiro,
   Organizacao,
   Pessoa,
-  PlanoContas
+  PlanoContas,
+  RecursoReservavel
 } from "../api";
 import { useAuth } from "../hooks/useAuth";
 
@@ -57,7 +58,7 @@ export const menuFinanceiro: Array<{ id: FinanceiroTab; label: string; badge?: s
   { id: "itensCobrados", label: "Cobrancas" },
   { id: "faturas", label: "Faturas" },
   { id: "inadimplentes", label: "Inadimplentes" },
-  { id: "conciliacaoBancaria", label: "Conciliacao bancaria", badge: "Em breve" },
+  { id: "conciliacaoBancaria", label: "Conciliacao bancaria" },
   { id: "livroPrestacaoContas", label: "Livro de prestacao de contas", badge: "Em breve" },
   { id: "relatorios", label: "Relatorios" }
 ];
@@ -174,6 +175,20 @@ export default function FinanceiroView({
     useState<ConciliacaoImportResponse | null>(null);
   const [conciliandoId, setConciliandoId] = useState<string | null>(null);
   const [conciliados, setConciliados] = useState<string[]>([]);
+  const [contaExtratoId, setContaExtratoId] = useState("");
+
+  // Relatórios dedicados
+  const [relatorioLoading, setRelatorioLoading] = useState(false);
+  const [relatorioChamadosDe, setRelatorioChamadosDe] = useState("");
+  const [relatorioChamadosAte, setRelatorioChamadosAte] = useState("");
+  const [relatorioChamadosStatus, setRelatorioChamadosStatus] = useState("");
+  const [relatorioReservasDe, setRelatorioReservasDe] = useState("");
+  const [relatorioReservasAte, setRelatorioReservasAte] = useState("");
+  const [relatorioReservasRecursoId, setRelatorioReservasRecursoId] =
+    useState("");
+  const [recursosRelatorio, setRecursosRelatorio] = useState<
+    RecursoReservavel[]
+  >([]);
 
   // Plano de contas (categorias financeiras)
   const [novaCategoriaCodigo, setNovaCategoriaCodigo] = useState("");
@@ -294,6 +309,16 @@ export default function FinanceiroView({
     }
   };
 
+  const carregarRecursosRelatorio = async () => {
+    if (!token) return;
+    try {
+      const lista = await api.listarRecursos(token, organizacaoId);
+      setRecursosRelatorio(lista);
+    } catch (e: any) {
+      setErro(e.message || "Erro ao carregar recursos para relatorios");
+    }
+  };
+
   useEffect(() => {
     void carregarContas();
     void carregarDespesas();
@@ -305,6 +330,23 @@ export default function FinanceiroView({
     // Itens cobrados serão carregados sob demanda ao abrir a aba
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, organizacaoId]);
+
+  useEffect(() => {
+    if (contaExtratoId) return;
+    const ativa = contas.find(
+      (c) => (c.status ?? "ativo").toLowerCase() === "ativo"
+    );
+    if (ativa) {
+      setContaExtratoId(ativa.id);
+    }
+  }, [contas, contaExtratoId]);
+
+  useEffect(() => {
+    if (aba !== "relatorios") return;
+    if (!token) return;
+    if (recursosRelatorio.length > 0) return;
+    void carregarRecursosRelatorio();
+  }, [aba, token, organizacaoId, recursosRelatorio.length]);
 
   const handleAbaChange = (novaAba: FinanceiroTab) => {
     setAba(novaAba);
@@ -324,7 +366,8 @@ export default function FinanceiroView({
         const resultado = await api.importarExtrato(
           token,
           organizacaoId,
-          arquivoEnvio
+          arquivoEnvio,
+          contaExtratoId || undefined
         );
         setExtratoImportado(resultado);
         setConciliados([]);
@@ -345,16 +388,40 @@ export default function FinanceiroView({
   const confirmarConciliacao = async (
     item: ConciliacaoImportResponse["itens"][number]
   ) => {
-    if (!token || !item.sugestaoLancamentoId) return;
+    if (!token) return;
+    if (!item.movimentoId) {
+      setErro("Movimento bancario nao identificado para conciliacao.");
+      return;
+    }
+    const chaveConciliacao = item.movimentoId ?? String(item.index);
     try {
       setErro(null);
-      setConciliandoId(item.sugestaoLancamentoId);
-      await api.confirmarConciliacao(token, item.sugestaoLancamentoId, organizacaoId, {
-        dataConciliacao: item.data,
-        documento: item.documento,
-        referencia: item.descricao
-      });
-      setConciliados((prev) => [...prev, item.sugestaoLancamentoId!]);
+      setConciliandoId(chaveConciliacao);
+      if (item.sugestaoTipo === "cobranca_unidade" && item.sugestaoCobrancaId) {
+        await api.vincularMovimentoBancario(token, item.movimentoId, {
+          organizacaoId,
+          cobrancaUnidadeId: item.sugestaoCobrancaId,
+          contaBancariaId: contaExtratoId || undefined
+        });
+      } else if (item.sugestaoLancamentoId) {
+        await api.confirmarConciliacao(
+          token,
+          item.sugestaoLancamentoId,
+          organizacaoId,
+          {
+            dataConciliacao: item.data,
+            documento: item.documento,
+            referencia: item.descricao,
+            movimentoBancarioId: item.movimentoId
+          }
+        );
+      } else {
+        setErro("Nenhuma sugestao disponivel para conciliar.");
+        return;
+      }
+      setConciliados((prev) =>
+        prev.includes(item.movimentoId) ? prev : [...prev, item.movimentoId]
+      );
       await Promise.all([carregarDespesas(), carregarReceitas()]);
     } catch (e: any) {
       setErro(e.message || "Erro ao conciliar lançamento.");
@@ -746,11 +813,12 @@ export default function FinanceiroView({
     normalizarSituacao(situacao) === "cancelado";
 
   const totalContas = contas.length;
-  const contasAtivas = contas.filter((c) => c.status === "ativo").length;
-  const contasInativas = contas.filter((c) => c.status === "inativo").length;
-  const contasTransferencia = contas.filter(
+  const contasAtivasLista = contas.filter(
     (c) => (c.status ?? "ativo").toLowerCase() === "ativo"
   );
+  const contasAtivas = contasAtivasLista.length;
+  const contasInativas = contas.filter((c) => c.status === "inativo").length;
+  const contasTransferencia = contasAtivasLista;
   const saldoInicialTotal = contas.reduce(
     (sum, c) => sum + (c.saldoInicial ?? 0),
     0
@@ -1099,6 +1167,57 @@ export default function FinanceiroView({
     XLSX.writeFile(wb, arquivo);
   };
 
+  const baixarArquivo = (blob: Blob, nome: string) => {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = nome;
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 500);
+  };
+
+  const baixarRelatorio = async (
+    tipo: "chamados" | "reservas" | "veiculos" | "pets",
+    formato: "csv" | "pdf"
+  ) => {
+    if (!token) return;
+    try {
+      setErro(null);
+      setRelatorioLoading(true);
+      const dataStamp = new Date().toISOString().slice(0, 10);
+      let blob: Blob;
+      let arquivo = `relatorio_${tipo}_${dataStamp}.${formato}`;
+
+      if (tipo === "chamados") {
+        blob = await api.relatorioChamados(token, organizacaoId, {
+          de: relatorioChamadosDe || undefined,
+          ate: relatorioChamadosAte || undefined,
+          status: relatorioChamadosStatus || undefined,
+          formato
+        });
+      } else if (tipo === "reservas") {
+        blob = await api.relatorioReservas(token, organizacaoId, {
+          de: relatorioReservasDe || undefined,
+          ate: relatorioReservasAte || undefined,
+          recursoId: relatorioReservasRecursoId || undefined,
+          formato
+        });
+      } else if (tipo === "veiculos") {
+        blob = await api.relatorioVeiculos(token, organizacaoId, "csv");
+        arquivo = `relatorio_veiculos_${dataStamp}.csv`;
+      } else {
+        blob = await api.relatorioPets(token, organizacaoId, "csv");
+        arquivo = `relatorio_pets_${dataStamp}.csv`;
+      }
+
+      baixarArquivo(blob, arquivo);
+    } catch (e: any) {
+      setErro(e.message || "Erro ao baixar relatorio.");
+    } finally {
+      setRelatorioLoading(false);
+    }
+  };
+
   // TODO: corpo completo do FinanceiroView (funções + render)
   return (
     <div ref={topoRef} className="finance-page">
@@ -1165,6 +1284,22 @@ export default function FinanceiroView({
                 <option value="extrato">Extrato bancário</option>
               </select>
             </label>
+            {tipoEnvio === "extrato" && (
+              <label>
+                Conta bancaria
+                <select
+                  value={contaExtratoId}
+                  onChange={(e) => setContaExtratoId(e.target.value)}
+                >
+                  <option value="">Selecionar</option>
+                  {contasAtivasLista.map((conta) => (
+                    <option key={conta.id} value={conta.id}>
+                      {conta.nome}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             <label>
               Arquivo
               <input
@@ -2684,6 +2819,20 @@ export default function FinanceiroView({
             }}
           >
             <label>
+              Conta bancaria
+              <select
+                value={contaExtratoId}
+                onChange={(e) => setContaExtratoId(e.target.value)}
+              >
+                <option value="">Selecionar</option>
+                {contasAtivasLista.map((conta) => (
+                  <option key={conta.id} value={conta.id}>
+                    {conta.nome}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
               Extrato bancário
               <input
                 type="file"
@@ -2701,9 +2850,27 @@ export default function FinanceiroView({
           {extratoImportado && (
             <div className="finance-card-list" style={{ marginTop: 16 }}>
               {extratoImportado.itens.map((item) => {
-                const conciliado = item.sugestaoLancamentoId
-                  ? conciliados.includes(item.sugestaoLancamentoId)
+                const conciliado = item.movimentoId
+                  ? conciliados.includes(item.movimentoId)
                   : false;
+                const chaveItem = item.movimentoId ?? String(item.index);
+                const possuiSugestaoLancamento = !!item.sugestaoLancamentoId;
+                const possuiSugestaoCobranca = !!item.sugestaoCobrancaId;
+                const sugestaoTipo =
+                  item.sugestaoTipo ??
+                  (possuiSugestaoCobranca
+                    ? "cobranca_unidade"
+                    : possuiSugestaoLancamento
+                    ? "lancamento"
+                    : "");
+                const sugestaoLabel =
+                  sugestaoTipo === "cobranca_unidade"
+                    ? "Cobranca por unidade"
+                    : sugestaoTipo === "lancamento"
+                    ? "Lancamento financeiro"
+                    : "";
+                const possuiSugestao =
+                  possuiSugestaoLancamento || possuiSugestaoCobranca;
                 return (
                   <div key={item.index} className="finance-item-card">
                     <div className="finance-item-main">
@@ -2723,22 +2890,28 @@ export default function FinanceiroView({
                             currency: "BRL"
                           })}
                         </span>
-                        <span className="badge-status badge-status--conciliado">
+                        <span
+                          className={`badge-status ${
+                            conciliado
+                              ? "badge-status--conciliado"
+                              : "badge-status--pendente"
+                          }`}
+                        >
                           {conciliado ? "Conciliado" : "Pendente"}
                         </span>
                       </div>
                     </div>
                     <div className="finance-item-actions">
-                      {item.sugestaoLancamentoId ? (
+                      {possuiSugestao ? (
                         <button
                           type="button"
                           className="action-primary"
-                          disabled={conciliado || conciliandoId === item.sugestaoLancamentoId}
+                          disabled={conciliado || conciliandoId === chaveItem}
                           onClick={() => void confirmarConciliacao(item)}
                         >
                           {conciliado
                             ? "Conciliado"
-                            : conciliandoId === item.sugestaoLancamentoId
+                            : conciliandoId === chaveItem
                             ? "Conciliando..."
                             : "Conciliar"}
                         </button>
@@ -2751,6 +2924,7 @@ export default function FinanceiroView({
                     {item.sugestaoDescricao && (
                       <div className="finance-item-sub">
                         Sugestão: {item.sugestaoDescricao}
+                        {sugestaoLabel && ` • ${sugestaoLabel}`}
                       </div>
                     )}
                   </div>
@@ -3023,127 +3197,294 @@ export default function FinanceiroView({
       )}
 
       {aba === "relatorios" && (
-        <div className="finance-table-card" style={{ marginTop: 12 }}>
-          <div className="finance-table-header">
-            <div>
-              <h3>Relatorios - Balancete simples</h3>
+        <div className="finance-layout">
+          <section className="finance-form-card">
+            <div className="finance-table-header">
+              <div>
+                <h3>Relatorios dedicados</h3>
+                <p className="finance-form-sub">
+                  Exportacoes com filtros por modulo.
+                </p>
+              </div>
             </div>
-            <div className="finance-card-actions">
-              <button type="button" onClick={() => void gerarRelatorioPdf()}>
-                PDF
-              </button>
-              <button type="button" onClick={gerarRelatorioExcel}>
-                Excel
-              </button>
-              <button type="button" onClick={() => handleAbaChange("contas")}>
-                Voltar
-              </button>
-            </div>
-          </div>
 
-          <div className="finance-card-grid" style={{ marginTop: 12 }}>
-            <div className="finance-card">
-              <div className="finance-card-header-row">
-                <strong>Total de receitas</strong>
+            <div className="finance-card-grid" style={{ marginTop: 8 }}>
+              <div className="finance-card">
+                <div className="finance-card-header-row">
+                  <strong>Chamados</strong>
+                </div>
+                <div className="finance-form-inline" style={{ marginTop: 8 }}>
+                  <label>
+                    De
+                    <input
+                      type="date"
+                      value={relatorioChamadosDe}
+                      onChange={(e) => setRelatorioChamadosDe(e.target.value)}
+                    />
+                  </label>
+                  <label>
+                    Ate
+                    <input
+                      type="date"
+                      value={relatorioChamadosAte}
+                      onChange={(e) => setRelatorioChamadosAte(e.target.value)}
+                    />
+                  </label>
+                  <label>
+                    Status
+                    <select
+                      value={relatorioChamadosStatus}
+                      onChange={(e) => setRelatorioChamadosStatus(e.target.value)}
+                    >
+                      <option value="">Todos</option>
+                      <option value="ABERTO">Aberto</option>
+                      <option value="EM_ATENDIMENTO">Em atendimento</option>
+                      <option value="AGUARDANDO">Aguardando</option>
+                      <option value="RESOLVIDO">Resolvido</option>
+                      <option value="ENCERRADO">Encerrado</option>
+                    </select>
+                  </label>
+                </div>
+                <div className="inline-actions" style={{ marginTop: 8 }}>
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    onClick={() => void baixarRelatorio("chamados", "csv")}
+                    disabled={relatorioLoading}
+                  >
+                    CSV
+                  </button>
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    onClick={() => void baixarRelatorio("chamados", "pdf")}
+                    disabled={relatorioLoading}
+                  >
+                    PDF
+                  </button>
+                </div>
               </div>
-              <p>
-                {totalReceitas.toLocaleString("pt-BR", {
-                  style: "currency",
-                  currency: "BRL"
-                })}
-              </p>
-            </div>
-            <div className="finance-card">
-              <div className="finance-card-header-row">
-                <strong>Total de despesas</strong>
-              </div>
-              <p>
-                {totalDespesas.toLocaleString("pt-BR", {
-                  style: "currency",
-                  currency: "BRL"
-                })}
-              </p>
-            </div>
-            <div className="finance-card">
-              <div className="finance-card-header-row">
-                <strong>Saldo do periodo</strong>
-              </div>
-              <p>
-                {saldoPeriodo.toLocaleString("pt-BR", {
-                  style: "currency",
-                  currency: "BRL"
-                })}
-              </p>
-            </div>
-          </div>
 
-          <div style={{ marginTop: 16 }}>
-            <h4>Receitas por categoria</h4>
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Categoria</th>
-                  <th>Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                {Object.entries(totalReceitasPorCategoria).map(
-                  ([id, total]) => (
-                    <tr key={id}>
-                      <td>{categoriasReceitaPorId[id] ?? "Sem categoria"}</td>
-                      <td>
-                        {total.toLocaleString("pt-BR", {
-                          style: "currency",
-                          currency: "BRL"
-                        })}
+              <div className="finance-card">
+                <div className="finance-card-header-row">
+                  <strong>Reservas</strong>
+                </div>
+                <div className="finance-form-inline" style={{ marginTop: 8 }}>
+                  <label>
+                    De
+                    <input
+                      type="date"
+                      value={relatorioReservasDe}
+                      onChange={(e) => setRelatorioReservasDe(e.target.value)}
+                    />
+                  </label>
+                  <label>
+                    Ate
+                    <input
+                      type="date"
+                      value={relatorioReservasAte}
+                      onChange={(e) => setRelatorioReservasAte(e.target.value)}
+                    />
+                  </label>
+                  <label>
+                    Recurso
+                    <select
+                      value={relatorioReservasRecursoId}
+                      onChange={(e) =>
+                        setRelatorioReservasRecursoId(e.target.value)
+                      }
+                    >
+                      <option value="">Todos</option>
+                      {recursosRelatorio.map((recurso) => (
+                        <option key={recurso.id} value={recurso.id}>
+                          {recurso.nome}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <div className="inline-actions" style={{ marginTop: 8 }}>
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    onClick={() => void baixarRelatorio("reservas", "csv")}
+                    disabled={relatorioLoading}
+                  >
+                    CSV
+                  </button>
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    onClick={() => void baixarRelatorio("reservas", "pdf")}
+                    disabled={relatorioLoading}
+                  >
+                    PDF
+                  </button>
+                </div>
+              </div>
+
+              <div className="finance-card">
+                <div className="finance-card-header-row">
+                  <strong>Veiculos</strong>
+                </div>
+                <p className="finance-form-sub">
+                  Exporta lista completa de veiculos cadastrados.
+                </p>
+                <div className="inline-actions" style={{ marginTop: 8 }}>
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    onClick={() => void baixarRelatorio("veiculos", "csv")}
+                    disabled={relatorioLoading}
+                  >
+                    CSV
+                  </button>
+                </div>
+              </div>
+
+              <div className="finance-card">
+                <div className="finance-card-header-row">
+                  <strong>Pets</strong>
+                </div>
+                <p className="finance-form-sub">
+                  Exporta lista completa de pets cadastrados.
+                </p>
+                <div className="inline-actions" style={{ marginTop: 8 }}>
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    onClick={() => void baixarRelatorio("pets", "csv")}
+                    disabled={relatorioLoading}
+                  >
+                    CSV
+                  </button>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section className="finance-table-card" style={{ marginTop: 12 }}>
+            <div className="finance-table-header">
+              <div>
+                <h3>Relatorios - Balancete simples</h3>
+              </div>
+              <div className="finance-card-actions">
+                <button type="button" onClick={() => void gerarRelatorioPdf()}>
+                  PDF
+                </button>
+                <button type="button" onClick={gerarRelatorioExcel}>
+                  Excel
+                </button>
+                <button type="button" onClick={() => handleAbaChange("contas")}>
+                  Voltar
+                </button>
+              </div>
+            </div>
+
+            <div className="finance-card-grid" style={{ marginTop: 12 }}>
+              <div className="finance-card">
+                <div className="finance-card-header-row">
+                  <strong>Total de receitas</strong>
+                </div>
+                <p>
+                  {totalReceitas.toLocaleString("pt-BR", {
+                    style: "currency",
+                    currency: "BRL"
+                  })}
+                </p>
+              </div>
+              <div className="finance-card">
+                <div className="finance-card-header-row">
+                  <strong>Total de despesas</strong>
+                </div>
+                <p>
+                  {totalDespesas.toLocaleString("pt-BR", {
+                    style: "currency",
+                    currency: "BRL"
+                  })}
+                </p>
+              </div>
+              <div className="finance-card">
+                <div className="finance-card-header-row">
+                  <strong>Saldo do periodo</strong>
+                </div>
+                <p>
+                  {saldoPeriodo.toLocaleString("pt-BR", {
+                    style: "currency",
+                    currency: "BRL"
+                  })}
+                </p>
+              </div>
+            </div>
+
+            <div style={{ marginTop: 16 }}>
+              <h4>Receitas por categoria</h4>
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Categoria</th>
+                    <th>Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Object.entries(totalReceitasPorCategoria).map(
+                    ([id, total]) => (
+                      <tr key={id}>
+                        <td>{categoriasReceitaPorId[id] ?? "Sem categoria"}</td>
+                        <td>
+                          {total.toLocaleString("pt-BR", {
+                            style: "currency",
+                            currency: "BRL"
+                          })}
+                        </td>
+                      </tr>
+                    )
+                  )}
+                  {Object.keys(totalReceitasPorCategoria).length === 0 && (
+                    <tr>
+                      <td colSpan={2} style={{ textAlign: "center" }}>
+                        Nenhuma receita cadastrada ainda.
                       </td>
                     </tr>
-                  )
-                )}
-                {Object.keys(totalReceitasPorCategoria).length === 0 && (
-                  <tr>
-                    <td colSpan={2} style={{ textAlign: "center" }}>
-                      Nenhuma receita cadastrada ainda.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+                  )}
+                </tbody>
+              </table>
+            </div>
 
-          <div style={{ marginTop: 16 }}>
-            <h4>Despesas por categoria</h4>
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Categoria</th>
-                  <th>Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                {Object.entries(totalDespesasPorCategoria).map(
-                  ([id, total]) => (
-                    <tr key={id}>
-                      <td>{categoriasDespesaPorId[id] ?? "Sem categoria"}</td>
-                      <td>
-                        {total.toLocaleString("pt-BR", {
-                          style: "currency",
-                          currency: "BRL"
-                        })}
+            <div style={{ marginTop: 16 }}>
+              <h4>Despesas por categoria</h4>
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Categoria</th>
+                    <th>Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Object.entries(totalDespesasPorCategoria).map(
+                    ([id, total]) => (
+                      <tr key={id}>
+                        <td>{categoriasDespesaPorId[id] ?? "Sem categoria"}</td>
+                        <td>
+                          {total.toLocaleString("pt-BR", {
+                            style: "currency",
+                            currency: "BRL"
+                          })}
+                        </td>
+                      </tr>
+                    )
+                  )}
+                  {Object.keys(totalDespesasPorCategoria).length === 0 && (
+                    <tr>
+                      <td colSpan={2} style={{ textAlign: "center" }}>
+                        Nenhuma despesa cadastrada ainda.
                       </td>
                     </tr>
-                  )
-                )}
-                {Object.keys(totalDespesasPorCategoria).length === 0 && (
-                  <tr>
-                    <td colSpan={2} style={{ textAlign: "center" }}>
-                      Nenhuma despesa cadastrada ainda.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
         </div>
       )}
     </div>

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -31,8 +32,8 @@ public class OperacaoController : ControllerBase
 
     private static readonly HashSet<string> StatusReservaValidos = new(StringComparer.OrdinalIgnoreCase)
     {
-        "SOLICITADA",
-        "CONFIRMADA",
+        "PENDENTE",
+        "APROVADA",
         "CANCELADA",
         "CONCLUIDA"
     };
@@ -57,10 +58,32 @@ public class OperacaoController : ControllerBase
         return PrioridadesChamadoValidas.Contains(valor) ? valor : "MEDIA";
     }
 
+    private static int CalcularSlaHoras(string prioridade)
+    {
+        return prioridade switch
+        {
+            "URGENTE" => 8,
+            "ALTA" => 24,
+            "MEDIA" => 48,
+            "BAIXA" => 72,
+            _ => 48
+        };
+    }
+
     private static string NormalizarStatusReserva(string? status)
     {
-        var valor = string.IsNullOrWhiteSpace(status) ? "SOLICITADA" : status.Trim().ToUpperInvariant();
-        return StatusReservaValidos.Contains(valor) ? valor : "SOLICITADA";
+        var valor = string.IsNullOrWhiteSpace(status) ? "PENDENTE" : status.Trim().ToUpperInvariant();
+        if (valor == "SOLICITADA")
+        {
+            valor = "PENDENTE";
+        }
+
+        if (valor == "CONFIRMADA")
+        {
+            valor = "APROVADA";
+        }
+
+        return StatusReservaValidos.Contains(valor) ? valor : "PENDENTE";
     }
 
     private async Task RegistrarHistoricoChamado(Guid organizacaoId, Guid chamadoId, string acao, string? detalhes, Guid? responsavelPessoaId)
@@ -165,6 +188,8 @@ public class OperacaoController : ControllerBase
         model.DataAbertura = DateTime.UtcNow;
         model.Status = NormalizarStatusChamado(model.Status);
         model.Prioridade = NormalizarPrioridade(model.Prioridade);
+        model.SlaHoras ??= CalcularSlaHoras(model.Prioridade ?? "MEDIA");
+        model.DataPrazoSla ??= model.DataAbertura.AddHours(model.SlaHoras.Value);
         _db.Chamados.Add(model);
         await _db.SaveChangesAsync();
         await RegistrarHistoricoChamado(model.OrganizacaoId, model.Id, "CRIADO", "Chamado criado.", model.ResponsavelPessoaId);
@@ -197,12 +222,19 @@ public class OperacaoController : ControllerBase
             return auth.Error;
         }
 
+        var detalhes = new List<string>();
+
         if (!string.IsNullOrWhiteSpace(request.Status))
         {
             var status = request.Status.Trim().ToUpperInvariant();
             if (!StatusChamadoValidos.Contains(status))
             {
                 return BadRequest("Status invalido.");
+            }
+
+            if (!string.Equals(chamado.Status, status, StringComparison.OrdinalIgnoreCase))
+            {
+                detalhes.Add($"Status: {chamado.Status} -> {status}");
             }
 
             chamado.Status = status;
@@ -220,11 +252,22 @@ public class OperacaoController : ControllerBase
                 return BadRequest("Prioridade invalida.");
             }
 
+            if (!string.Equals(chamado.Prioridade, prioridade, StringComparison.OrdinalIgnoreCase))
+            {
+                detalhes.Add($"Prioridade: {chamado.Prioridade} -> {prioridade}");
+            }
+
             chamado.Prioridade = prioridade;
+            chamado.SlaHoras = CalcularSlaHoras(prioridade);
+            chamado.DataPrazoSla = chamado.DataAbertura.AddHours(chamado.SlaHoras.Value);
         }
 
         if (request.ResponsavelPessoaId.HasValue)
         {
+            if (chamado.ResponsavelPessoaId != request.ResponsavelPessoaId)
+            {
+                detalhes.Add("Responsavel atualizado.");
+            }
             chamado.ResponsavelPessoaId = request.ResponsavelPessoaId.Value;
         }
 
@@ -233,10 +276,58 @@ public class OperacaoController : ControllerBase
             chamado.OrganizacaoId,
             chamado.Id,
             "ATUALIZADO",
-            request.Observacao ?? "Atualizacao de chamado.",
+            request.Observacao ?? (detalhes.Count > 0 ? string.Join(" | ", detalhes) : "Atualizacao de chamado."),
             request.ResponsavelPessoaId ?? chamado.ResponsavelPessoaId);
 
         return Ok(chamado);
+    }
+
+    public record CriarComentarioChamadoRequest(string Mensagem);
+
+    [HttpPost("chamados/{id:guid}/comentarios")]
+    public async Task<IActionResult> AdicionarComentarioChamado(Guid id, CriarComentarioChamadoRequest request)
+    {
+        var chamado = await _db.Chamados.FindAsync(id);
+        if (chamado is null)
+        {
+            return NotFound();
+        }
+
+        var auth = await Authz.EnsureMembershipAsync(
+            _db,
+            User,
+            chamado.OrganizacaoId,
+            UserRole.CONDO_ADMIN,
+            UserRole.CONDO_STAFF,
+            UserRole.RESIDENT);
+        if (auth.Error is not null)
+        {
+            return auth.Error;
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Mensagem))
+        {
+            return BadRequest("Mensagem e obrigatoria.");
+        }
+
+        var usuarioId = Authz.GetUserId(User);
+        Guid? pessoaId = null;
+        if (usuarioId.HasValue)
+        {
+            pessoaId = await _db.Usuarios.AsNoTracking()
+                .Where(u => u.Id == usuarioId.Value)
+                .Select(u => (Guid?)u.PessoaId)
+                .FirstOrDefaultAsync();
+        }
+
+        await RegistrarHistoricoChamado(
+            chamado.OrganizacaoId,
+            chamado.Id,
+            "COMENTARIO",
+            request.Mensagem.Trim(),
+            pessoaId);
+
+        return NoContent();
     }
 
     [HttpGet("chamados/{id:guid}/historico")]
@@ -275,6 +366,11 @@ public class OperacaoController : ControllerBase
         public string? Tipo { get; set; }
         public int? Capacidade { get; set; }
         public string? RegrasJson { get; set; }
+        public int? LimitePorUnidadePorMes { get; set; }
+        public bool? ExigeAprovacao { get; set; }
+        public string? JanelaHorarioInicio { get; set; }
+        public string? JanelaHorarioFim { get; set; }
+        public string? BloqueiosJson { get; set; }
         public bool? Ativo { get; set; }
     }
 
@@ -338,6 +434,11 @@ public class OperacaoController : ControllerBase
             Tipo = string.IsNullOrWhiteSpace(request.Tipo) ? "area_comum" : request.Tipo.Trim(),
             Capacidade = request.Capacidade,
             RegrasJson = request.RegrasJson,
+            LimitePorUnidadePorMes = request.LimitePorUnidadePorMes,
+            ExigeAprovacao = request.ExigeAprovacao ?? false,
+            JanelaHorarioInicio = request.JanelaHorarioInicio,
+            JanelaHorarioFim = request.JanelaHorarioFim,
+            BloqueiosJson = request.BloqueiosJson,
             Ativo = request.Ativo ?? true
         };
 
@@ -380,6 +481,14 @@ public class OperacaoController : ControllerBase
         recurso.Tipo = string.IsNullOrWhiteSpace(request.Tipo) ? recurso.Tipo : request.Tipo.Trim();
         recurso.Capacidade = request.Capacidade;
         recurso.RegrasJson = request.RegrasJson;
+        recurso.LimitePorUnidadePorMes = request.LimitePorUnidadePorMes ?? recurso.LimitePorUnidadePorMes;
+        if (request.ExigeAprovacao.HasValue)
+        {
+            recurso.ExigeAprovacao = request.ExigeAprovacao.Value;
+        }
+        recurso.JanelaHorarioInicio = request.JanelaHorarioInicio ?? recurso.JanelaHorarioInicio;
+        recurso.JanelaHorarioFim = request.JanelaHorarioFim ?? recurso.JanelaHorarioFim;
+        recurso.BloqueiosJson = request.BloqueiosJson ?? recurso.BloqueiosJson;
         recurso.Ativo = request.Ativo ?? recurso.Ativo;
         recurso.UnidadeOrganizacionalId = request.UnidadeOrganizacionalId ?? recurso.UnidadeOrganizacionalId;
 
@@ -519,9 +628,45 @@ public class OperacaoController : ControllerBase
             return BadRequest("Recurso nao encontrado para este condominio.");
         }
 
+        if (!recurso.Ativo)
+        {
+            return BadRequest("Recurso indisponivel.");
+        }
+
         if (model.DataFim <= model.DataInicio)
         {
             return BadRequest("DataFim deve ser maior que DataInicio.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(recurso.JanelaHorarioInicio) &&
+            !string.IsNullOrWhiteSpace(recurso.JanelaHorarioFim) &&
+            TimeSpan.TryParse(recurso.JanelaHorarioInicio, out var inicioJanela) &&
+            TimeSpan.TryParse(recurso.JanelaHorarioFim, out var fimJanela))
+        {
+            var inicioReserva = model.DataInicio.TimeOfDay;
+            var fimReserva = model.DataFim.TimeOfDay;
+            if (inicioReserva < inicioJanela || fimReserva > fimJanela)
+            {
+                return BadRequest("Horario fora da janela permitida.");
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(recurso.BloqueiosJson))
+        {
+            try
+            {
+                var bloqueios = JsonSerializer.Deserialize<List<string>>(recurso.BloqueiosJson) ?? new List<string>();
+                var diasBloqueados = new HashSet<string>(bloqueios.Select(b => b.Trim()), StringComparer.OrdinalIgnoreCase);
+                if (diasBloqueados.Contains(model.DataInicio.ToString("yyyy-MM-dd")) ||
+                    diasBloqueados.Contains(model.DataFim.ToString("yyyy-MM-dd")))
+                {
+                    return BadRequest("Data bloqueada para este recurso.");
+                }
+            }
+            catch
+            {
+                // Ignora bloqueios invalidos.
+            }
         }
 
         var conflito = await _db.Reservas.AsNoTracking()
@@ -529,9 +674,7 @@ public class OperacaoController : ControllerBase
             .Where(r =>
                 r.Status == null ||
                 (r.Status != "CANCELADA" &&
-                 r.Status != "cancelada" &&
-                 r.Status != "CONCLUIDA" &&
-                 r.Status != "concluida"))
+                 r.Status != "cancelada"))
             .AnyAsync(r => r.DataInicio < model.DataFim && r.DataFim > model.DataInicio);
 
         if (conflito)
@@ -539,14 +682,35 @@ public class OperacaoController : ControllerBase
             return BadRequest("Horario indisponivel para este recurso.");
         }
 
+        if (recurso.LimitePorUnidadePorMes.HasValue && model.UnidadeOrganizacionalId.HasValue)
+        {
+            var referencia = new DateTime(model.DataInicio.Year, model.DataInicio.Month, 1);
+            var limite = recurso.LimitePorUnidadePorMes.Value;
+            var quantidade = await _db.Reservas.AsNoTracking()
+                .Where(r => r.RecursoReservavelId == model.RecursoReservavelId)
+                .Where(r => r.UnidadeOrganizacionalId == model.UnidadeOrganizacionalId)
+                .Where(r => r.Status != "CANCELADA" && r.Status != "cancelada")
+                .Where(r => r.DataInicio >= referencia && r.DataInicio < referencia.AddMonths(1))
+                .CountAsync();
+            if (quantidade >= limite)
+            {
+                return BadRequest("Limite de reservas por unidade atingido.");
+            }
+        }
+
         model.Id = Guid.NewGuid();
-        model.Status = NormalizarStatusReserva(model.Status);
+        model.DataSolicitacao = DateTime.UtcNow;
+        model.Status = recurso.ExigeAprovacao ? "PENDENTE" : NormalizarStatusReserva(model.Status);
+        if (!recurso.ExigeAprovacao)
+        {
+            model.DataAprovacao = DateTime.UtcNow;
+        }
         _db.Reservas.Add(model);
         await _db.SaveChangesAsync();
         return CreatedAtAction(nameof(ListarReservas), new { id = model.Id }, model);
     }
 
-    public record AtualizarReservaRequest(string? Status);
+    public record AtualizarReservaRequest(string? Status, string? Observacao);
 
     [HttpPatch("reservas/{id:guid}")]
     public async Task<IActionResult> AtualizarReserva(Guid id, AtualizarReservaRequest request)
@@ -576,6 +740,26 @@ public class OperacaoController : ControllerBase
                 return BadRequest("Status invalido.");
             }
             reserva.Status = status;
+            if (status == "APROVADA")
+            {
+                reserva.DataAprovacao ??= DateTime.UtcNow;
+                var usuarioId = Authz.GetUserId(User);
+                if (usuarioId.HasValue)
+                {
+                    var pessoaId = await _db.Usuarios.AsNoTracking()
+                        .Where(u => u.Id == usuarioId.Value)
+                        .Select(u => u.PessoaId)
+                        .FirstOrDefaultAsync();
+                    if (pessoaId != Guid.Empty)
+                    {
+                        reserva.AprovadorPessoaId = pessoaId;
+                    }
+                }
+            }
+            if (status == "CANCELADA")
+            {
+                reserva.Observacao = request.Observacao;
+            }
         }
 
         await _db.SaveChangesAsync();

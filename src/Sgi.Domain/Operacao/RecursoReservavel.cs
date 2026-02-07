@@ -9,6 +9,10 @@ public class RecursoReservavel
     public string Tipo { get; set; } = string.Empty;
     public int? Capacidade { get; set; }
     public string? RegrasJson { get; set; }
+    public int? LimitePorUnidadePorMes { get; set; }
+    public bool ExigeAprovacao { get; set; }
+    public string? JanelaHorarioInicio { get; set; }
+    public string? JanelaHorarioFim { get; set; }
+    public string? BloqueiosJson { get; set; }
     public bool Ativo { get; set; } = true;
 }
-

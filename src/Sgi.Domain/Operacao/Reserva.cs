@@ -12,5 +12,8 @@ public class Reserva
     public string Status { get; set; } = string.Empty;
     public decimal? ValorTotal { get; set; }
     public Guid? LancamentoFinanceiroId { get; set; }
+    public DateTime DataSolicitacao { get; set; }
+    public DateTime? DataAprovacao { get; set; }
+    public Guid? AprovadorPessoaId { get; set; }
+    public string? Observacao { get; set; }
 }
-
