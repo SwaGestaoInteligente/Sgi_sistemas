@@ -82,7 +82,17 @@ App/UI:
 - Web: http://localhost:5173
 - API: http://localhost:7000
 
-## 9. Seeds (dev)
+## 9. Reset DEV e migrations
+- O alvo do SQLite fica no appsettings: `ConnectionStrings:DefaultConnection = Data Source=sgi.db`.
+- Para resetar DEV, apague o arquivo `sgi.db` (normalmente em `src/Sgi.Api/`).
+- Aplique migrations: `dotnet ef database update` (rodar em `src/Sgi.Api/`).
+- Em Development, a API aplica migrations automaticamente no startup.
+
+## 10. Rodar API em Development
+- Defina `ASPNETCORE_ENVIRONMENT=Development`.
+- Rode a API com `dotnet run` em `src/Sgi.Api/`.
+
+## 11. Seeds (dev)
 - /api/dev/seed-admin
   - admin@teste.com / Admin@123
   - sindico@teste.com / Sindico@123
@@ -90,11 +100,11 @@ App/UI:
   - morador@teste.com / Morador@123
 - /api/dev/seed-demo-full
 
-## 10. Jobs
+## 12. Jobs
 - NotificacoesJob roda a cada 3 min e gera eventos de alerta.
 
-## 11. Migrations base
+## 13. Migrations base
 - 20260206222521_AdvancedFeatures
 
-## 12. Regra de expansao
+## 14. Regra de expansao
 Qualquer expansao exige decisao de um eixo unico antes de implementar.

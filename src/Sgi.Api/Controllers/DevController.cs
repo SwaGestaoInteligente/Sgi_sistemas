@@ -56,20 +56,6 @@ public class DevController : ControllerBase
         const string moradorEmail = "morador@teste.com";
         const string moradorSenha = "Morador@123";
 
-        await _db.Database.EnsureCreatedAsync();
-        await _db.Database.ExecuteSqlRawAsync("""
-            CREATE TABLE IF NOT EXISTS UserCondoMemberships (
-                Id TEXT NOT NULL PRIMARY KEY,
-                UsuarioId TEXT NOT NULL,
-                OrganizacaoId TEXT NULL,
-                UnidadeOrganizacionalId TEXT NULL,
-                Role TEXT NOT NULL,
-                IsActive INTEGER NOT NULL DEFAULT 1,
-                CreatedAt TEXT NOT NULL,
-                UpdatedAt TEXT NOT NULL
-            );
-            """);
-
         var admin = await EnsureUserAsync(adminEmail, adminSenha, "Usuario Admin");
 
         var organizacao = await _db.Organizacoes.AsNoTracking().FirstOrDefaultAsync();
@@ -144,8 +130,6 @@ public class DevController : ControllerBase
         const string porteiroSenha = "Porteiro@123";
         const string moradorEmail = "morador@teste.com";
         const string moradorSenha = "Morador@123";
-
-        await _db.Database.MigrateAsync();
 
         var demoOrgIds = await _db.Organizacoes.AsNoTracking()
             .Where(o =>
