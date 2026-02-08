@@ -12,7 +12,7 @@ export const menuConfiguracoes: Array<{ id: ConfiguracoesTab; label: string }> =
   { id: "cadastros-base", label: "Cadastros base" },
   { id: "estrutura-condominio", label: "Estrutura do condominio" },
   { id: "pessoas-papeis", label: "Pessoas & papeis" },
-  { id: "financeiro-base", label: "Financeiro (base)" }
+  { id: "financeiro-base", label: "Financeiro - Configuracoes" }
 ];
 
 type CadastroBaseTipo =
@@ -2143,7 +2143,10 @@ export default function ConfiguracoesView(props: ConfiguracoesViewProps) {
     );
   }
 
-  return renderCards("Financeiro (base)", "Definicoes do financeiro vivo.", [
+  return renderCards(
+    "Financeiro - Configuracoes",
+    "Parametros que sustentam o financeiro.",
+    [
     {
       id: "plano-contas",
       title: "Plano de contas",

@@ -96,6 +96,72 @@ export interface PlanoContas {
   parentId?: string;
 }
 
+export interface ContaContabil {
+  id: string;
+  organizacaoId: string;
+  codigo: string;
+  nome: string;
+  grupo: string;
+  natureza: string;
+  nivel: number;
+  parentId?: string | null;
+  ativa: boolean;
+  codigoReferencialSped?: string | null;
+}
+
+export interface PeriodoContabil {
+  id: string;
+  organizacaoId: string;
+  competenciaInicio: string;
+  competenciaFim: string;
+  status: string;
+  fechadoEm?: string | null;
+  fechadoPor?: string | null;
+  observacao?: string | null;
+}
+
+export interface PartidaContabil {
+  id: string;
+  lancamentoContabilId: string;
+  contaContabilId: string;
+  tipo: string;
+  valor: number;
+  centroCustoId?: string | null;
+}
+
+export interface LancamentoContabil {
+  id: string;
+  organizacaoId: string;
+  dataLancamento: string;
+  competencia: string;
+  historico: string;
+  origem?: string | null;
+  lancamentoFinanceiroId?: string | null;
+  status: string;
+  partidas?: PartidaContabil[];
+}
+
+export interface BalanceteItem {
+  contaId: string;
+  codigo: string;
+  nome: string;
+  debitos: number;
+  creditos: number;
+  saldo: number;
+}
+
+export interface DreResumo {
+  receitas: number;
+  despesas: number;
+  resultado: number;
+}
+
+export interface BalancoResumo {
+  ativo: number;
+  passivo: number;
+  patrimonio: number;
+}
+
 export interface CotaCondominial {
   id: string;
   organizacaoId: string;
@@ -1911,6 +1977,241 @@ export const api = {
     await request<void>(
       `/anexos/${encodeURIComponent(anexoId)}`,
       { method: "DELETE" },
+      token
+    );
+  },
+
+  async listarContasContabeis(
+    token: string,
+    organizacaoId: string
+  ): Promise<ContaContabil[]> {
+    const path = `/Contabilidade/contas?organizacaoId=${encodeURIComponent(
+      organizacaoId
+    )}`;
+    return request<ContaContabil[]>(path, {}, token);
+  },
+
+  async criarContaContabil(
+    token: string,
+    payload: {
+      organizacaoId: string;
+      codigo: string;
+      nome: string;
+      grupo: string;
+      natureza: string;
+      nivel?: number | null;
+      parentId?: string | null;
+      codigoReferencialSped?: string | null;
+    }
+  ): Promise<ContaContabil> {
+    return request<ContaContabil>(
+      "/Contabilidade/contas",
+      {
+        method: "POST",
+        body: JSON.stringify(payload)
+      },
+      token
+    );
+  },
+
+  async atualizarContaContabil(
+    token: string,
+    id: string,
+    payload: {
+      codigo: string;
+      nome: string;
+      grupo: string;
+      natureza: string;
+      nivel?: number | null;
+      parentId?: string | null;
+      ativa: boolean;
+      codigoReferencialSped?: string | null;
+    }
+  ): Promise<void> {
+    await request<void>(
+      `/Contabilidade/contas/${encodeURIComponent(id)}`,
+      {
+        method: "PUT",
+        body: JSON.stringify(payload)
+      },
+      token
+    );
+  },
+
+  async listarPeriodosContabeis(
+    token: string,
+    organizacaoId: string
+  ): Promise<PeriodoContabil[]> {
+    const path = `/Contabilidade/periodos?organizacaoId=${encodeURIComponent(
+      organizacaoId
+    )}`;
+    return request<PeriodoContabil[]>(path, {}, token);
+  },
+
+  async criarPeriodoContabil(
+    token: string,
+    payload: {
+      organizacaoId: string;
+      competenciaInicio: string;
+      competenciaFim: string;
+      observacao?: string | null;
+    }
+  ): Promise<PeriodoContabil> {
+    return request<PeriodoContabil>(
+      "/Contabilidade/periodos",
+      {
+        method: "POST",
+        body: JSON.stringify(payload)
+      },
+      token
+    );
+  },
+
+  async fecharPeriodoContabil(token: string, id: string): Promise<void> {
+    await request<void>(
+      `/Contabilidade/periodos/${encodeURIComponent(id)}/fechar`,
+      { method: "POST" },
+      token
+    );
+  },
+
+  async reabrirPeriodoContabil(token: string, id: string): Promise<void> {
+    await request<void>(
+      `/Contabilidade/periodos/${encodeURIComponent(id)}/reabrir`,
+      { method: "POST" },
+      token
+    );
+  },
+
+  async listarLancamentosContabeis(
+    token: string,
+    organizacaoId: string,
+    options?: { competenciaInicio?: string; competenciaFim?: string }
+  ): Promise<LancamentoContabil[]> {
+    const search = new URLSearchParams({ organizacaoId });
+    if (options?.competenciaInicio) {
+      search.set("competenciaInicio", options.competenciaInicio);
+    }
+    if (options?.competenciaFim) {
+      search.set("competenciaFim", options.competenciaFim);
+    }
+    return request<LancamentoContabil[]>(
+      `/Contabilidade/lancamentos?${search.toString()}`,
+      {},
+      token
+    );
+  },
+
+  async criarLancamentoContabil(
+    token: string,
+    payload: {
+      organizacaoId: string;
+      competencia: string;
+      dataLancamento?: string | null;
+      historico: string;
+      origem?: string | null;
+      lancamentoFinanceiroId?: string | null;
+      partidas: Array<{
+        contaContabilId: string;
+        tipo: string;
+        valor: number;
+        centroCustoId?: string | null;
+      }>;
+    }
+  ): Promise<LancamentoContabil> {
+    return request<LancamentoContabil>(
+      "/Contabilidade/lancamentos",
+      {
+        method: "POST",
+        body: JSON.stringify(payload)
+      },
+      token
+    );
+  },
+
+  async integrarFinanceiroContabil(
+    token: string,
+    payload: {
+      organizacaoId: string;
+      competenciaInicio?: string | null;
+      competenciaFim?: string | null;
+    }
+  ): Promise<{
+    total: number;
+    criados: number;
+    ignorados: number;
+    semMapeamento: number;
+  }> {
+    return request<{
+      Total: number;
+      Criados: number;
+      Ignorados: number;
+      SemMapeamento: number;
+    }>(
+      "/Contabilidade/integrar-financeiro",
+      {
+        method: "POST",
+        body: JSON.stringify(payload)
+      },
+      token
+    ).then((data) => ({
+      total: data.Total,
+      criados: data.Criados,
+      ignorados: data.Ignorados,
+      semMapeamento: data.SemMapeamento
+    }));
+  },
+
+  async obterBalancete(
+    token: string,
+    organizacaoId: string,
+    options?: { competenciaInicio?: string; competenciaFim?: string }
+  ): Promise<BalanceteItem[]> {
+    const search = new URLSearchParams({ organizacaoId });
+    if (options?.competenciaInicio) {
+      search.set("competenciaInicio", options.competenciaInicio);
+    }
+    if (options?.competenciaFim) {
+      search.set("competenciaFim", options.competenciaFim);
+    }
+    return request<BalanceteItem[]>(
+      `/Contabilidade/balancete?${search.toString()}`,
+      {},
+      token
+    );
+  },
+
+  async obterDre(
+    token: string,
+    organizacaoId: string,
+    options?: { competenciaInicio?: string; competenciaFim?: string }
+  ): Promise<DreResumo> {
+    const search = new URLSearchParams({ organizacaoId });
+    if (options?.competenciaInicio) {
+      search.set("competenciaInicio", options.competenciaInicio);
+    }
+    if (options?.competenciaFim) {
+      search.set("competenciaFim", options.competenciaFim);
+    }
+    return request<DreResumo>(
+      `/Contabilidade/dre?${search.toString()}`,
+      {},
+      token
+    );
+  },
+
+  async obterBalanco(
+    token: string,
+    organizacaoId: string,
+    competenciaFim?: string
+  ): Promise<BalancoResumo> {
+    const search = new URLSearchParams({ organizacaoId });
+    if (competenciaFim) {
+      search.set("competenciaFim", competenciaFim);
+    }
+    return request<BalancoResumo>(
+      `/Contabilidade/balanco?${search.toString()}`,
+      {},
       token
     );
   }

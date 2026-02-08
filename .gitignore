@@ -15,6 +15,7 @@ condo-fullstack/
 src/Sgi.Api/sgi.db
 src/Sgi.Api/sgi.db-shm
 src/Sgi.Api/sgi.db-wal
+src/Sgi.Api/backups/
 
 # Uploads locais
 src/Sgi.Api/Uploads/

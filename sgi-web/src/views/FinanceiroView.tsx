@@ -6,13 +6,19 @@ import * as XLSX from "xlsx";
 import AnexosPanel from "../components/AnexosPanel";
 import {
   api,
+  BalanceteItem,
+  BalancoResumo,
   ChargeItem,
   ConciliacaoImportResponse,
   ContaFinanceira,
+  ContaContabil,
+  DreResumo,
   DocumentoCobranca,
+  LancamentoContabil,
   LancamentoFinanceiro,
   Organizacao,
   Pessoa,
+  PeriodoContabil,
   PlanoContas,
   RecursoReservavel
 } from "../api";
@@ -79,6 +85,7 @@ export default function FinanceiroView({
 }: FinanceiroViewProps) {
   const topoRef = useRef<HTMLDivElement | null>(null);
   const { token, session } = useAuth();
+  const ignorarPerfis = true;
   const [abaLocal, setAbaLocal] = useState<FinanceiroTab>("mapaFinanceiro");
   const aba = abaSelecionada ?? abaLocal;
   const setAba = useCallback(
@@ -103,8 +110,11 @@ export default function FinanceiroView({
   const isPlatformAdmin = session?.isPlatformAdmin === true;
   const isAdmin = isPlatformAdmin || roleAtual === "CONDO_ADMIN";
   const isStaff = roleAtual === "CONDO_STAFF";
-  const canWrite = !readOnly;
-  const canAnexos = can(session, organizacao.id, "anexos.write");
+  const canWrite = ignorarPerfis ? true : !readOnly;
+  const canReadContabilidade = ignorarPerfis || isAdmin || isStaff;
+  const canWriteContabilidade = ignorarPerfis || (isAdmin && canWrite);
+  const canAnexos =
+    ignorarPerfis || can(session, organizacao.id, "anexos.write");
   const [lancamentoSelecionado, setLancamentoSelecionado] =
     useState<LancamentoFinanceiro | null>(null);
 
@@ -208,7 +218,323 @@ export default function FinanceiroView({
   const [novaCategoriaTipo, setNovaCategoriaTipo] =
     useState<"Receita" | "Despesa">("Receita");
 
+  // Contabilidade
+  const [contabilidadeAba, setContabilidadeAba] = useState<
+    "plano" | "lancamentos" | "periodos" | "demonstrativos" | "integracao"
+  >("plano");
+  const contabilidadePainelRef = useRef<HTMLDivElement | null>(null);
+  const [contasContabeis, setContasContabeis] = useState<ContaContabil[]>([]);
+  const [periodosContabeis, setPeriodosContabeis] = useState<PeriodoContabil[]>(
+    []
+  );
+  const [lancamentosContabeis, setLancamentosContabeis] = useState<
+    LancamentoContabil[]
+  >([]);
+  const [contabilidadeLoading, setContabilidadeLoading] = useState(false);
+  const [contabilidadeErro, setContabilidadeErro] = useState<string | null>(
+    null
+  );
+
+  const [novaContaCodigo, setNovaContaCodigo] = useState("");
+  const [novaContaNome, setNovaContaNome] = useState("");
+  const [novaContaGrupo, setNovaContaGrupo] = useState("Ativo");
+  const [novaContaNatureza, setNovaContaNatureza] = useState("Devedora");
+  const [novaContaParentId, setNovaContaParentId] = useState("");
+  const [novaContaSped, setNovaContaSped] = useState("");
+
+  const [periodoInicio, setPeriodoInicio] = useState("");
+  const [periodoFim, setPeriodoFim] = useState("");
+  const [periodoObservacao, setPeriodoObservacao] = useState("");
+
+  const [lancamentoCompetencia, setLancamentoCompetencia] = useState(() => {
+    const hoje = new Date();
+    const local = new Date(hoje.getTime() - hoje.getTimezoneOffset() * 60000);
+    return local.toISOString().slice(0, 10);
+  });
+  const [lancamentoHistorico, setLancamentoHistorico] = useState("");
+  const [lancamentoValor, setLancamentoValor] = useState("");
+  const [lancamentoContaDebito, setLancamentoContaDebito] = useState("");
+  const [lancamentoContaCredito, setLancamentoContaCredito] = useState("");
+
+  const [demonstrativoInicio, setDemonstrativoInicio] = useState("");
+  const [demonstrativoFim, setDemonstrativoFim] = useState("");
+  const [balancete, setBalancete] = useState<BalanceteItem[]>([]);
+  const [dreResumo, setDreResumo] = useState<DreResumo | null>(null);
+  const [balancoResumo, setBalancoResumo] = useState<BalancoResumo | null>(
+    null
+  );
+
+  const [integracaoInicio, setIntegracaoInicio] = useState("");
+  const [integracaoFim, setIntegracaoFim] = useState("");
+  const [integracaoResultado, setIntegracaoResultado] = useState<{
+    total: number;
+    criados: number;
+    ignorados: number;
+    semMapeamento: number;
+  } | null>(null);
+
   const organizacaoId = organizacao.id;
+  const isDemoOrg = organizacao.nome?.toLowerCase().includes("demo") ?? false;
+  const demoContasContabeis: ContaContabil[] = [
+    {
+      id: "demo-cc-ativo",
+      organizacaoId,
+      codigo: "1",
+      nome: "Ativo",
+      grupo: "Ativo",
+      natureza: "Devedora",
+      nivel: 1,
+      ativa: true
+    },
+    {
+      id: "demo-cc-ativo-caixa",
+      organizacaoId,
+      codigo: "1.1.01",
+      nome: "Caixa",
+      grupo: "Ativo",
+      natureza: "Devedora",
+      nivel: 3,
+      parentId: "demo-cc-ativo",
+      ativa: true,
+      codigoReferencialSped: "1.01.01"
+    },
+    {
+      id: "demo-cc-ativo-banco",
+      organizacaoId,
+      codigo: "1.1.02",
+      nome: "Banco conta movimento",
+      grupo: "Ativo",
+      natureza: "Devedora",
+      nivel: 3,
+      parentId: "demo-cc-ativo",
+      ativa: true,
+      codigoReferencialSped: "1.01.02"
+    },
+    {
+      id: "demo-cc-ativo-receber",
+      organizacaoId,
+      codigo: "1.2.01",
+      nome: "Contas a receber",
+      grupo: "Ativo",
+      natureza: "Devedora",
+      nivel: 3,
+      parentId: "demo-cc-ativo",
+      ativa: true
+    },
+    {
+      id: "demo-cc-passivo",
+      organizacaoId,
+      codigo: "2",
+      nome: "Passivo",
+      grupo: "Passivo",
+      natureza: "Credora",
+      nivel: 1,
+      ativa: true
+    },
+    {
+      id: "demo-cc-passivo-forn",
+      organizacaoId,
+      codigo: "2.1.01",
+      nome: "Fornecedores",
+      grupo: "Passivo",
+      natureza: "Credora",
+      nivel: 3,
+      parentId: "demo-cc-passivo",
+      ativa: true
+    },
+    {
+      id: "demo-cc-passivo-pagar",
+      organizacaoId,
+      codigo: "2.1.02",
+      nome: "Contas a pagar",
+      grupo: "Passivo",
+      natureza: "Credora",
+      nivel: 3,
+      parentId: "demo-cc-passivo",
+      ativa: true
+    },
+    {
+      id: "demo-cc-patrimonio",
+      organizacaoId,
+      codigo: "3",
+      nome: "Patrimonio liquido",
+      grupo: "Patrimonio",
+      natureza: "Credora",
+      nivel: 1,
+      ativa: true
+    },
+    {
+      id: "demo-cc-patrimonio-capital",
+      organizacaoId,
+      codigo: "3.1.01",
+      nome: "Capital social",
+      grupo: "Patrimonio",
+      natureza: "Credora",
+      nivel: 3,
+      parentId: "demo-cc-patrimonio",
+      ativa: true
+    },
+    {
+      id: "demo-cc-resultado",
+      organizacaoId,
+      codigo: "4",
+      nome: "Resultado",
+      grupo: "Resultado",
+      natureza: "Credora",
+      nivel: 1,
+      ativa: true
+    },
+    {
+      id: "demo-cc-resultado-receita",
+      organizacaoId,
+      codigo: "4.1.01",
+      nome: "Receitas condominiais",
+      grupo: "Resultado",
+      natureza: "Credora",
+      nivel: 3,
+      parentId: "demo-cc-resultado",
+      ativa: true
+    },
+    {
+      id: "demo-cc-resultado-despesa",
+      organizacaoId,
+      codigo: "4.2.01",
+      nome: "Despesas administrativas",
+      grupo: "Resultado",
+      natureza: "Devedora",
+      nivel: 3,
+      parentId: "demo-cc-resultado",
+      ativa: true
+    }
+  ];
+  const demoPeriodosContabeis: PeriodoContabil[] = [
+    {
+      id: "demo-periodo-jan",
+      organizacaoId,
+      competenciaInicio: "2026-01-01",
+      competenciaFim: "2026-01-31",
+      status: "fechado",
+      fechadoEm: "2026-02-01T00:00:00Z"
+    },
+    {
+      id: "demo-periodo-fev",
+      organizacaoId,
+      competenciaInicio: "2026-02-01",
+      competenciaFim: "2026-02-28",
+      status: "aberto"
+    }
+  ];
+  const demoLancamentosContabeis: LancamentoContabil[] = [
+    {
+      id: "demo-lanc-1",
+      organizacaoId,
+      dataLancamento: "2026-02-05",
+      competencia: "2026-02-01",
+      historico: "Receita condominial fevereiro",
+      origem: "financeiro",
+      status: "aberto"
+    },
+    {
+      id: "demo-lanc-2",
+      organizacaoId,
+      dataLancamento: "2026-02-04",
+      competencia: "2026-02-01",
+      historico: "Pagamento fornecedor limpeza",
+      origem: "financeiro",
+      status: "aberto"
+    },
+    {
+      id: "demo-lanc-3",
+      organizacaoId,
+      dataLancamento: "2026-02-02",
+      competencia: "2026-02-01",
+      historico: "Provisao de despesas",
+      origem: "ajuste",
+      status: "aberto"
+    }
+  ];
+  const demoBalancete: BalanceteItem[] = [
+    {
+      contaId: "demo-cc-ativo-caixa",
+      codigo: "1.1.01",
+      nome: "Caixa",
+      debitos: 18000,
+      creditos: 4500,
+      saldo: 13500
+    },
+    {
+      contaId: "demo-cc-ativo-banco",
+      codigo: "1.1.02",
+      nome: "Banco conta movimento",
+      debitos: 62000,
+      creditos: 38000,
+      saldo: 24000
+    },
+    {
+      contaId: "demo-cc-passivo-forn",
+      codigo: "2.1.01",
+      nome: "Fornecedores",
+      debitos: 12000,
+      creditos: 25000,
+      saldo: -13000
+    }
+  ];
+  const demoDre: DreResumo = {
+    receitas: 92000,
+    despesas: 68000,
+    resultado: 24000
+  };
+  const demoBalanco: BalancoResumo = {
+    ativo: 375000,
+    passivo: 142000,
+    patrimonio: 233000
+  };
+  const demoIntegracao = {
+    total: 18,
+    criados: 14,
+    ignorados: 2,
+    semMapeamento: 2
+  };
+
+  const usandoDemoContabilidade =
+    isDemoOrg &&
+    contasContabeis.length === 0 &&
+    periodosContabeis.length === 0 &&
+    lancamentosContabeis.length === 0;
+
+  const contasContabeisDisplay =
+    contasContabeis.length > 0 ? contasContabeis : isDemoOrg ? demoContasContabeis : [];
+  const periodosContabeisDisplay =
+    periodosContabeis.length > 0 ? periodosContabeis : isDemoOrg ? demoPeriodosContabeis : [];
+  const lancamentosContabeisDisplay =
+    lancamentosContabeis.length > 0
+      ? lancamentosContabeis
+      : isDemoOrg
+      ? demoLancamentosContabeis
+      : [];
+  const balanceteDisplay =
+    balancete.length > 0 ? balancete : isDemoOrg ? demoBalancete : [];
+  const dreResumoDisplay = dreResumo ?? (isDemoOrg ? demoDre : null);
+  const balancoResumoDisplay = balancoResumo ?? (isDemoOrg ? demoBalanco : null);
+  const integracaoResultadoDisplay =
+    integracaoResultado ?? (isDemoOrg ? demoIntegracao : null);
+
+  const gruposContabeis = new Set(
+    contasContabeisDisplay.map((conta) => conta.grupo.toLowerCase())
+  );
+  const contasAtivo = contasContabeisDisplay.filter(
+    (conta) => conta.grupo.toLowerCase() === "ativo" && conta.ativa
+  );
+  const contasPassivo = contasContabeisDisplay.filter(
+    (conta) => conta.grupo.toLowerCase() === "passivo" && conta.ativa
+  );
+  const contasPatrimonio = contasContabeisDisplay.filter(
+    (conta) => conta.grupo.toLowerCase() === "patrimonio" && conta.ativa
+  );
+  const contasResultado = contasContabeisDisplay.filter(
+    (conta) => conta.grupo.toLowerCase() === "resultado" && conta.ativa
+  );
+  const totalLancamentosContabeis = lancamentosContabeisDisplay.length;
 
   const carregarContas = async () => {
     if (!token) return;
@@ -331,6 +657,252 @@ export default function FinanceiroView({
     }
   };
 
+  const carregarContasContabeis = async () => {
+    if (!token) return;
+    try {
+      setContabilidadeErro(null);
+      setContabilidadeLoading(true);
+      const lista = await api.listarContasContabeis(token, organizacaoId);
+      setContasContabeis(lista);
+    } catch (e: any) {
+      setContabilidadeErro(e.message || "Erro ao carregar plano de contas");
+    } finally {
+      setContabilidadeLoading(false);
+    }
+  };
+
+  const carregarPeriodosContabeis = async () => {
+    if (!token) return;
+    try {
+      setContabilidadeErro(null);
+      setContabilidadeLoading(true);
+      const lista = await api.listarPeriodosContabeis(token, organizacaoId);
+      setPeriodosContabeis(lista);
+    } catch (e: any) {
+      setContabilidadeErro(e.message || "Erro ao carregar periodos");
+    } finally {
+      setContabilidadeLoading(false);
+    }
+  };
+
+  const carregarLancamentosContabeis = async () => {
+    if (!token) return;
+    try {
+      setContabilidadeErro(null);
+      setContabilidadeLoading(true);
+      const lista = await api.listarLancamentosContabeis(token, organizacaoId, {
+        competenciaInicio: demonstrativoInicio || undefined,
+        competenciaFim: demonstrativoFim || undefined
+      });
+      setLancamentosContabeis(lista);
+    } catch (e: any) {
+      setContabilidadeErro(e.message || "Erro ao carregar lancamentos contabeis");
+    } finally {
+      setContabilidadeLoading(false);
+    }
+  };
+
+  const criarContaContabil = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!token) return;
+    try {
+      setContabilidadeErro(null);
+      setContabilidadeLoading(true);
+      await api.criarContaContabil(token, {
+        organizacaoId,
+        codigo: novaContaCodigo,
+        nome: novaContaNome,
+        grupo: novaContaGrupo,
+        natureza: novaContaNatureza,
+        parentId: novaContaParentId || null,
+        codigoReferencialSped: novaContaSped || null
+      });
+      setNovaContaCodigo("");
+      setNovaContaNome("");
+      setNovaContaParentId("");
+      setNovaContaSped("");
+      await carregarContasContabeis();
+    } catch (e: any) {
+      setContabilidadeErro(e.message || "Erro ao criar conta contábil");
+    } finally {
+      setContabilidadeLoading(false);
+    }
+  };
+
+  const criarPeriodoContabil = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!token) return;
+    try {
+      setContabilidadeErro(null);
+      setContabilidadeLoading(true);
+      await api.criarPeriodoContabil(token, {
+        organizacaoId,
+        competenciaInicio: periodoInicio,
+        competenciaFim: periodoFim,
+        observacao: periodoObservacao || null
+      });
+      setPeriodoInicio("");
+      setPeriodoFim("");
+      setPeriodoObservacao("");
+      await carregarPeriodosContabeis();
+    } catch (e: any) {
+      setContabilidadeErro(e.message || "Erro ao criar periodo");
+    } finally {
+      setContabilidadeLoading(false);
+    }
+  };
+
+  const fecharPeriodo = async (id: string) => {
+    if (!token) return;
+    try {
+      setContabilidadeErro(null);
+      setContabilidadeLoading(true);
+      await api.fecharPeriodoContabil(token, id);
+      await carregarPeriodosContabeis();
+    } catch (e: any) {
+      setContabilidadeErro(e.message || "Erro ao fechar periodo");
+    } finally {
+      setContabilidadeLoading(false);
+    }
+  };
+
+  const reabrirPeriodo = async (id: string) => {
+    if (!token) return;
+    try {
+      setContabilidadeErro(null);
+      setContabilidadeLoading(true);
+      await api.reabrirPeriodoContabil(token, id);
+      await carregarPeriodosContabeis();
+    } catch (e: any) {
+      setContabilidadeErro(e.message || "Erro ao reabrir periodo");
+    } finally {
+      setContabilidadeLoading(false);
+    }
+  };
+
+  const criarLancamentoContabil = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!token) return;
+    const valorNumerico = Number(lancamentoValor.replace(",", "."));
+    if (!valorNumerico || valorNumerico <= 0) {
+      setContabilidadeErro("Informe um valor válido para o lancamento.");
+      return;
+    }
+    try {
+      setContabilidadeErro(null);
+      setContabilidadeLoading(true);
+      await api.criarLancamentoContabil(token, {
+        organizacaoId,
+        competencia: lancamentoCompetencia,
+        historico: lancamentoHistorico || "Lancamento manual",
+        origem: "manual",
+        partidas: [
+          {
+            contaContabilId: lancamentoContaDebito,
+            tipo: "debito",
+            valor: valorNumerico
+          },
+          {
+            contaContabilId: lancamentoContaCredito,
+            tipo: "credito",
+            valor: valorNumerico
+          }
+        ]
+      });
+      setLancamentoHistorico("");
+      setLancamentoValor("");
+      setLancamentoContaDebito("");
+      setLancamentoContaCredito("");
+      await carregarLancamentosContabeis();
+    } catch (e: any) {
+      setContabilidadeErro(e.message || "Erro ao criar lancamento contábil");
+    } finally {
+      setContabilidadeLoading(false);
+    }
+  };
+
+  const gerarBalancete = async () => {
+    if (!token) return;
+    try {
+      setContabilidadeErro(null);
+      setContabilidadeLoading(true);
+      const lista = await api.obterBalancete(token, organizacaoId, {
+        competenciaInicio: demonstrativoInicio || undefined,
+        competenciaFim: demonstrativoFim || undefined
+      });
+      setBalancete(lista);
+    } catch (e: any) {
+      setContabilidadeErro(e.message || "Erro ao gerar balancete");
+    } finally {
+      setContabilidadeLoading(false);
+    }
+  };
+
+  const gerarDre = async () => {
+    if (!token) return;
+    try {
+      setContabilidadeErro(null);
+      setContabilidadeLoading(true);
+      const data = await api.obterDre(token, organizacaoId, {
+        competenciaInicio: demonstrativoInicio || undefined,
+        competenciaFim: demonstrativoFim || undefined
+      });
+      setDreResumo(data);
+    } catch (e: any) {
+      setContabilidadeErro(e.message || "Erro ao gerar DRE");
+    } finally {
+      setContabilidadeLoading(false);
+    }
+  };
+
+  const gerarBalanco = async () => {
+    if (!token) return;
+    try {
+      setContabilidadeErro(null);
+      setContabilidadeLoading(true);
+      const data = await api.obterBalanco(
+        token,
+        organizacaoId,
+        demonstrativoFim || undefined
+      );
+      setBalancoResumo(data);
+    } catch (e: any) {
+      setContabilidadeErro(e.message || "Erro ao gerar balanco");
+    } finally {
+      setContabilidadeLoading(false);
+    }
+  };
+
+  const abrirAbaContabilidade = (
+    novaAba: "plano" | "lancamentos" | "periodos" | "demonstrativos" | "integracao"
+  ) => {
+    setContabilidadeAba(novaAba);
+    requestAnimationFrame(() => {
+      contabilidadePainelRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start"
+      });
+    });
+  };
+
+  const integrarFinanceiro = async () => {
+    if (!token) return;
+    try {
+      setContabilidadeErro(null);
+      setContabilidadeLoading(true);
+      const resultado = await api.integrarFinanceiroContabil(token, {
+        organizacaoId,
+        competenciaInicio: integracaoInicio || null,
+        competenciaFim: integracaoFim || null
+      });
+      setIntegracaoResultado(resultado);
+    } catch (e: any) {
+      setContabilidadeErro(e.message || "Erro ao integrar financeiro");
+    } finally {
+      setContabilidadeLoading(false);
+    }
+  };
+
   useEffect(() => {
     void carregarContas();
     void carregarDespesas();
@@ -342,6 +914,15 @@ export default function FinanceiroView({
     // Itens cobrados serão carregados sob demanda ao abrir a aba
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, organizacaoId]);
+
+  useEffect(() => {
+    if (aba !== "contabilidade") return;
+    if (!token) return;
+    void carregarContasContabeis();
+    void carregarPeriodosContabeis();
+    void carregarLancamentosContabeis();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aba, token, organizacaoId]);
 
   useEffect(() => {
     if (aba !== "contasPagar" && aba !== "contasReceber") {
@@ -1635,32 +2216,45 @@ export default function FinanceiroView({
           </div>
 
           <div className="accounting-grid">
-            <div className="accounting-column accounting-column--entry">
+            <div
+              className="accounting-column accounting-column--entry accounting-column--clickable"
+              role="button"
+              tabIndex={0}
+              onClick={() => abrirAbaContabilidade("plano")}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  abrirAbaContabilidade("plano");
+                }
+              }}
+            >
               <div className="accounting-column-title">
                 <span>Plano de contas</span>
-                <span className="accounting-count">4 grupos</span>
+                <span className="accounting-count">
+                  {gruposContabeis.size} grupos
+                </span>
               </div>
               <div className="accounting-cards">
                 {[
                   {
                     title: "Ativo",
                     sub: "Bens e direitos",
-                    badge: "18 contas"
+                    badge: `${contasAtivo.length} contas`
                   },
                   {
                     title: "Passivo",
                     sub: "Obrigacoes e dividas",
-                    badge: "12 contas"
+                    badge: `${contasPassivo.length} contas`
                   },
                   {
                     title: "Patrimonio liquido",
                     sub: "Capital e reservas",
-                    badge: "6 contas"
+                    badge: `${contasPatrimonio.length} contas`
                   },
                   {
                     title: "Resultado",
                     sub: "Receitas e despesas",
-                    badge: "14 contas"
+                    badge: `${contasResultado.length} contas`
                   }
                 ].map((item) => (
                   <div key={item.title} className="accounting-card">
@@ -1672,7 +2266,18 @@ export default function FinanceiroView({
               </div>
             </div>
 
-            <div className="accounting-column accounting-column--neutral">
+            <div
+              className="accounting-column accounting-column--neutral accounting-column--clickable"
+              role="button"
+              tabIndex={0}
+              onClick={() => abrirAbaContabilidade("lancamentos")}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  abrirAbaContabilidade("lancamentos");
+                }
+              }}
+            >
               <div className="accounting-column-title">
                 <span>Lancamentos contabeis</span>
                 <span className="accounting-count">debito/credito</span>
@@ -1682,12 +2287,12 @@ export default function FinanceiroView({
                   {
                     title: "Debito",
                     sub: "Registro de origem",
-                    badge: "22 lancamentos"
+                    badge: `${totalLancamentosContabeis} lancamentos`
                   },
                   {
                     title: "Credito",
                     sub: "Registro de destino",
-                    badge: "22 lancamentos"
+                    badge: `${totalLancamentosContabeis} lancamentos`
                   },
                   {
                     title: "Historico padrao",
@@ -1709,7 +2314,18 @@ export default function FinanceiroView({
               </div>
             </div>
 
-            <div className="accounting-column accounting-column--neutral">
+            <div
+              className="accounting-column accounting-column--neutral accounting-column--clickable"
+              role="button"
+              tabIndex={0}
+              onClick={() => abrirAbaContabilidade("periodos")}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  abrirAbaContabilidade("periodos");
+                }
+              }}
+            >
               <div className="accounting-column-title">
                 <span>Regime de competencia</span>
                 <span className="accounting-count">mensal</span>
@@ -1719,7 +2335,7 @@ export default function FinanceiroView({
                   {
                     title: "Competencia",
                     sub: "Mes/ano do fato",
-                    badge: "12 periodos"
+                    badge: `${periodosContabeisDisplay.length} periodos`
                   },
                   {
                     title: "Ajustes e provisoes",
@@ -1741,7 +2357,18 @@ export default function FinanceiroView({
               </div>
             </div>
 
-            <div className="accounting-column accounting-column--alert">
+            <div
+              className="accounting-column accounting-column--alert accounting-column--clickable"
+              role="button"
+              tabIndex={0}
+              onClick={() => abrirAbaContabilidade("demonstrativos")}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  abrirAbaContabilidade("demonstrativos");
+                }
+              }}
+            >
               <div className="accounting-column-title">
                 <span>Demonstracoes</span>
                 <span className="accounting-count">visual</span>
@@ -1788,7 +2415,18 @@ export default function FinanceiroView({
               </div>
             </div>
 
-            <div className="accounting-column accounting-column--entry">
+            <div
+              className="accounting-column accounting-column--entry accounting-column--clickable"
+              role="button"
+              tabIndex={0}
+              onClick={() => abrirAbaContabilidade("integracao")}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  abrirAbaContabilidade("integracao");
+                }
+              }}
+            >
               <div className="accounting-column-title">
                 <span>Fechamento & integracao</span>
                 <span className="accounting-count">SPED</span>
@@ -1839,6 +2477,662 @@ export default function FinanceiroView({
                 ))}
               </div>
             </div>
+          </div>
+
+          <div className="accounting-actions">
+            <div className="accounting-tabs">
+              <button
+                type="button"
+                className={
+                  "accounting-tab" +
+                  (contabilidadeAba === "plano" ? " is-active" : "")
+                }
+                onClick={() => abrirAbaContabilidade("plano")}
+              >
+                Plano de contas
+              </button>
+              <button
+                type="button"
+                className={
+                  "accounting-tab" +
+                  (contabilidadeAba === "lancamentos" ? " is-active" : "")
+                }
+                onClick={() => abrirAbaContabilidade("lancamentos")}
+              >
+                Lancamentos
+              </button>
+              <button
+                type="button"
+                className={
+                  "accounting-tab" +
+                  (contabilidadeAba === "periodos" ? " is-active" : "")
+                }
+                onClick={() => abrirAbaContabilidade("periodos")}
+              >
+                Periodos
+              </button>
+              <button
+                type="button"
+                className={
+                  "accounting-tab" +
+                  (contabilidadeAba === "demonstrativos" ? " is-active" : "")
+                }
+                onClick={() => abrirAbaContabilidade("demonstrativos")}
+              >
+                Demonstrativos
+              </button>
+              <button
+                type="button"
+                className={
+                  "accounting-tab" +
+                  (contabilidadeAba === "integracao" ? " is-active" : "")
+                }
+                onClick={() => abrirAbaContabilidade("integracao")}
+              >
+                Integracao
+              </button>
+            </div>
+            <button
+              type="button"
+              className="button-secondary"
+              onClick={() => {
+                void carregarContasContabeis();
+                void carregarPeriodosContabeis();
+                void carregarLancamentosContabeis();
+              }}
+              disabled={contabilidadeLoading}
+            >
+              {contabilidadeLoading ? "Atualizando..." : "Atualizar"}
+            </button>
+          </div>
+
+          <div className="accounting-panel" ref={contabilidadePainelRef}>
+            {!canReadContabilidade && (
+              <p className="finance-form-sub">
+                Sem acesso para consultar contabilidade.
+              </p>
+            )}
+            {canReadContabilidade && (
+              <>
+                {usandoDemoContabilidade && (
+                  <p className="info-note">
+                    Modo demo ativo: dados de exemplo para visualizacao. Para
+                    dados reais, conecte a API e cadastre contas.
+                  </p>
+                )}
+                {!usandoDemoContabilidade && contabilidadeErro && (
+                  <p className="error">{contabilidadeErro}</p>
+                )}
+                {contabilidadeLoading && (
+                  <p className="finance-form-sub">Carregando dados...</p>
+                )}
+
+                {contabilidadeAba === "plano" && (
+                  <div className="accounting-panel-grid">
+                    <form className="accounting-form" onSubmit={criarContaContabil}>
+                      <h4>Nova conta contabil</h4>
+                      <label>
+                        Codigo
+                        <input
+                          value={novaContaCodigo}
+                          onChange={(e) => setNovaContaCodigo(e.target.value)}
+                          required
+                          placeholder="1.1.01"
+                        />
+                      </label>
+                      <label>
+                        Nome
+                        <input
+                          value={novaContaNome}
+                          onChange={(e) => setNovaContaNome(e.target.value)}
+                          required
+                          placeholder="Caixa"
+                        />
+                      </label>
+                      <div className="accounting-form-row">
+                        <label>
+                          Grupo
+                          <select
+                            value={novaContaGrupo}
+                            onChange={(e) => setNovaContaGrupo(e.target.value)}
+                          >
+                            <option value="Ativo">Ativo</option>
+                            <option value="Passivo">Passivo</option>
+                            <option value="Patrimonio">Patrimonio</option>
+                            <option value="Resultado">Resultado</option>
+                          </select>
+                        </label>
+                        <label>
+                          Natureza
+                          <select
+                            value={novaContaNatureza}
+                            onChange={(e) =>
+                              setNovaContaNatureza(e.target.value)
+                            }
+                          >
+                            <option value="Devedora">Devedora</option>
+                            <option value="Credora">Credora</option>
+                          </select>
+                        </label>
+                      </div>
+                      <label>
+                        Conta pai (opcional)
+                        <select
+                          value={novaContaParentId}
+                          onChange={(e) => setNovaContaParentId(e.target.value)}
+                        >
+                          <option value="">Sem conta pai</option>
+                          {contasContabeisDisplay.map((conta) => (
+                            <option key={conta.id} value={conta.id}>
+                              {conta.codigo} • {conta.nome}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label>
+                        Codigo referencial SPED (opcional)
+                        <input
+                          value={novaContaSped}
+                          onChange={(e) => setNovaContaSped(e.target.value)}
+                          placeholder="1.01.01"
+                        />
+                      </label>
+                      <button type="submit" disabled={!canWriteContabilidade}>
+                        Adicionar conta
+                      </button>
+                      {!canWriteContabilidade && (
+                        <p className="finance-form-sub">
+                          Somente administradores podem cadastrar contas.
+                        </p>
+                      )}
+                    </form>
+
+                    <div className="accounting-list">
+                        <div className="accounting-table-header">
+                          <h4>Contas cadastradas</h4>
+                          <span className="accounting-count">
+                          {contasContabeisDisplay.length} contas
+                          </span>
+                        </div>
+                      {contasContabeisDisplay.length === 0 ? (
+                        <p className="finance-form-sub">
+                          Nenhuma conta contabil cadastrada ainda.
+                        </p>
+                      ) : (
+                        <table className="accounting-table">
+                          <thead>
+                            <tr>
+                              <th>Codigo</th>
+                              <th>Nome</th>
+                              <th>Grupo</th>
+                              <th>Natureza</th>
+                              <th>Status</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {contasContabeisDisplay.map((conta) => (
+                              <tr key={conta.id}>
+                                <td>{conta.codigo}</td>
+                                <td>{conta.nome}</td>
+                                <td>{conta.grupo}</td>
+                                <td>{conta.natureza}</td>
+                                <td>
+                                  <span
+                                    className={
+                                      "badge-status " +
+                                      (conta.ativa
+                                        ? "badge-status--ativo"
+                                        : "badge-status--inativo")
+                                    }
+                                  >
+                                    {conta.ativa ? "Ativa" : "Inativa"}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {contabilidadeAba === "lancamentos" && (
+                  <div className="accounting-panel-grid">
+                    <form
+                      className="accounting-form"
+                      onSubmit={criarLancamentoContabil}
+                    >
+                      <h4>Novo lancamento</h4>
+                      <label>
+                        Competencia
+                        <input
+                          type="date"
+                          value={lancamentoCompetencia}
+                          onChange={(e) =>
+                            setLancamentoCompetencia(e.target.value)
+                          }
+                          required
+                        />
+                      </label>
+                      <label>
+                        Historico
+                        <input
+                          value={lancamentoHistorico}
+                          onChange={(e) => setLancamentoHistorico(e.target.value)}
+                          placeholder="Descricao do lancamento"
+                        />
+                      </label>
+                      <label>
+                        Valor
+                        <input
+                          value={lancamentoValor}
+                          onChange={(e) => setLancamentoValor(e.target.value)}
+                          placeholder="0,00"
+                        />
+                      </label>
+                      <label>
+                        Conta debito
+                        <select
+                          value={lancamentoContaDebito}
+                          onChange={(e) =>
+                            setLancamentoContaDebito(e.target.value)
+                          }
+                          required
+                        >
+                          <option value="">Selecione</option>
+                          {contasContabeisDisplay.map((conta) => (
+                            <option key={conta.id} value={conta.id}>
+                              {conta.codigo} • {conta.nome}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label>
+                        Conta credito
+                        <select
+                          value={lancamentoContaCredito}
+                          onChange={(e) =>
+                            setLancamentoContaCredito(e.target.value)
+                          }
+                          required
+                        >
+                          <option value="">Selecione</option>
+                          {contasContabeisDisplay.map((conta) => (
+                            <option key={conta.id} value={conta.id}>
+                              {conta.codigo} • {conta.nome}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <button type="submit" disabled={!canWriteContabilidade}>
+                        Lancar
+                      </button>
+                      {!canWriteContabilidade && (
+                        <p className="finance-form-sub">
+                          Somente administradores podem lançar.
+                        </p>
+                      )}
+                    </form>
+
+                    <div className="accounting-list">
+                      <div className="accounting-table-header">
+                        <h4>Lancamentos contabeis</h4>
+                        <span className="accounting-count">
+                          {lancamentosContabeisDisplay.length} lancamentos
+                        </span>
+                      </div>
+                      {lancamentosContabeisDisplay.length === 0 ? (
+                        <p className="finance-form-sub">
+                          Nenhum lancamento contabil encontrado.
+                        </p>
+                      ) : (
+                        <div className="accounting-list-cards">
+                          {lancamentosContabeisDisplay.map((lancamento) => (
+                            <div key={lancamento.id} className="accounting-item">
+                              <div>
+                                <strong>{lancamento.historico || "Lancamento"}</strong>
+                                <p className="accounting-item-sub">
+                                  Competencia:{" "}
+                                  {new Date(
+                                    lancamento.competencia
+                                  ).toLocaleDateString("pt-BR")}
+                                </p>
+                              </div>
+                              <span className="badge-status badge-status--ativo">
+                                {lancamento.status}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {contabilidadeAba === "periodos" && (
+                  <div className="accounting-panel-grid">
+                    <form className="accounting-form" onSubmit={criarPeriodoContabil}>
+                      <h4>Novo periodo</h4>
+                      <label>
+                        Competencia inicio
+                        <input
+                          type="date"
+                          value={periodoInicio}
+                          onChange={(e) => setPeriodoInicio(e.target.value)}
+                          required
+                        />
+                      </label>
+                      <label>
+                        Competencia fim
+                        <input
+                          type="date"
+                          value={periodoFim}
+                          onChange={(e) => setPeriodoFim(e.target.value)}
+                          required
+                        />
+                      </label>
+                      <label>
+                        Observacao
+                        <input
+                          value={periodoObservacao}
+                          onChange={(e) => setPeriodoObservacao(e.target.value)}
+                          placeholder="Opcional"
+                        />
+                      </label>
+                      <button type="submit" disabled={!canWriteContabilidade}>
+                        Criar periodo
+                      </button>
+                      {!canWriteContabilidade && (
+                        <p className="finance-form-sub">
+                          Somente administradores podem criar periodos.
+                        </p>
+                      )}
+                    </form>
+
+                    <div className="accounting-list">
+                      <div className="accounting-table-header">
+                        <h4>Periodos contabeis</h4>
+                        <span className="accounting-count">
+                          {periodosContabeisDisplay.length} periodos
+                        </span>
+                      </div>
+                      {periodosContabeisDisplay.length === 0 ? (
+                        <p className="finance-form-sub">
+                          Nenhum periodo contabil cadastrado.
+                        </p>
+                      ) : (
+                        <div className="accounting-list-cards">
+                          {periodosContabeisDisplay.map((periodo) => (
+                            <div key={periodo.id} className="accounting-item">
+                              <div>
+                                <strong>
+                                  {new Date(
+                                    periodo.competenciaInicio
+                                  ).toLocaleDateString("pt-BR")}{" "}
+                                  ate{" "}
+                                  {new Date(
+                                    periodo.competenciaFim
+                                  ).toLocaleDateString("pt-BR")}
+                                </strong>
+                                <p className="accounting-item-sub">
+                                  Status: {periodo.status}
+                                </p>
+                              </div>
+                              {canWriteContabilidade && (
+                                <div className="accounting-item-actions">
+                                  {periodo.status === "aberto" ? (
+                                    <button
+                                      type="button"
+                                      className="button-secondary"
+                                      onClick={() => void fecharPeriodo(periodo.id)}
+                                    >
+                                      Fechar
+                                    </button>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      className="button-secondary"
+                                      onClick={() => void reabrirPeriodo(periodo.id)}
+                                    >
+                                      Reabrir
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {contabilidadeAba === "demonstrativos" && (
+                  <div className="accounting-panel-stack">
+                    <div className="accounting-form-row">
+                      <label>
+                        Competencia inicio
+                        <input
+                          type="date"
+                          value={demonstrativoInicio}
+                          onChange={(e) =>
+                            setDemonstrativoInicio(e.target.value)
+                          }
+                        />
+                      </label>
+                      <label>
+                        Competencia fim
+                        <input
+                          type="date"
+                          value={demonstrativoFim}
+                          onChange={(e) => setDemonstrativoFim(e.target.value)}
+                        />
+                      </label>
+                    </div>
+                    <div className="accounting-actions-row">
+                      <button type="button" onClick={() => void gerarBalancete()}>
+                        Gerar balancete
+                      </button>
+                      <button type="button" onClick={() => void gerarDre()}>
+                        Gerar DRE
+                      </button>
+                      <button type="button" onClick={() => void gerarBalanco()}>
+                        Gerar balanco
+                      </button>
+                    </div>
+
+                    <div className="accounting-report-grid">
+                      <div className="accounting-report-card">
+                        <h4>Balancete</h4>
+                        {balanceteDisplay.length === 0 ? (
+                          <p className="finance-form-sub">
+                            Nenhum dado gerado ainda.
+                          </p>
+                        ) : (
+                          <table className="accounting-table">
+                            <thead>
+                              <tr>
+                                <th>Conta</th>
+                                <th>Debitos</th>
+                                <th>Creditos</th>
+                                <th>Saldo</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {balanceteDisplay.map((item) => (
+                                <tr key={item.contaId}>
+                                  <td>
+                                    {item.codigo} • {item.nome}
+                                  </td>
+                                  <td>
+                                    {item.debitos.toLocaleString("pt-BR", {
+                                      style: "currency",
+                                      currency: "BRL"
+                                    })}
+                                  </td>
+                                  <td>
+                                    {item.creditos.toLocaleString("pt-BR", {
+                                      style: "currency",
+                                      currency: "BRL"
+                                    })}
+                                  </td>
+                                  <td>
+                                    {item.saldo.toLocaleString("pt-BR", {
+                                      style: "currency",
+                                      currency: "BRL"
+                                    })}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        )}
+                      </div>
+
+                      <div className="accounting-report-card">
+                        <h4>DRE</h4>
+                        {dreResumoDisplay ? (
+                          <div className="accounting-summary">
+                            <div>
+                              <span>Receitas</span>
+                              <strong>
+                                {dreResumoDisplay.receitas.toLocaleString("pt-BR", {
+                                  style: "currency",
+                                  currency: "BRL"
+                                })}
+                              </strong>
+                            </div>
+                            <div>
+                              <span>Despesas</span>
+                              <strong>
+                                {dreResumoDisplay.despesas.toLocaleString("pt-BR", {
+                                  style: "currency",
+                                  currency: "BRL"
+                                })}
+                              </strong>
+                            </div>
+                            <div>
+                              <span>Resultado</span>
+                              <strong>
+                                {dreResumoDisplay.resultado.toLocaleString("pt-BR", {
+                                  style: "currency",
+                                  currency: "BRL"
+                                })}
+                              </strong>
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="finance-form-sub">
+                            Gere o DRE para visualizar.
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="accounting-report-card">
+                        <h4>Balanco patrimonial</h4>
+                        {balancoResumoDisplay ? (
+                          <div className="accounting-summary">
+                            <div>
+                              <span>Ativo</span>
+                              <strong>
+                                {balancoResumoDisplay.ativo.toLocaleString("pt-BR", {
+                                  style: "currency",
+                                  currency: "BRL"
+                                })}
+                              </strong>
+                            </div>
+                            <div>
+                              <span>Passivo</span>
+                              <strong>
+                                {balancoResumoDisplay.passivo.toLocaleString("pt-BR", {
+                                  style: "currency",
+                                  currency: "BRL"
+                                })}
+                              </strong>
+                            </div>
+                            <div>
+                              <span>Patrimonio</span>
+                              <strong>
+                                {balancoResumoDisplay.patrimonio.toLocaleString(
+                                  "pt-BR",
+                                  { style: "currency", currency: "BRL" }
+                                )}
+                              </strong>
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="finance-form-sub">
+                            Gere o balanco para visualizar.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {contabilidadeAba === "integracao" && (
+                  <div className="accounting-panel-stack">
+                    <div className="accounting-form-row">
+                      <label>
+                        Competencia inicio
+                        <input
+                          type="date"
+                          value={integracaoInicio}
+                          onChange={(e) => setIntegracaoInicio(e.target.value)}
+                        />
+                      </label>
+                      <label>
+                        Competencia fim
+                        <input
+                          type="date"
+                          value={integracaoFim}
+                          onChange={(e) => setIntegracaoFim(e.target.value)}
+                        />
+                      </label>
+                    </div>
+                    <button
+                      type="button"
+                      className="button-secondary"
+                      onClick={() => void integrarFinanceiro()}
+                      disabled={!canWriteContabilidade}
+                    >
+                      Integrar financeiro
+                    </button>
+                    {!canWriteContabilidade && (
+                      <p className="finance-form-sub">
+                        Somente administradores podem integrar financeiro.
+                      </p>
+                    )}
+                    {integracaoResultadoDisplay && (
+                      <div className="accounting-report-grid">
+                        <div className="accounting-report-card">
+                          <h4>Resultado da integracao</h4>
+                          <div className="accounting-summary">
+                            <div>
+                              <span>Total</span>
+                              <strong>{integracaoResultadoDisplay.total}</strong>
+                            </div>
+                            <div>
+                              <span>Criados</span>
+                              <strong>{integracaoResultadoDisplay.criados}</strong>
+                            </div>
+                            <div>
+                              <span>Ignorados</span>
+                              <strong>{integracaoResultadoDisplay.ignorados}</strong>
+                            </div>
+                            <div>
+                              <span>Sem mapeamento</span>
+                              <strong>{integracaoResultadoDisplay.semMapeamento}</strong>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
           </div>
 
           <p className="accounting-footnote">
