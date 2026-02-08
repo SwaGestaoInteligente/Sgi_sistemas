@@ -1578,6 +1578,49 @@ button:not(:disabled):active {
   margin-top: 4px;
 }
 
+.config-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.config-stat {
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  background: #edf4ff;
+  border: 1px solid var(--divider-strong);
+  color: #1f3b73;
+}
+
+.config-stat--active {
+  background: #dcfce7;
+  border-color: #86efac;
+  color: #166534;
+}
+
+.config-type-switch {
+  margin-top: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #1f3b73;
+}
+
+.config-type-switch select {
+  border-radius: 999px;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--divider-strong);
+  background: #f7fbff;
+  font-size: 12px;
+  color: #0f172a;
+}
+
 .config-subtext {
   font-size: 12px;
   color: #516580;

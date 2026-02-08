@@ -213,6 +213,7 @@ type CadastrosBaseProps = {
   onUpdate: (registro: CadastroBaseRegistro) => void;
   onArchive: (registro: CadastroBaseRegistro) => void;
   onVoltar: () => void;
+  onTipoChange?: (tipo: CadastroBaseTipo) => void;
   readOnly: boolean;
 };
 
@@ -506,6 +507,7 @@ const CadastrosBaseTable: React.FC<CadastrosBaseProps> = ({
   onUpdate,
   onArchive,
   onVoltar,
+  onTipoChange,
   readOnly
 }) => {
   const config = cadastroBaseConfig[tipo];
@@ -517,11 +519,19 @@ const CadastrosBaseTable: React.FC<CadastrosBaseProps> = ({
   const [erro, setErro] = useState<string | null>(null);
   const [filtroCodigo, setFiltroCodigo] = useState("");
   const [filtroNome, setFiltroNome] = useState("");
-  const [filtroStatus, setFiltroStatus] = useState("ativos");
+  const [filtroStatus, setFiltroStatus] = useState("ativo");
+
+  const registrosTipo = useMemo(
+    () => registros.filter((registro) => registro.tipo === tipo),
+    [registros, tipo]
+  );
+
+  const total = registrosTipo.length;
+  const ativos = registrosTipo.filter((registro) => registro.status === "ativo").length;
+  const arquivados = total - ativos;
 
   const registrosFiltrados = useMemo(() => {
-    return registros.filter((registro) => {
-      if (registro.tipo !== tipo) return false;
+    return registrosTipo.filter((registro) => {
       if (filtroStatus !== "todos" && registro.status !== filtroStatus) return false;
       if (filtroCodigo.trim() && !registro.codigo.includes(filtroCodigo.trim())) {
         return false;
@@ -534,7 +544,19 @@ const CadastrosBaseTable: React.FC<CadastrosBaseProps> = ({
       }
       return true;
     });
-  }, [filtroCodigo, filtroNome, filtroStatus, registros, tipo]);
+  }, [filtroCodigo, filtroNome, filtroStatus, registrosTipo]);
+
+  useEffect(() => {
+    setFormAberto(false);
+    setCodigo("");
+    setNome("");
+    setDescricao("");
+    setParent("");
+    setErro(null);
+    setFiltroCodigo("");
+    setFiltroNome("");
+    setFiltroStatus("ativo");
+  }, [tipo]);
 
   const gerarId = () =>
     typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -545,6 +567,19 @@ const CadastrosBaseTable: React.FC<CadastrosBaseProps> = ({
     e.preventDefault();
     if (!nome.trim()) {
       setErro("Preencha o nome.");
+      return;
+    }
+    const codigoNormalizado = codigo.trim().toLowerCase();
+    const nomeNormalizado = nome.trim().toLowerCase();
+    if (
+      codigoNormalizado &&
+      registrosTipo.some((item) => item.codigo.toLowerCase() === codigoNormalizado)
+    ) {
+      setErro("Codigo ja existe para este tipo.");
+      return;
+    }
+    if (registrosTipo.some((item) => item.nome.toLowerCase() === nomeNormalizado)) {
+      setErro("Nome ja existe para este tipo.");
       return;
     }
     setErro(null);
@@ -588,6 +623,13 @@ const CadastrosBaseTable: React.FC<CadastrosBaseProps> = ({
     onArchive({ ...registro, status: "arquivado" });
   };
 
+  const reativarRegistro = (registro: CadastroBaseRegistro) => {
+    if (readOnly) return;
+    onUpdate({ ...registro, status: "ativo" });
+  };
+
+  const parentOptionsId = `cadastro-base-parent-${tipo}`;
+
   return (
     <div className="config-page">
       <header className="config-header">
@@ -600,6 +642,26 @@ const CadastrosBaseTable: React.FC<CadastrosBaseProps> = ({
           <p className="config-helper">
             Organizacao: <strong>{organizacao.nome}</strong>
           </p>
+          <div className="config-stats">
+            <span className="config-stat">Total: {total}</span>
+            <span className="config-stat config-stat--active">Ativos: {ativos}</span>
+            <span className="config-stat">Arquivados: {arquivados}</span>
+          </div>
+          {onTipoChange && (
+            <label className="config-type-switch">
+              <span>Tipo</span>
+              <select
+                value={tipo}
+                onChange={(e) => onTipoChange(e.target.value as CadastroBaseTipo)}
+              >
+                {Object.entries(cadastroBaseConfig).map(([id, item]) => (
+                  <option key={id} value={id}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
         </div>
         <div className="config-actions">
           <button type="button" className="button-secondary" onClick={onVoltar}>
@@ -639,6 +701,7 @@ const CadastrosBaseTable: React.FC<CadastrosBaseProps> = ({
                   value={parent}
                   onChange={(e) => setParent(e.target.value)}
                   placeholder="Ex.: Grupo principal"
+                  list={parentOptionsId}
                 />
               </label>
               <label>
@@ -653,6 +716,12 @@ const CadastrosBaseTable: React.FC<CadastrosBaseProps> = ({
             <button type="submit">Salvar</button>
           </form>
         )}
+
+        <datalist id={parentOptionsId}>
+          {registrosTipo.map((registro) => (
+            <option key={registro.id} value={registro.nome} />
+          ))}
+        </datalist>
 
         <div className="config-filters">
           <label>
@@ -709,13 +778,23 @@ const CadastrosBaseTable: React.FC<CadastrosBaseProps> = ({
                       >
                         Editar
                       </button>
-                      <button
-                        type="button"
-                        className="action-secondary"
-                        onClick={() => arquivarRegistro(registro)}
-                      >
-                        Arquivar
-                      </button>
+                      {registro.status === "ativo" ? (
+                        <button
+                          type="button"
+                          className="action-secondary"
+                          onClick={() => arquivarRegistro(registro)}
+                        >
+                          Arquivar
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="action-primary"
+                          onClick={() => reativarRegistro(registro)}
+                        >
+                          Reativar
+                        </button>
+                      )}
                     </div>
                   )}
                 </td>
@@ -784,6 +863,10 @@ export default function ConfiguracoesView(props: ConfiguracoesViewProps) {
     setCadastrosAba("visao");
     setCadastroBaseTipo(null);
   }, [abaAtual]);
+
+  useEffect(() => {
+    setCadastrosBase([]);
+  }, [organizacao.id]);
 
   const estruturaConfig = useMemo(() => {
     return {
@@ -991,6 +1074,10 @@ export default function ConfiguracoesView(props: ConfiguracoesViewProps) {
         onVoltar={() => {
           setCadastrosAba("visao");
           setCadastroBaseTipo(null);
+        }}
+        onTipoChange={(novoTipo) => {
+          setCadastroBaseTipo(novoTipo);
+          setCadastrosAba("cadastro");
         }}
         readOnly={readOnly}
       />
