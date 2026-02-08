@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Anexo, api } from "../api";
 import { useAuth } from "../hooks/useAuth";
 
@@ -8,6 +8,8 @@ type AnexosPanelProps = {
   entidadeId?: string | null;
   titulo?: string;
   readOnly?: boolean;
+  autoOpenSelector?: boolean;
+  onAutoOpenHandled?: () => void;
 };
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
@@ -51,13 +53,16 @@ export default function AnexosPanel({
   tipoEntidade,
   entidadeId,
   titulo = "Anexos",
-  readOnly = false
+  readOnly = false,
+  autoOpenSelector = false,
+  onAutoOpenHandled
 }: AnexosPanelProps) {
   const { token } = useAuth();
   const [anexos, setAnexos] = useState<Anexo[]>([]);
   const [erro, setErro] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [arquivo, setArquivo] = useState<File | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
 
   const podeCarregar = useMemo(
     () => Boolean(token && organizacaoId && entidadeId),
@@ -86,6 +91,16 @@ export default function AnexosPanel({
   useEffect(() => {
     void carregar();
   }, [carregar]);
+
+  useEffect(() => {
+    if (!autoOpenSelector) return;
+    if (readOnly || !entidadeId) {
+      onAutoOpenHandled?.();
+      return;
+    }
+    inputRef.current?.click();
+    onAutoOpenHandled?.();
+  }, [autoOpenSelector, entidadeId, onAutoOpenHandled, readOnly]);
 
   const enviar = async () => {
     if (!token || !entidadeId || !arquivo) return;
@@ -153,8 +168,20 @@ export default function AnexosPanel({
         <div className="finance-form-inline" style={{ marginBottom: 8 }}>
           <input
             type="file"
+            ref={inputRef}
             onChange={(e) => setArquivo(e.target.files?.[0] ?? null)}
+            className="file-input-hidden"
           />
+          <button
+            type="button"
+            className="button-secondary"
+            onClick={() => inputRef.current?.click()}
+          >
+            Escolher arquivo
+          </button>
+          <span className="file-name">
+            {arquivo ? arquivo.name : "Nenhum arquivo selecionado"}
+          </span>
           <button
             type="button"
             className="button-secondary"

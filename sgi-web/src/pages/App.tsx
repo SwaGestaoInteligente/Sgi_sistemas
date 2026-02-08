@@ -2179,24 +2179,6 @@ const InnerApp: React.FC = () => {
                   <span className="sidebar-item-icon">💰</span>
                   <span className="sidebar-item-label">Financeiro</span>
                 </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setViewIfAllowed("financeiro");
-                    setFinanceiroAba("contabilidade");
-                    setSidebarFinanceiroOpen(true);
-                  }}
-                  className={
-                    "sidebar-item" +
-                    (view === "financeiro" && financeiroAba === "contabilidade"
-                      ? " sidebar-item--active"
-                      : "")
-                  }
-                  title="Contabilidade"
-                >
-                  <span className="sidebar-item-icon">📘</span>
-                  <span className="sidebar-item-label">Contabilidade</span>
-                </button>
                 <div
                   className={
                     "sidebar-submenu" +

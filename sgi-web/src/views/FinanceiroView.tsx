@@ -117,6 +117,7 @@ export default function FinanceiroView({
     ignorarPerfis || can(session, organizacao.id, "anexos.write");
   const [lancamentoSelecionado, setLancamentoSelecionado] =
     useState<LancamentoFinanceiro | null>(null);
+  const [autoOpenAnexoId, setAutoOpenAnexoId] = useState<string | null>(null);
 
   // Contas
   const [nomeConta, setNomeConta] = useState("");
@@ -927,6 +928,7 @@ export default function FinanceiroView({
   useEffect(() => {
     if (aba !== "contasPagar" && aba !== "contasReceber") {
       setLancamentoSelecionado(null);
+      setAutoOpenAnexoId(null);
     }
   }, [aba]);
 
@@ -3688,7 +3690,10 @@ export default function FinanceiroView({
                     <button
                       type="button"
                       className="button-secondary"
-                      onClick={() => setLancamentoSelecionado(d)}
+                      onClick={() => {
+                        setLancamentoSelecionado(d);
+                        setAutoOpenAnexoId(d.id);
+                      }}
                     >
                       Anexos
                     </button>
@@ -3708,7 +3713,10 @@ export default function FinanceiroView({
                 <button
                   type="button"
                   className="button-secondary"
-                  onClick={() => setLancamentoSelecionado(null)}
+                  onClick={() => {
+                    setLancamentoSelecionado(null);
+                    setAutoOpenAnexoId(null);
+                  }}
                 >
                   Fechar
                 </button>
@@ -3719,6 +3727,8 @@ export default function FinanceiroView({
                 entidadeId={lancamentoSelecionado.id}
                 titulo="Comprovantes e anexos"
                 readOnly={!canAnexos}
+                autoOpenSelector={autoOpenAnexoId === lancamentoSelecionado.id}
+                onAutoOpenHandled={() => setAutoOpenAnexoId(null)}
               />
             </section>
           )}
@@ -3969,7 +3979,10 @@ export default function FinanceiroView({
                     <button
                       type="button"
                       className="button-secondary"
-                      onClick={() => setLancamentoSelecionado(r)}
+                      onClick={() => {
+                        setLancamentoSelecionado(r);
+                        setAutoOpenAnexoId(r.id);
+                      }}
                     >
                       Anexos
                     </button>
@@ -3989,7 +4002,10 @@ export default function FinanceiroView({
                 <button
                   type="button"
                   className="button-secondary"
-                  onClick={() => setLancamentoSelecionado(null)}
+                  onClick={() => {
+                    setLancamentoSelecionado(null);
+                    setAutoOpenAnexoId(null);
+                  }}
                 >
                   Fechar
                 </button>
@@ -4000,6 +4016,8 @@ export default function FinanceiroView({
                 entidadeId={lancamentoSelecionado.id}
                 titulo="Comprovantes e anexos"
                 readOnly={!canAnexos}
+                autoOpenSelector={autoOpenAnexoId === lancamentoSelecionado.id}
+                onAutoOpenHandled={() => setAutoOpenAnexoId(null)}
               />
             </section>
           )}
