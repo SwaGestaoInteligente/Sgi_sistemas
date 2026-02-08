@@ -2073,61 +2073,6 @@ const InnerApp: React.FC = () => {
                 renderSidebarItem("minhaUnidade", "Minha unidade", "🏠")}
             </div>
 
-            {podeEditarCadastros && (
-              <div className="sidebar-section">
-                <p className="sidebar-section-title">Configuracoes base</p>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (view !== "configuracoes") {
-                      setViewIfAllowed("configuracoes");
-                      setSidebarConfiguracoesOpen(true);
-                      return;
-                    }
-                    setSidebarConfiguracoesOpen((prev) => !prev);
-                  }}
-                  className={
-                    "sidebar-item" +
-                    (view === "configuracoes" ? " sidebar-item--active" : "")
-                  }
-                  title="Configuracoes"
-                >
-                  <span className="sidebar-item-icon">⚙️</span>
-                  <span className="sidebar-item-label">Configuracoes</span>
-                </button>
-                <div
-                  className={
-                    "sidebar-submenu" +
-                    (sidebarConfiguracoesOpen ? " sidebar-submenu--open" : "")
-                  }
-                >
-                  {menuConfiguracoes.map((item) => (
-                    <button
-                      key={item.id}
-                      type="button"
-                      className={
-                        "sidebar-subitem" +
-                        (view === "configuracoes" && configuracoesAba === item.id
-                          ? " sidebar-subitem--active"
-                          : "")
-                      }
-                      onClick={() => {
-                        setViewIfAllowed("configuracoes");
-                        setConfiguracoesAba(item.id);
-                        setSidebarConfiguracoesOpen(true);
-                      }}
-                      title={item.label}
-                    >
-                      <span className="sidebar-subitem-icon">
-                        {configuracoesSiglas[item.id]}
-                      </span>
-                      <span className="sidebar-subitem-label">{item.label}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
             {podeVerCadastros && (
               <>
                 <div className="sidebar-section">
@@ -2203,6 +2148,61 @@ const InnerApp: React.FC = () => {
                       title={item.label}
                     >
                       <span className="sidebar-subitem-icon">{financeiroSiglas[item.id]}</span>
+                      <span className="sidebar-subitem-label">{item.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {podeEditarCadastros && (
+              <div className="sidebar-section">
+                <p className="sidebar-section-title">Configuracoes base</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (view !== "configuracoes") {
+                      setViewIfAllowed("configuracoes");
+                      setSidebarConfiguracoesOpen(true);
+                      return;
+                    }
+                    setSidebarConfiguracoesOpen((prev) => !prev);
+                  }}
+                  className={
+                    "sidebar-item" +
+                    (view === "configuracoes" ? " sidebar-item--active" : "")
+                  }
+                  title="Configuracoes"
+                >
+                  <span className="sidebar-item-icon">⚙️</span>
+                  <span className="sidebar-item-label">Configuracoes</span>
+                </button>
+                <div
+                  className={
+                    "sidebar-submenu" +
+                    (sidebarConfiguracoesOpen ? " sidebar-submenu--open" : "")
+                  }
+                >
+                  {menuConfiguracoes.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      className={
+                        "sidebar-subitem" +
+                        (view === "configuracoes" && configuracoesAba === item.id
+                          ? " sidebar-subitem--active"
+                          : "")
+                      }
+                      onClick={() => {
+                        setViewIfAllowed("configuracoes");
+                        setConfiguracoesAba(item.id);
+                        setSidebarConfiguracoesOpen(true);
+                      }}
+                      title={item.label}
+                    >
+                      <span className="sidebar-subitem-icon">
+                        {configuracoesSiglas[item.id]}
+                      </span>
                       <span className="sidebar-subitem-label">{item.label}</span>
                     </button>
                   ))}

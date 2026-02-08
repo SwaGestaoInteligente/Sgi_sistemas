@@ -1313,6 +1313,22 @@ button:focus-visible {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  transition: box-shadow 0.2s ease, transform 0.2s ease, border-color 0.2s ease;
+  appearance: none;
+}
+
+.finance-map-card:hover {
+  border-color: #7aa9ff;
+  box-shadow: 0 8px 18px rgba(64, 107, 179, 0.16);
+  transform: translateY(-1px);
+}
+
+.finance-map-card:focus-visible {
+  outline: 2px solid #7aa9ff;
+  outline-offset: 2px;
 }
 
 .finance-map-card-title {
@@ -1352,6 +1368,22 @@ button:focus-visible {
   background: #e6f1ff;
   border: 1px solid var(--divider-strong);
   color: #1f3b73;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  appearance: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.finance-map-chip:hover {
+  border-color: #7aa9ff;
+  box-shadow: 0 6px 14px rgba(64, 107, 179, 0.12);
+}
+
+.finance-map-chip:focus-visible {
+  outline: 2px solid #7aa9ff;
+  outline-offset: 2px;
 }
 
 .finance-map-column-note {

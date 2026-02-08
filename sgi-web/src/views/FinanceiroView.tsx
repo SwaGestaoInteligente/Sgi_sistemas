@@ -1976,36 +1976,42 @@ export default function FinanceiroView({
                     title: "Morador",
                     sub: "Taxas e acordos",
                     badge: "12 entradas",
-                    tooltip: "Pagamentos de moradores e acordos firmados."
+                    tooltip: "Pagamentos de moradores e acordos firmados.",
+                    goTo: "contasReceber" as FinanceiroTab
                   },
                   {
                     title: "Fornecedor",
                     sub: "Servicos e contratos",
                     badge: "6 lancamentos",
-                    tooltip: "Origem ligada a servicos contratados."
+                    tooltip: "Origem ligada a servicos contratados.",
+                    goTo: "contasPagar" as FinanceiroTab
                   },
                   {
                     title: "Funcionario",
                     sub: "Folha e beneficios",
                     badge: "4 lancamentos",
-                    tooltip: "Origem interna ligada a pessoal."
+                    tooltip: "Origem interna ligada a pessoal.",
+                    goTo: "contasPagar" as FinanceiroTab
                   },
                   {
                     title: "Condominio",
                     sub: "Origem interna",
                     badge: "3 ajustes",
-                    tooltip: "Movimentos internos do condominio."
+                    tooltip: "Movimentos internos do condominio.",
+                    goTo: "transferencias" as FinanceiroTab
                   }
                 ].map((item) => (
-                  <div
+                  <button
                     key={item.title}
+                    type="button"
                     className="finance-map-card"
-                    title={item.tooltip}
+                    title={`${item.tooltip} Clique para abrir.`}
+                    onClick={() => handleAbaChange(item.goTo)}
                   >
                     <div className="finance-map-card-title">{item.title}</div>
                     <p className="finance-map-card-sub">{item.sub}</p>
                     <span className="finance-map-card-badge">{item.badge}</span>
-                  </div>
+                  </button>
                 ))}
               </div>
             </div>
@@ -2017,20 +2023,22 @@ export default function FinanceiroView({
               </div>
               <div className="finance-map-chips">
                 {[
-                  "Receita",
-                  "Despesa",
-                  "Acordo",
-                  "Multa",
-                  "Taxa",
-                  "Inadimplencia"
-                ].map((label) => (
-                  <span
-                    key={label}
+                  { label: "Receita", goTo: "receitasDespesas" },
+                  { label: "Despesa", goTo: "receitasDespesas" },
+                  { label: "Acordo", goTo: "receitasDespesas" },
+                  { label: "Multa", goTo: "receitasDespesas" },
+                  { label: "Taxa", goTo: "receitasDespesas" },
+                  { label: "Inadimplencia", goTo: "receitasDespesas" }
+                ].map((item) => (
+                  <button
+                    key={item.label}
+                    type="button"
                     className="finance-map-chip"
-                    title={`Classifica como ${label.toLowerCase()}.`}
+                    title={`Classifica como ${item.label.toLowerCase()}. Clique para abrir.`}
+                    onClick={() => handleAbaChange(item.goTo as FinanceiroTab)}
                   >
-                    {label}
-                  </span>
+                    {item.label}
+                  </button>
                 ))}
               </div>
               <p className="finance-map-column-note">
@@ -2049,36 +2057,42 @@ export default function FinanceiroView({
                     title: "Categoria financeira",
                     sub: "Agrupador principal",
                     badge: "18 categorias",
-                    tooltip: "Organiza receitas e despesas."
+                    tooltip: "Organiza receitas e despesas.",
+                    goTo: "categorias" as FinanceiroTab
                   },
                   {
                     title: "Centro de custo",
                     sub: "Responsavel pelo gasto",
                     badge: "7 centros",
-                    tooltip: "Distribui custos por area."
+                    tooltip: "Distribui custos por area.",
+                    goTo: "categorias" as FinanceiroTab
                   },
                   {
                     title: "Forma de pagamento",
                     sub: "Pix, boleto, cartao",
                     badge: "5 formas",
-                    tooltip: "Define como o valor entra ou sai."
+                    tooltip: "Define como o valor entra ou sai.",
+                    goTo: "contas" as FinanceiroTab
                   },
                   {
                     title: "Status financeiro",
                     sub: "Aberto, pago, atrasado",
                     badge: "6 status",
-                    tooltip: "Controla o andamento do lancamento."
+                    tooltip: "Controla o andamento do lancamento.",
+                    goTo: "receitasDespesas" as FinanceiroTab
                   }
                 ].map((item) => (
-                  <div
+                  <button
                     key={item.title}
+                    type="button"
                     className="finance-map-card"
-                    title={item.tooltip}
+                    title={`${item.tooltip} Clique para abrir.`}
+                    onClick={() => handleAbaChange(item.goTo)}
                   >
                     <div className="finance-map-card-title">{item.title}</div>
                     <p className="finance-map-card-sub">{item.sub}</p>
                     <span className="finance-map-card-badge">{item.badge}</span>
-                  </div>
+                  </button>
                 ))}
               </div>
             </div>
@@ -2094,42 +2108,49 @@ export default function FinanceiroView({
                     title: "Contas a pagar",
                     sub: "Saidas planejadas",
                     badge: "8 pendentes",
-                    tooltip: "Despesas programadas para pagamento."
+                    tooltip: "Despesas programadas para pagamento.",
+                    goTo: "contasPagar" as FinanceiroTab
                   },
                   {
                     title: "Contas a receber",
                     sub: "Entradas previstas",
                     badge: "14 previstas",
-                    tooltip: "Receitas aguardando recebimento."
+                    tooltip: "Receitas aguardando recebimento.",
+                    goTo: "contasReceber" as FinanceiroTab
                   },
                   {
                     title: "Lancamento",
                     sub: "Registro financeiro",
                     badge: "22 ativos",
-                    tooltip: "Registro base do movimento."
+                    tooltip: "Registro base do movimento.",
+                    goTo: "receitasDespesas" as FinanceiroTab
                   },
                   {
                     title: "Parcela",
                     sub: "Divisao do valor",
                     badge: "10 parcelas",
-                    tooltip: "Divisao de pagamentos ou recebimentos."
+                    tooltip: "Divisao de pagamentos ou recebimentos.",
+                    goTo: "receitasDespesas" as FinanceiroTab
                   },
                   {
                     title: "Recorrencia",
                     sub: "Lancamentos automaticos",
                     badge: "4 regras",
-                    tooltip: "Fluxo recorrente do condominio."
+                    tooltip: "Fluxo recorrente do condominio.",
+                    goTo: "receitasDespesas" as FinanceiroTab
                   }
                 ].map((item) => (
-                  <div
+                  <button
                     key={item.title}
+                    type="button"
                     className="finance-map-card"
-                    title={item.tooltip}
+                    title={`${item.tooltip} Clique para abrir.`}
+                    onClick={() => handleAbaChange(item.goTo)}
                   >
                     <div className="finance-map-card-title">{item.title}</div>
                     <p className="finance-map-card-sub">{item.sub}</p>
                     <span className="finance-map-card-badge">{item.badge}</span>
-                  </div>
+                  </button>
                 ))}
               </div>
             </div>
@@ -2145,36 +2166,42 @@ export default function FinanceiroView({
                     title: "Caixa",
                     sub: "Dinheiro imediato",
                     badge: "R$ 8.200",
-                    tooltip: "Saldo em caixa no periodo."
+                    tooltip: "Saldo em caixa no periodo.",
+                    goTo: "contas" as FinanceiroTab
                   },
                   {
                     title: "Conta bancaria",
                     sub: "Bancos e pix",
                     badge: "3 contas",
-                    tooltip: "Destino bancario principal."
+                    tooltip: "Destino bancario principal.",
+                    goTo: "contas" as FinanceiroTab
                   },
                   {
                     title: "Fundo",
                     sub: "Reserva generica",
                     badge: "2 fundos",
-                    tooltip: "Reserva para projetos ou emergencias."
+                    tooltip: "Reserva para projetos ou emergencias.",
+                    goTo: "contas" as FinanceiroTab
                   },
                   {
                     title: "Saldo do condominio",
                     sub: "Consolidado geral",
                     badge: "R$ 270.000",
-                    tooltip: "Saldo consolidado do condominio."
+                    tooltip: "Saldo consolidado do condominio.",
+                    goTo: "contas" as FinanceiroTab
                   }
                 ].map((item) => (
-                  <div
+                  <button
                     key={item.title}
+                    type="button"
                     className="finance-map-card"
-                    title={item.tooltip}
+                    title={`${item.tooltip} Clique para abrir.`}
+                    onClick={() => handleAbaChange(item.goTo)}
                   >
                     <div className="finance-map-card-title">{item.title}</div>
                     <p className="finance-map-card-sub">{item.sub}</p>
                     <span className="finance-map-card-badge">{item.badge}</span>
-                  </div>
+                  </button>
                 ))}
               </div>
             </div>
