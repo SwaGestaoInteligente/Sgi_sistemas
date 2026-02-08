@@ -28,6 +28,7 @@ type FinanceiroViewProps = {
 };
 
 export type FinanceiroTab =
+  | "mapaFinanceiro"
   | "categorias"
   | "contas"
   | "consumos"
@@ -47,6 +48,7 @@ export type FinanceiroTab =
   | "relatorios";
 
 export const menuFinanceiro: Array<{ id: FinanceiroTab; label: string; badge?: string }> = [
+  { id: "mapaFinanceiro", label: "Mapa financeiro" },
   { id: "categorias", label: "Categorias" },
   { id: "contas", label: "Contas" },
   { id: "consumos", label: "Consumos", badge: "Em breve" },
@@ -1363,6 +1365,249 @@ export default function FinanceiroView({
             </button>
           ))}
         </div>
+      )}
+
+      {aba === "mapaFinanceiro" && (
+        <section className="finance-map">
+          <div className="finance-map-header">
+            <div>
+              <h3>Mapa financeiro</h3>
+              <p className="finance-form-sub">
+                Fluxo visual do dinheiro: origem, classificacao, movimento e destino.
+              </p>
+            </div>
+            <span className="finance-map-pill">Fluxo visual — regras entram depois</span>
+          </div>
+
+          <div className="finance-map-grid">
+            <div className="finance-map-column finance-map-column--entry">
+              <div className="finance-map-column-title">
+                <span>Origem</span>
+                <span className="finance-map-count">4 fontes</span>
+              </div>
+              <div className="finance-map-cards">
+                {[
+                  {
+                    title: "Morador",
+                    sub: "Taxas e acordos",
+                    badge: "12 entradas",
+                    tooltip: "Pagamentos de moradores e acordos firmados."
+                  },
+                  {
+                    title: "Fornecedor",
+                    sub: "Servicos e contratos",
+                    badge: "6 lancamentos",
+                    tooltip: "Origem ligada a servicos contratados."
+                  },
+                  {
+                    title: "Funcionario",
+                    sub: "Folha e beneficios",
+                    badge: "4 lancamentos",
+                    tooltip: "Origem interna ligada a pessoal."
+                  },
+                  {
+                    title: "Condominio",
+                    sub: "Origem interna",
+                    badge: "3 ajustes",
+                    tooltip: "Movimentos internos do condominio."
+                  }
+                ].map((item) => (
+                  <div
+                    key={item.title}
+                    className="finance-map-card"
+                    title={item.tooltip}
+                  >
+                    <div className="finance-map-card-title">{item.title}</div>
+                    <p className="finance-map-card-sub">{item.sub}</p>
+                    <span className="finance-map-card-badge">{item.badge}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="finance-map-column finance-map-column--neutral">
+              <div className="finance-map-column-title">
+                <span>Classificacao</span>
+                <span className="finance-map-count">6 tipos</span>
+              </div>
+              <div className="finance-map-chips">
+                {[
+                  "Receita",
+                  "Despesa",
+                  "Acordo",
+                  "Multa",
+                  "Taxa",
+                  "Inadimplencia"
+                ].map((label) => (
+                  <span
+                    key={label}
+                    className="finance-map-chip"
+                    title={`Classifica como ${label.toLowerCase()}.`}
+                  >
+                    {label}
+                  </span>
+                ))}
+              </div>
+              <p className="finance-map-column-note">
+                Classificacao define o tipo antes de entrar no plano financeiro.
+              </p>
+            </div>
+
+            <div className="finance-map-column finance-map-column--neutral">
+              <div className="finance-map-column-title">
+                <span>Plano financeiro</span>
+                <span className="finance-map-count">4 bases</span>
+              </div>
+              <div className="finance-map-cards">
+                {[
+                  {
+                    title: "Categoria financeira",
+                    sub: "Agrupador principal",
+                    badge: "18 categorias",
+                    tooltip: "Organiza receitas e despesas."
+                  },
+                  {
+                    title: "Centro de custo",
+                    sub: "Responsavel pelo gasto",
+                    badge: "7 centros",
+                    tooltip: "Distribui custos por area."
+                  },
+                  {
+                    title: "Forma de pagamento",
+                    sub: "Pix, boleto, cartao",
+                    badge: "5 formas",
+                    tooltip: "Define como o valor entra ou sai."
+                  },
+                  {
+                    title: "Status financeiro",
+                    sub: "Aberto, pago, atrasado",
+                    badge: "6 status",
+                    tooltip: "Controla o andamento do lancamento."
+                  }
+                ].map((item) => (
+                  <div
+                    key={item.title}
+                    className="finance-map-card"
+                    title={item.tooltip}
+                  >
+                    <div className="finance-map-card-title">{item.title}</div>
+                    <p className="finance-map-card-sub">{item.sub}</p>
+                    <span className="finance-map-card-badge">{item.badge}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="finance-map-column finance-map-column--alert">
+              <div className="finance-map-column-title">
+                <span>Movimento</span>
+                <span className="finance-map-count">5 etapas</span>
+              </div>
+              <div className="finance-map-cards">
+                {[
+                  {
+                    title: "Contas a pagar",
+                    sub: "Saidas planejadas",
+                    badge: "8 pendentes",
+                    tooltip: "Despesas programadas para pagamento."
+                  },
+                  {
+                    title: "Contas a receber",
+                    sub: "Entradas previstas",
+                    badge: "14 previstas",
+                    tooltip: "Receitas aguardando recebimento."
+                  },
+                  {
+                    title: "Lancamento",
+                    sub: "Registro financeiro",
+                    badge: "22 ativos",
+                    tooltip: "Registro base do movimento."
+                  },
+                  {
+                    title: "Parcela",
+                    sub: "Divisao do valor",
+                    badge: "10 parcelas",
+                    tooltip: "Divisao de pagamentos ou recebimentos."
+                  },
+                  {
+                    title: "Recorrencia",
+                    sub: "Lancamentos automaticos",
+                    badge: "4 regras",
+                    tooltip: "Fluxo recorrente do condominio."
+                  }
+                ].map((item) => (
+                  <div
+                    key={item.title}
+                    className="finance-map-card"
+                    title={item.tooltip}
+                  >
+                    <div className="finance-map-card-title">{item.title}</div>
+                    <p className="finance-map-card-sub">{item.sub}</p>
+                    <span className="finance-map-card-badge">{item.badge}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="finance-map-column finance-map-column--entry">
+              <div className="finance-map-column-title">
+                <span>Destino</span>
+                <span className="finance-map-count">4 alvos</span>
+              </div>
+              <div className="finance-map-cards">
+                {[
+                  {
+                    title: "Caixa",
+                    sub: "Dinheiro imediato",
+                    badge: "R$ 8.200",
+                    tooltip: "Saldo em caixa no periodo."
+                  },
+                  {
+                    title: "Conta bancaria",
+                    sub: "Bancos e pix",
+                    badge: "3 contas",
+                    tooltip: "Destino bancario principal."
+                  },
+                  {
+                    title: "Fundo",
+                    sub: "Reserva generica",
+                    badge: "2 fundos",
+                    tooltip: "Reserva para projetos ou emergencias."
+                  },
+                  {
+                    title: "Saldo do condominio",
+                    sub: "Consolidado geral",
+                    badge: "R$ 270.000",
+                    tooltip: "Saldo consolidado do condominio."
+                  }
+                ].map((item) => (
+                  <div
+                    key={item.title}
+                    className="finance-map-card"
+                    title={item.tooltip}
+                  >
+                    <div className="finance-map-card-title">{item.title}</div>
+                    <p className="finance-map-card-sub">{item.sub}</p>
+                    <span className="finance-map-card-badge">{item.badge}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="finance-map-legend">
+            <span className="legend-dot legend-dot--entry" />
+            <span>Entrada</span>
+            <span className="legend-dot legend-dot--alert" />
+            <span>Alerta</span>
+            <span className="legend-dot legend-dot--neutral" />
+            <span>Neutro</span>
+          </div>
+
+          <p className="finance-map-footnote">
+            Fluxo visual — regras entram depois. Nenhum dado real e alterado.
+          </p>
+        </section>
       )}
 
       {aba === "contas" && (

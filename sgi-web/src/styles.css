@@ -1196,6 +1196,194 @@ button:not(:disabled):active {
   margin-bottom: 10px;
 }
 
+/* Mapa financeiro */
+.finance-map {
+  background: #f5f8ff;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.finance-map-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.finance-map-header h3 {
+  margin: 0 0 4px;
+}
+
+.finance-map-pill {
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  background: #e6f1ff;
+  border: 1px solid var(--divider-strong);
+  color: #1f3b73;
+}
+
+.finance-map-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 14px;
+}
+
+.finance-map-column {
+  background: #ffffff;
+  border: 1px solid var(--divider-strong);
+  border-radius: var(--radius-lg);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  position: relative;
+  box-shadow: var(--shadow-sm);
+  border-top: 3px solid var(--flow-accent, #8fb1db);
+}
+
+.finance-map-column:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: -14px;
+  width: 28px;
+  height: 2px;
+  background: linear-gradient(90deg, #c6d7f3, transparent);
+}
+
+.finance-map-column--entry {
+  --flow-accent: #4caf7c;
+}
+
+.finance-map-column--alert {
+  --flow-accent: #f0a24f;
+}
+
+.finance-map-column--neutral {
+  --flow-accent: #6fa0e6;
+}
+
+.finance-map-column-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  font-weight: 700;
+  color: #1f2937;
+}
+
+.finance-map-count {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #f1f5ff;
+  border: 1px solid var(--divider-strong);
+  color: #35507a;
+}
+
+.finance-map-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.finance-map-card {
+  border: 1px solid var(--divider-strong);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: #f7fbff;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.finance-map-card-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #111827;
+}
+
+.finance-map-card-sub {
+  font-size: 12px;
+  color: #64748b;
+  margin: 0;
+}
+
+.finance-map-card-badge {
+  align-self: flex-start;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  background: #e8f1ff;
+  color: #1f3b73;
+  border: 1px solid var(--divider-strong);
+}
+
+.finance-map-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.finance-map-chip {
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  background: #e6f1ff;
+  border: 1px solid var(--divider-strong);
+  color: #1f3b73;
+}
+
+.finance-map-column-note {
+  font-size: 12px;
+  color: #64748b;
+  margin: 0;
+}
+
+.finance-map-legend {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #64748b;
+  flex-wrap: wrap;
+}
+
+.legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.legend-dot--entry {
+  background: #4caf7c;
+}
+
+.legend-dot--alert {
+  background: #f0a24f;
+}
+
+.legend-dot--neutral {
+  background: #6fa0e6;
+}
+
+.finance-map-footnote {
+  font-size: 12px;
+  color: #6b7280;
+  margin: 0;
+}
+
 .finance-form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1963,6 +2151,138 @@ button:not(:disabled):active {
   background: #ffffff;
   border: 1px solid var(--divider-strong);
   color: #1f3b73;
+}
+
+/* Pessoas & papeis */
+.people-map {
+  background: #f5f8ff;
+  border: 1px solid var(--divider-strong);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-shadow: var(--shadow-sm);
+}
+
+.people-map-info {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.people-map-card {
+  background: #ffffff;
+  border: 1px solid var(--divider-strong);
+  border-radius: var(--radius-lg);
+  padding: 12px 14px;
+}
+
+.people-map-card--alert {
+  background: linear-gradient(135deg, #eef4ff, #dbe9ff);
+  border-color: var(--primary-strong);
+}
+
+.people-map-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #60759c;
+  font-weight: 700;
+}
+
+.people-map-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.people-map-row {
+  display: grid;
+  grid-template-columns: minmax(200px, 1.2fr) 32px minmax(160px, 1fr) 32px minmax(220px, 1.4fr);
+  align-items: stretch;
+  gap: 12px;
+}
+
+.people-card,
+.people-role-card,
+.people-link-card {
+  background: #ffffff;
+  border: 1px solid var(--divider-strong);
+  border-radius: var(--radius-lg);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.people-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #60759c;
+  font-weight: 700;
+}
+
+.people-subtext {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.people-connect {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  color: #7c93b6;
+}
+
+.people-role-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.people-role-chips span {
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  background: #e6f1ff;
+  border: 1px solid var(--divider-strong);
+  color: #1f3b73;
+}
+
+.people-link-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.people-link-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  color: #475569;
+  background: #f7fbff;
+  border-radius: 10px;
+  padding: 6px 10px;
+  border: 1px solid var(--divider-strong);
+}
+
+.people-link-item strong {
+  color: #111827;
+}
+
+@media (max-width: 900px) {
+  .people-map-row {
+    grid-template-columns: 1fr;
+  }
+
+  .people-connect {
+    justify-content: flex-start;
+  }
 }
 
 @media (max-width: 900px) {

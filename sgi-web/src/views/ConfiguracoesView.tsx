@@ -1969,50 +1969,170 @@ export default function ConfiguracoesView(props: ConfiguracoesViewProps) {
   }
 
   if (abaAtual === "pessoas-papeis") {
-    return renderCards("Pessoas & papeis", "Quem e quem no sistema.", [
+    const pessoasMock = [
       {
-        id: "pessoas",
-        title: "Pessoas",
-        description: "Cadastro unico de pessoas e documentos.",
-        actionLabel: "Em breve",
-        disabled: true
+        id: "pessoa-1",
+        nome: "Marina Alves",
+        documento: "CPF 123.456.789-00",
+        papeis: ["Sindica", "Moradora"],
+        condominio: organizacao.nome,
+        bloco: "Bloco A",
+        unidade: "A-101"
       },
       {
-        id: "tipos-pessoa",
-        title: "Tipos de pessoa",
-        description: "Morador, funcionario, fornecedor, sindico, etc.",
-        actionLabel: "Em breve",
-        disabled: true
+        id: "pessoa-2",
+        nome: "Carlos Pereira",
+        documento: "CPF 987.654.321-00",
+        papeis: ["Funcionario"],
+        condominio: organizacao.nome,
+        bloco: null,
+        unidade: null
       },
       {
-        id: "papeis",
-        title: "Papeis e funcoes",
-        description: "Funcoes flexiveis ligadas ao dia a dia.",
-        actionLabel: "Em breve",
-        disabled: true
-      },
-      {
-        id: "vinculos",
-        title: "Vinculos",
-        description: "Vinculos entre pessoa, unidade e condominio.",
-        actionLabel: "Em breve",
-        disabled: true
-      },
-      {
-        id: "perfis-acesso",
-        title: "Perfis de acesso",
-        description: "Perfis ligados a permissoes do sistema.",
-        actionLabel: "Em breve",
-        disabled: true
-      },
-      {
-        id: "vinculos-padrao",
-        title: "Vinculos padrao",
-        description: "Relacoes base entre pessoa, unidade e condominio.",
-        actionLabel: "Em breve",
-        disabled: true
+        id: "pessoa-3",
+        nome: "ElevasManutencao",
+        documento: "CNPJ 12.345.678/0001-99",
+        papeis: ["Fornecedor"],
+        condominio: organizacao.nome,
+        bloco: null,
+        unidade: null
       }
-    ]);
+    ];
+
+    return (
+      <div className="config-page">
+        <header className="config-hero">
+          <div>
+            <h2>Pessoas & papeis</h2>
+            <p className="config-subtitle">
+              Mapa visual dos vinculos entre pessoas, papeis e estrutura.
+            </p>
+          </div>
+          <div className="config-hero-actions">
+            <span className="config-pill">Visual apenas</span>
+            <span className="config-pill">Sem regras</span>
+          </div>
+        </header>
+
+        <section className="people-map">
+          <div className="people-map-info">
+            <div className="people-map-card">
+              <span className="people-map-title">Pessoa → Papel</span>
+              <p>Uma pessoa pode ter varios papeis ao mesmo tempo.</p>
+            </div>
+            <div className="people-map-card">
+              <span className="people-map-title">Pessoa → Estrutura</span>
+              <p>Vinculo com condominio e, opcionalmente, com unidade.</p>
+            </div>
+            <div className="people-map-card people-map-card--alert">
+              <span className="people-map-title">Visual apenas</span>
+              <p>Regras entram depois. Nenhum dado real e alterado.</p>
+            </div>
+          </div>
+
+          <div className="people-map-grid">
+            {pessoasMock.map((pessoa) => (
+              <div key={pessoa.id} className="people-map-row">
+                <div className="people-card">
+                  <span className="people-label">Pessoa</span>
+                  <strong>{pessoa.nome}</strong>
+                  <span className="people-subtext">{pessoa.documento}</span>
+                </div>
+                <div className="people-connect">→</div>
+                <div className="people-role-card">
+                  <span className="people-label">Papeis</span>
+                  <div className="people-role-chips">
+                    {pessoa.papeis.map((papel) => (
+                      <span key={papel}>{papel}</span>
+                    ))}
+                  </div>
+                </div>
+                <div className="people-connect">→</div>
+                <div className="people-link-card">
+                  <span className="people-label">Vinculos</span>
+                  <div className="people-link-list">
+                    <div className="people-link-item">
+                      <span>Condominio</span>
+                      <strong>{pessoa.condominio}</strong>
+                    </div>
+                    <div className="people-link-item">
+                      <span>Bloco</span>
+                      <strong>{pessoa.bloco ?? "Opcional"}</strong>
+                    </div>
+                    <div className="people-link-item">
+                      <span>Unidade</span>
+                      <strong>{pessoa.unidade ?? "Opcional"}</strong>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <div className="config-grid">
+          {[
+            {
+              id: "pessoas",
+              title: "Pessoas",
+              description: "Cadastro unico de pessoas e documentos.",
+              actionLabel: "Em breve",
+              disabled: true
+            },
+            {
+              id: "tipos-pessoa",
+              title: "Tipos de pessoa",
+              description: "Morador, funcionario, fornecedor, sindico, etc.",
+              actionLabel: "Em breve",
+              disabled: true
+            },
+            {
+              id: "papeis",
+              title: "Papeis e funcoes",
+              description: "Funcoes flexiveis ligadas ao dia a dia.",
+              actionLabel: "Em breve",
+              disabled: true
+            },
+            {
+              id: "vinculos",
+              title: "Vinculos",
+              description: "Vinculos entre pessoa, unidade e condominio.",
+              actionLabel: "Em breve",
+              disabled: true
+            },
+            {
+              id: "perfis-acesso",
+              title: "Perfis de acesso",
+              description: "Perfis ligados a permissoes do sistema.",
+              actionLabel: "Em breve",
+              disabled: true
+            },
+            {
+              id: "vinculos-padrao",
+              title: "Vinculos padrao",
+              description: "Relacoes base entre pessoa, unidade e condominio.",
+              actionLabel: "Em breve",
+              disabled: true
+            }
+          ].map((card) => (
+            <div
+              key={card.id}
+              className={"config-card" + (card.disabled ? " config-card--disabled" : "")}
+            >
+              <div className="config-card-header">
+                <h3>{card.title}</h3>
+              </div>
+              <p className="config-card-desc">{card.description}</p>
+              <div className="config-card-actions">
+                <button type="button" className="button-secondary" disabled>
+                  {card.actionLabel}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
   }
 
   return renderCards("Financeiro (base)", "Definicoes do financeiro vivo.", [

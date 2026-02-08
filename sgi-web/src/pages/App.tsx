@@ -149,6 +149,7 @@ const viewMeta: Record<AppView, { title: string; subtitle: string }> = {
 };
 
 const financeiroSiglas: Record<FinanceiroTab, string> = {
+  mapaFinanceiro: "MF",
   categorias: "CA",
   contas: "CT",
   consumos: "CS",
