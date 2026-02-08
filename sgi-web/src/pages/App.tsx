@@ -169,11 +169,10 @@ const financeiroSiglas: Record<FinanceiroTab, string> = {
 };
 
 const configuracoesSiglas: Record<ConfiguracoesTab, string> = {
-  blocos: "BL",
-  apartamentos: "AP",
-  dependencias: "DP",
-  garagens: "GA",
-  notificacoes: "NT"
+  "cadastros-base": "CB",
+  "estrutura-condominio": "EC",
+  "pessoas-papeis": "PP",
+  "financeiro-base": "FB"
 };
 
 const normalizeText = (value?: string | null) =>
@@ -1369,7 +1368,7 @@ const InnerApp: React.FC = () => {
   const [financeiroAba, setFinanceiroAba] = useState<FinanceiroTab>("contas");
   const [sidebarFinanceiroOpen, setSidebarFinanceiroOpen] = useState(false);
   const [configuracoesAba, setConfiguracoesAba] =
-    useState<ConfiguracoesTab>("blocos");
+    useState<ConfiguracoesTab>("cadastros-base");
   const [sidebarConfiguracoesOpen, setSidebarConfiguracoesOpen] = useState(false);
   const contentRef = useRef<HTMLElement | null>(null);
   const [gerandoDemo, setGerandoDemo] = useState(false);
