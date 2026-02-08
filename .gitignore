@@ -13,6 +13,8 @@ condo-fullstack/
 
 # Banco de dados local
 src/Sgi.Api/sgi.db
+src/Sgi.Api/sgi.db-shm
+src/Sgi.Api/sgi.db-wal
 
 # Uploads locais
 src/Sgi.Api/Uploads/
@@ -29,3 +31,8 @@ teste/
 
 # Ambientes locais
 sgi-web/.env
+
+# Node deps acidentais no backend
+src/Sgi.Api/node_modules/
+src/Sgi.Api/package.json
+src/Sgi.Api/package-lock.json

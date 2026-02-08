@@ -17,6 +17,7 @@ public static class Authz
         var raw = user.FindFirstValue("uid")
                   ?? user.FindFirstValue("userId")
                   ?? user.FindFirstValue(ClaimTypes.NameIdentifier);
+
         return Guid.TryParse(raw, out var id) ? id : null;
     }
 
@@ -45,7 +46,9 @@ public static class Authz
             var result = JsonSerializer.Deserialize<List<MembershipClaim>>(
                 raw,
                 new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-            return result ?? Array.Empty<MembershipClaim>();
+
+            // ✅ FIX CS0019: não usar ?? com List<> e array.
+            return result ?? new List<MembershipClaim>();
         }
         catch
         {
