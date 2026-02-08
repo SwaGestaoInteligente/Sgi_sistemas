@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, NotificacaoConfig, Organizacao, UnidadeOrganizacional } from "../api";
 import { useAuth } from "../hooks/useAuth";
 
@@ -520,6 +520,8 @@ const CadastrosBaseTable: React.FC<CadastrosBaseProps> = ({
   const [filtroCodigo, setFiltroCodigo] = useState("");
   const [filtroNome, setFiltroNome] = useState("");
   const [filtroStatus, setFiltroStatus] = useState("ativo");
+  const [ordenacao, setOrdenacao] = useState("nome-asc");
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const registrosTipo = useMemo(
     () => registros.filter((registro) => registro.tipo === tipo),
@@ -546,6 +548,27 @@ const CadastrosBaseTable: React.FC<CadastrosBaseProps> = ({
     });
   }, [filtroCodigo, filtroNome, filtroStatus, registrosTipo]);
 
+  const registrosOrdenados = useMemo(() => {
+    const lista = [...registrosFiltrados];
+    const byNome = (a: CadastroBaseRegistro, b: CadastroBaseRegistro) =>
+      a.nome.localeCompare(b.nome, "pt-BR", { sensitivity: "base" });
+    const byCodigo = (a: CadastroBaseRegistro, b: CadastroBaseRegistro) =>
+      a.codigo.localeCompare(b.codigo, "pt-BR", { sensitivity: "base" });
+    switch (ordenacao) {
+      case "nome-desc":
+        return lista.sort((a, b) => -byNome(a, b));
+      case "codigo-asc":
+        return lista.sort(byCodigo);
+      case "codigo-desc":
+        return lista.sort((a, b) => -byCodigo(a, b));
+      case "status":
+        return lista.sort((a, b) => a.status.localeCompare(b.status));
+      case "nome-asc":
+      default:
+        return lista.sort(byNome);
+    }
+  }, [ordenacao, registrosFiltrados]);
+
   useEffect(() => {
     setFormAberto(false);
     setCodigo("");
@@ -556,6 +579,7 @@ const CadastrosBaseTable: React.FC<CadastrosBaseProps> = ({
     setFiltroCodigo("");
     setFiltroNome("");
     setFiltroStatus("ativo");
+    setOrdenacao("nome-asc");
   }, [tipo]);
 
   const gerarId = () =>
@@ -630,6 +654,83 @@ const CadastrosBaseTable: React.FC<CadastrosBaseProps> = ({
 
   const parentOptionsId = `cadastro-base-parent-${tipo}`;
 
+  const exportarJson = () => {
+    const payload = {
+      tipo,
+      registros: registrosTipo
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+      type: "application/json"
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `cadastros-base-${tipo}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const importarJson = async (arquivo: File) => {
+    try {
+      const texto = await arquivo.text();
+      const data = JSON.parse(texto);
+      const lista: CadastroBaseRegistro[] = Array.isArray(data)
+        ? data
+        : Array.isArray(data?.registros)
+        ? data.registros
+        : [];
+
+      if (!lista.length) {
+        setErro("Arquivo sem registros validos.");
+        return;
+      }
+
+      const existentesCodigo = new Set(
+        registrosTipo.map((item) => item.codigo.toLowerCase())
+      );
+      const existentesNome = new Set(
+        registrosTipo.map((item) => item.nome.toLowerCase())
+      );
+
+      const novos: CadastroBaseRegistro[] = [];
+
+      for (const item of lista) {
+        const nomeItem = String(item.nome ?? "").trim();
+        if (!nomeItem) continue;
+        const codigoItem = String(item.codigo ?? "").trim();
+        const codigoKey = codigoItem.toLowerCase();
+        const nomeKey = nomeItem.toLowerCase();
+        if (codigoKey && existentesCodigo.has(codigoKey)) continue;
+        if (existentesNome.has(nomeKey)) continue;
+        existentesCodigo.add(codigoKey);
+        existentesNome.add(nomeKey);
+        novos.push({
+          id: String(item.id ?? gerarId()),
+          tipo,
+          codigo: codigoItem,
+          nome: nomeItem,
+          descricao: String(item.descricao ?? ""),
+          parent: String(item.parent ?? ""),
+          status: item.status === "arquivado" ? "arquivado" : "ativo"
+        });
+      }
+
+      if (!novos.length) {
+        setErro("Nenhum registro novo para importar.");
+        return;
+      }
+
+      novos.forEach((registro) => onCreate(registro));
+      setErro(null);
+    } catch (e: any) {
+      setErro(e?.message || "Erro ao importar JSON.");
+    } finally {
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    }
+  };
+
   return (
     <div className="config-page">
       <header className="config-header">
@@ -667,6 +768,18 @@ const CadastrosBaseTable: React.FC<CadastrosBaseProps> = ({
           <button type="button" className="button-secondary" onClick={onVoltar}>
             Voltar
           </button>
+          <button type="button" className="button-secondary" onClick={exportarJson}>
+            Exportar
+          </button>
+          {!readOnly && (
+            <button
+              type="button"
+              className="button-secondary"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              Importar
+            </button>
+          )}
           {!readOnly && (
             <button type="button" onClick={() => setFormAberto((prev) => !prev)}>
               {formAberto ? "Fechar" : "Inserir"}
@@ -674,6 +787,19 @@ const CadastrosBaseTable: React.FC<CadastrosBaseProps> = ({
           )}
         </div>
       </header>
+
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="application/json"
+        onChange={(e) => {
+          const arquivo = e.target.files?.[0];
+          if (arquivo) {
+            void importarJson(arquivo);
+          }
+        }}
+        style={{ display: "none" }}
+      />
 
       <section className="finance-table-card">
         {formAberto && !readOnly && (
@@ -741,6 +867,19 @@ const CadastrosBaseTable: React.FC<CadastrosBaseProps> = ({
             />
           </label>
           <label>
+            <span>Ordenar</span>
+            <select
+              value={ordenacao}
+              onChange={(e) => setOrdenacao(e.target.value)}
+            >
+              <option value="nome-asc">Nome (A-Z)</option>
+              <option value="nome-desc">Nome (Z-A)</option>
+              <option value="codigo-asc">Codigo (A-Z)</option>
+              <option value="codigo-desc">Codigo (Z-A)</option>
+              <option value="status">Status</option>
+            </select>
+          </label>
+          <label>
             <span>Status</span>
             <select
               value={filtroStatus}
@@ -766,7 +905,7 @@ const CadastrosBaseTable: React.FC<CadastrosBaseProps> = ({
             </tr>
           </thead>
           <tbody>
-            {registrosFiltrados.map((registro) => (
+            {registrosOrdenados.map((registro) => (
               <tr key={registro.id}>
                 <td className="finance-actions-cell">
                   {!readOnly && (
@@ -820,7 +959,7 @@ const CadastrosBaseTable: React.FC<CadastrosBaseProps> = ({
                 </td>
               </tr>
             ))}
-            {!registrosFiltrados.length && (
+            {!registrosOrdenados.length && (
               <tr>
                 <td colSpan={5} style={{ textAlign: "center" }}>
                   Nenhum registro encontrado.
@@ -868,6 +1007,27 @@ export default function ConfiguracoesView(props: ConfiguracoesViewProps) {
     setCadastrosBase([]);
   }, [organizacao.id]);
 
+  const storageKey = `sgi:cadastros-base:${organizacao.id}`;
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const raw = window.localStorage.getItem(storageKey);
+    if (!raw) return;
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        setCadastrosBase(parsed as CadastroBaseRegistro[]);
+      }
+    } catch {
+      setCadastrosBase([]);
+    }
+  }, [storageKey]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(storageKey, JSON.stringify(cadastrosBase));
+  }, [cadastrosBase, storageKey]);
+
   const estruturaConfig = useMemo(() => {
     return {
       blocos: {
@@ -904,6 +1064,64 @@ export default function ConfiguracoesView(props: ConfiguracoesViewProps) {
       }
     } as const;
   }, []);
+
+  const [estruturaResumo, setEstruturaResumo] = useState<{
+    loading: boolean;
+    erro: string | null;
+    blocos: UnidadeOrganizacional[];
+    unidades: UnidadeOrganizacional[];
+    dependencias: UnidadeOrganizacional[];
+    garagens: UnidadeOrganizacional[];
+  }>({
+    loading: false,
+    erro: null,
+    blocos: [],
+    unidades: [],
+    dependencias: [],
+    garagens: []
+  });
+
+  const normalizarTipo = (value?: string | null) =>
+    (value ?? "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .trim();
+
+  const carregarEstrutura = useCallback(async () => {
+    if (!token) return;
+    try {
+      setEstruturaResumo((prev) => ({ ...prev, loading: true, erro: null }));
+      const lista = await api.listarUnidades(token, organizacao.id);
+      const blocos = lista.filter(
+        (item) => normalizarTipo(item.tipo) === "bloco"
+      );
+      const dependencias = lista.filter(
+        (item) => normalizarTipo(item.tipo) === "dependencia"
+      );
+      const garagens = lista.filter(
+        (item) => normalizarTipo(item.tipo) === "garagem"
+      );
+      const unidades = lista.filter((item) => {
+        const tipo = normalizarTipo(item.tipo);
+        return tipo !== "bloco" && tipo !== "dependencia" && tipo !== "garagem";
+      });
+      setEstruturaResumo({
+        loading: false,
+        erro: null,
+        blocos,
+        unidades,
+        dependencias,
+        garagens
+      });
+    } catch (e: any) {
+      setEstruturaResumo((prev) => ({
+        ...prev,
+        loading: false,
+        erro: e?.message || "Erro ao carregar estrutura"
+      }));
+    }
+  }, [organizacao.id, token]);
 
   const carregarNotificacoes = useCallback(async () => {
     if (!token) return;
@@ -957,6 +1175,12 @@ export default function ConfiguracoesView(props: ConfiguracoesViewProps) {
       void carregarNotificacoes();
     }
   }, [abaAtual, cadastrosAba, carregarNotificacoes]);
+
+  useEffect(() => {
+    if (abaAtual === "estrutura-condominio") {
+      void carregarEstrutura();
+    }
+  }, [abaAtual, carregarEstrutura]);
 
   const getConfig = (tipo: string, canal: "email" | "app") =>
     notificacoes.find((n) => n.tipo === tipo && n.canal === canal);
@@ -1431,66 +1655,316 @@ export default function ConfiguracoesView(props: ConfiguracoesViewProps) {
   }
 
   if (abaAtual === "estrutura-condominio") {
-    return renderCards(
-      "Estrutura do condominio",
-      "Estrutura fisica e organizacional do cliente.",
-      [
-        {
-          id: "condominios",
-          title: "Condominios",
-          description: "Cadastre e organize condominios.",
-          actionLabel: "Em breve",
-          disabled: true
-        },
-        {
-          id: "blocos",
-          title: "Blocos",
-          description: "Organize blocos e setores do condominio.",
-          actionLabel: acaoGerenciar,
-          onClick: () => setEstruturaAba("blocos"),
-          tag: "Ativo",
-          active: true
-        },
-        {
-          id: "unidades",
-          title: "Unidades",
-          description: "Apartamentos, salas, casas ou lotes.",
-          actionLabel: acaoGerenciar,
-          onClick: () => setEstruturaAba("unidades"),
-          tag: "Ativo",
-          active: true
-        },
-        {
-          id: "tipos-unidade",
-          title: "Tipos de unidade",
-          description: "Defina categorias de unidades (apto, sala, casa).",
-          actionLabel: "Em breve",
-          disabled: true
-        },
-        {
-          id: "areas-comuns",
-          title: "Areas comuns",
-          description: "Salas, churrasqueiras, vagas e recursos.",
-          actionLabel: "Em breve",
-          disabled: true
-        },
-        {
-          id: "dependencias",
-          title: "Dependencias",
-          description: "Ambientes e recursos do condominio.",
-          actionLabel: acaoGerenciar,
-          onClick: () => setEstruturaAba("dependencias"),
-          active: true
-        },
-        {
-          id: "garagens",
-          title: "Garagens",
-          description: "Controle de vagas e responsaveis.",
-          actionLabel: acaoGerenciar,
-          onClick: () => setEstruturaAba("garagens"),
-          active: true
-        }
-      ]
+    const blocosPreview = estruturaResumo.blocos.slice(0, 3);
+    const unidadesPreview = estruturaResumo.unidades.slice(0, 3);
+    const dependenciasPreview = estruturaResumo.dependencias.slice(0, 3);
+    const garagensPreview = estruturaResumo.garagens.slice(0, 3);
+
+    return (
+      <div className="config-page">
+        <header className="config-hero">
+          <div>
+            <h2>Estrutura do condominio</h2>
+            <p className="config-subtitle">
+              Mapa visual da estrutura fisica, com vinculos claros entre niveis.
+            </p>
+          </div>
+          <div className="config-hero-actions">
+            <span className="config-pill">Estrutura</span>
+            <span className="config-pill">Vinculos</span>
+          </div>
+        </header>
+
+        <section className="structure-map">
+          <div className="structure-root">
+            <div className="structure-card structure-card--root">
+              <span className="structure-eyebrow">Condominio (nivel raiz)</span>
+              <h3>{organizacao.nome}</h3>
+              <p>Vinculo principal da estrutura. Tudo herda deste nivel.</p>
+            </div>
+            <div className="structure-breadcrumbs">
+              <span>Condominio</span>
+              <span className="structure-arrow">→</span>
+              <span>Bloco</span>
+              <span className="structure-arrow">→</span>
+              <span>Unidade</span>
+            </div>
+          </div>
+
+          <div className="structure-flow" aria-hidden="true">
+            <span className="structure-node">Condominio</span>
+            <span className="structure-connector" />
+            <span className="structure-node">Blocos</span>
+            <span className="structure-connector" />
+            <span className="structure-node">Unidades</span>
+          </div>
+
+          <div className="structure-info">
+            <div className="structure-info-card">
+              <span className="structure-info-title">Vinculo principal</span>
+              <p>
+                Todo bloco pertence ao Condominio{" "}
+                <strong>{organizacao.nome}</strong>.
+              </p>
+            </div>
+            <div className="structure-info-card">
+              <span className="structure-info-title">Heranca de unidade</span>
+              <p>Unidades herdam do bloco e do condominio.</p>
+            </div>
+            <div className="structure-info-card">
+              <span className="structure-info-title">Visual apenas</span>
+              <p>Sem regras ativas. Preparado para vinculos reais.</p>
+            </div>
+          </div>
+
+          {estruturaResumo.loading && (
+            <div className="structure-loading">Carregando estrutura...</div>
+          )}
+
+          {estruturaResumo.erro && (
+            <p className="error">{estruturaResumo.erro}</p>
+          )}
+
+          <div className="structure-columns">
+            <div className="structure-column">
+              <div className="structure-column-header">
+                <div>
+                  <h4>Blocos</h4>
+                  <p>Este bloco pertence ao Condominio {organizacao.nome}.</p>
+                </div>
+                <div className="structure-column-actions">
+                  <span className="structure-count">
+                    {estruturaResumo.blocos.length}
+                  </span>
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    onClick={() => setEstruturaAba("blocos")}
+                  >
+                    Abrir
+                  </button>
+                </div>
+              </div>
+              <div className="structure-items">
+                {blocosPreview.map((item) => (
+                  <div key={item.id} className="structure-item">
+                    <strong>{item.nome}</strong>
+                    <span>Vinculo: Condominio → Bloco</span>
+                  </div>
+                ))}
+                {!blocosPreview.length && (
+                  <div className="structure-empty">
+                    Nenhum bloco cadastrado.
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="structure-column">
+              <div className="structure-column-header">
+                <div>
+                  <h4>Unidades</h4>
+                  <p>Vinculo: Condominio → Bloco → Unidade.</p>
+                </div>
+                <div className="structure-column-actions">
+                  <span className="structure-count">
+                    {estruturaResumo.unidades.length}
+                  </span>
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    onClick={() => setEstruturaAba("unidades")}
+                  >
+                    Abrir
+                  </button>
+                </div>
+              </div>
+              <div className="structure-items">
+                {unidadesPreview.map((item) => (
+                  <div key={item.id} className="structure-item">
+                    <strong>{item.nome}</strong>
+                    <span>Vinculo: Condominio → Bloco (a definir) → Unidade</span>
+                  </div>
+                ))}
+                {!unidadesPreview.length && (
+                  <div className="structure-empty">
+                    Nenhuma unidade cadastrada.
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="structure-column">
+              <div className="structure-column-header">
+                <div>
+                  <h4>Dependencias</h4>
+                  <p>Recurso vinculado ao Condominio.</p>
+                </div>
+                <div className="structure-column-actions">
+                  <span className="structure-count">
+                    {estruturaResumo.dependencias.length}
+                  </span>
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    onClick={() => setEstruturaAba("dependencias")}
+                  >
+                    Abrir
+                  </button>
+                </div>
+              </div>
+              <div className="structure-items">
+                {dependenciasPreview.map((item) => (
+                  <div key={item.id} className="structure-item">
+                    <strong>{item.nome}</strong>
+                    <span>Vinculo: Condominio → Dependencia</span>
+                  </div>
+                ))}
+                {!dependenciasPreview.length && (
+                  <div className="structure-empty">
+                    Nenhuma dependencia cadastrada.
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="structure-column">
+              <div className="structure-column-header">
+                <div>
+                  <h4>Garagens</h4>
+                  <p>Recursos vinculados ao Condominio.</p>
+                </div>
+                <div className="structure-column-actions">
+                  <span className="structure-count">
+                    {estruturaResumo.garagens.length}
+                  </span>
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    onClick={() => setEstruturaAba("garagens")}
+                  >
+                    Abrir
+                  </button>
+                </div>
+              </div>
+              <div className="structure-items">
+                {garagensPreview.map((item) => (
+                  <div key={item.id} className="structure-item">
+                    <strong>{item.nome}</strong>
+                    <span>Vinculo: Condominio → Garagem</span>
+                  </div>
+                ))}
+                {!garagensPreview.length && (
+                  <div className="structure-empty">
+                    Nenhuma garagem cadastrada.
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="structure-people">
+            <div>
+              <h4>Pessoas vinculadas (visual)</h4>
+              <p>
+                Este espaco exibira pessoas ligadas a unidades e blocos quando o
+                backend estiver integrado.
+              </p>
+            </div>
+            <div className="structure-chips">
+              <span>Moradores</span>
+              <span>Funcionarios</span>
+              <span>Fornecedores</span>
+              <span>Sindicos</span>
+            </div>
+          </div>
+        </section>
+
+        <div className="config-grid">
+          {[
+            {
+              id: "condominios",
+              title: "Condominios",
+              description: "Cadastre e organize condominios.",
+              actionLabel: "Em breve",
+              disabled: true
+            },
+            {
+              id: "blocos",
+              title: "Blocos",
+              description: "Organize blocos e setores do condominio.",
+              actionLabel: acaoGerenciar,
+              onClick: () => setEstruturaAba("blocos"),
+              tag: "Ativo",
+              active: true
+            },
+            {
+              id: "unidades",
+              title: "Unidades",
+              description: "Apartamentos, salas, casas ou lotes.",
+              actionLabel: acaoGerenciar,
+              onClick: () => setEstruturaAba("unidades"),
+              tag: "Ativo",
+              active: true
+            },
+            {
+              id: "tipos-unidade",
+              title: "Tipos de unidade",
+              description: "Defina categorias de unidades (apto, sala, casa).",
+              actionLabel: "Em breve",
+              disabled: true
+            },
+            {
+              id: "areas-comuns",
+              title: "Areas comuns",
+              description: "Salas, churrasqueiras, vagas e recursos.",
+              actionLabel: "Em breve",
+              disabled: true
+            },
+            {
+              id: "dependencias",
+              title: "Dependencias",
+              description: "Ambientes e recursos do condominio.",
+              actionLabel: acaoGerenciar,
+              onClick: () => setEstruturaAba("dependencias"),
+              active: true
+            },
+            {
+              id: "garagens",
+              title: "Garagens",
+              description: "Controle de vagas e responsaveis.",
+              actionLabel: acaoGerenciar,
+              onClick: () => setEstruturaAba("garagens"),
+              active: true
+            }
+          ].map((card) => (
+            <div
+              key={card.id}
+              className={
+                "config-card" +
+                (card.disabled ? " config-card--disabled" : "") +
+                (card.active ? " config-card--active" : "")
+              }
+            >
+              <div className="config-card-header">
+                <h3>{card.title}</h3>
+                {card.tag && <span className="config-tag">{card.tag}</span>}
+              </div>
+              <p className="config-card-desc">{card.description}</p>
+              <div className="config-card-actions">
+                <button
+                  type="button"
+                  className="button-secondary"
+                  disabled={card.disabled}
+                  onClick={card.onClick}
+                >
+                  {card.actionLabel}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
     );
   }
 

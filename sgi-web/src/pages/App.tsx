@@ -707,12 +707,6 @@ const ChamadosView: React.FC<{
   }, [token, organizacao.id]);
 
   useEffect(() => {
-    if (!recursoId && recursos.length > 0) {
-      setRecursoId(recursos[0].id);
-    }
-  }, [recursos, recursoId]);
-
-  useEffect(() => {
     if (!selecionado) return;
     setResponsavelPessoaId(selecionado.responsavelPessoaId ?? "");
     void carregarHistorico(selecionado.id);
@@ -2068,15 +2062,25 @@ const InnerApp: React.FC = () => {
             </div>
 
             {podeVerCadastros && (
-              <div className="sidebar-section">
-                <p className="sidebar-section-title">Cadastros</p>
-                {renderSidebarItem("pessoas", "Pessoas", "👥")}
-                {renderSidebarItem("unidades", "Unidades", "🏢")}
-                {renderSidebarItem("funcionarios", "Funcionarios", "👔")}
-                {renderSidebarItem("fornecedores", "Fornecedores", "🤝")}
-                {renderSidebarItem("veiculos", "Veiculos", "🚗")}
-                {renderSidebarItem("pets", "Pets", "🐾")}
-              </div>
+              <>
+                <div className="sidebar-section">
+                  <p className="sidebar-section-title">Cadastros de pessoas</p>
+                  {renderSidebarItem("pessoas", "Pessoas", "👥")}
+                  {renderSidebarItem("funcionarios", "Funcionarios", "👔")}
+                  {renderSidebarItem("fornecedores", "Fornecedores", "🤝")}
+                </div>
+
+                <div className="sidebar-section">
+                  <p className="sidebar-section-title">Estrutura fisica</p>
+                  {renderSidebarItem("unidades", "Unidades", "🏢")}
+                </div>
+
+                <div className="sidebar-section">
+                  <p className="sidebar-section-title">Ativos & registros</p>
+                  {renderSidebarItem("veiculos", "Veiculos", "🚗")}
+                  {renderSidebarItem("pets", "Pets", "🐾")}
+                </div>
+              </>
             )}
 
             {podeFinanceiro && (

@@ -1680,7 +1680,21 @@ export default function FinanceiroView({
 
       {aba === "contasPagar" && (
         <div className="finance-table-card" style={{ marginTop: 12 }}>
-          <h3>Contas a pagar</h3>
+          <div className="finance-table-header">
+            <div>
+              <h3>Contas a pagar</h3>
+              <p className="finance-form-sub">
+                Gerencie despesas e vencimentos do condominio.
+              </p>
+            </div>
+            <button
+              type="button"
+              className="button-secondary"
+              onClick={() => handleAbaChange("contas")}
+            >
+              Voltar
+            </button>
+          </div>
 
           {canWrite ? (
             <form
@@ -1937,7 +1951,21 @@ export default function FinanceiroView({
 
       {aba === "contasReceber" && (
         <div className="finance-table-card" style={{ marginTop: 12 }}>
-          <h3>Contas a receber</h3>
+          <div className="finance-table-header">
+            <div>
+              <h3>Contas a receber</h3>
+              <p className="finance-form-sub">
+                Controle receitas e recebimentos previstos.
+              </p>
+            </div>
+            <button
+              type="button"
+              className="button-secondary"
+              onClick={() => handleAbaChange("contas")}
+            >
+              Voltar
+            </button>
+          </div>
 
           {canWrite ? (
             <form
