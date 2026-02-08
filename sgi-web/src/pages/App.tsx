@@ -150,6 +150,7 @@ const viewMeta: Record<AppView, { title: string; subtitle: string }> = {
 
 const financeiroSiglas: Record<FinanceiroTab, string> = {
   mapaFinanceiro: "MF",
+  contabilidade: "CTB",
   categorias: "CA",
   contas: "CT",
   consumos: "CS",
@@ -1360,7 +1361,8 @@ const InnerApp: React.FC = () => {
   const [criandoOrg, setCriandoOrg] = useState(false);
   const [sidebarCompact, setSidebarCompact] = useState(false);
   const [view, setView] = useState<AppView>("dashboard");
-  const [financeiroAba, setFinanceiroAba] = useState<FinanceiroTab>("contas");
+  const [financeiroAba, setFinanceiroAba] =
+    useState<FinanceiroTab>("mapaFinanceiro");
   const [sidebarFinanceiroOpen, setSidebarFinanceiroOpen] = useState(false);
   const [configuracoesAba, setConfiguracoesAba] =
     useState<ConfiguracoesTab>("cadastros-base");
@@ -2062,6 +2064,39 @@ const InnerApp: React.FC = () => {
                 renderSidebarItem("minhaUnidade", "Minha unidade", "🏠")}
             </div>
 
+            {!sidebarCompact && (podeFinanceiroEscrita || podeCriarOperacao) && (
+              <div className="sidebar-section">
+                <p className="sidebar-section-title">Atalhos</p>
+                {podeFinanceiroEscrita && (
+                  <button
+                    type="button"
+                    className="sidebar-quick"
+                    onClick={() => executarAcaoRapida("lancamento")}
+                  >
+                    Novo lancamento
+                  </button>
+                )}
+                {podeCriarOperacao && (
+                  <button
+                    type="button"
+                    className="sidebar-quick"
+                    onClick={() => executarAcaoRapida("chamado")}
+                  >
+                    Novo chamado
+                  </button>
+                )}
+                {podeCriarOperacao && (
+                  <button
+                    type="button"
+                    className="sidebar-quick"
+                    onClick={() => executarAcaoRapida("reserva")}
+                  >
+                    Nova reserva
+                  </button>
+                )}
+              </div>
+            )}
+
             {podeVerCadastros && (
               <>
                 <div className="sidebar-section">
@@ -2087,6 +2122,24 @@ const InnerApp: React.FC = () => {
             {podeFinanceiro && (
               <div className="sidebar-section">
                 <p className="sidebar-section-title">Financeiro</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setViewIfAllowed("financeiro");
+                    setFinanceiroAba("contabilidade");
+                    setSidebarFinanceiroOpen(true);
+                  }}
+                  className={
+                    "sidebar-item" +
+                    (view === "financeiro" && financeiroAba === "contabilidade"
+                      ? " sidebar-item--active"
+                      : "")
+                  }
+                  title="Contabilidade"
+                >
+                  <span className="sidebar-item-icon">📘</span>
+                  <span className="sidebar-item-label">Contabilidade</span>
+                </button>
                 <button
                   type="button"
                   onClick={() => {

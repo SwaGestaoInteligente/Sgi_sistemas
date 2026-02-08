@@ -2015,6 +2015,14 @@ export default function ConfiguracoesView(props: ConfiguracoesViewProps) {
         </header>
 
         <section className="people-map">
+          <div className="people-map-flow">
+            <span>Pessoa</span>
+            <span className="people-map-arrow">→</span>
+            <span>Papel</span>
+            <span className="people-map-arrow">→</span>
+            <span>Vinculo</span>
+          </div>
+
           <div className="people-map-info">
             <div className="people-map-card">
               <span className="people-map-title">Pessoa → Papel</span>

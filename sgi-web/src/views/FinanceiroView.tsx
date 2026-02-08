@@ -29,6 +29,7 @@ type FinanceiroViewProps = {
 
 export type FinanceiroTab =
   | "mapaFinanceiro"
+  | "contabilidade"
   | "categorias"
   | "contas"
   | "consumos"
@@ -49,6 +50,7 @@ export type FinanceiroTab =
 
 export const menuFinanceiro: Array<{ id: FinanceiroTab; label: string; badge?: string }> = [
   { id: "mapaFinanceiro", label: "Mapa financeiro" },
+  { id: "contabilidade", label: "Contabilidade" },
   { id: "categorias", label: "Categorias" },
   { id: "contas", label: "Contas" },
   { id: "consumos", label: "Consumos", badge: "Em breve" },
@@ -77,7 +79,7 @@ export default function FinanceiroView({
 }: FinanceiroViewProps) {
   const topoRef = useRef<HTMLDivElement | null>(null);
   const { token, session } = useAuth();
-  const [abaLocal, setAbaLocal] = useState<FinanceiroTab>("contas");
+  const [abaLocal, setAbaLocal] = useState<FinanceiroTab>("mapaFinanceiro");
   const aba = abaSelecionada ?? abaLocal;
   const setAba = useCallback(
     (novaAba: FinanceiroTab) => {
@@ -1605,6 +1607,241 @@ export default function FinanceiroView({
           </div>
 
           <p className="finance-map-footnote">
+            Fluxo visual — regras entram depois. Nenhum dado real e alterado.
+          </p>
+        </section>
+      )}
+
+      {aba === "contabilidade" && (
+        <section className="accounting-map">
+          <div className="accounting-header">
+            <div>
+              <h3>Contabilidade completa</h3>
+              <p className="finance-form-sub">
+                Visao visual para entender lancamentos, demonstracoes e fechamento.
+              </p>
+            </div>
+            <span className="accounting-pill">Modelo visual — regras entram depois</span>
+          </div>
+
+          <div className="accounting-flow">
+            <span className="accounting-node">Lancamento (debito/credito)</span>
+            <span className="accounting-arrow">→</span>
+            <span className="accounting-node">Livro diario / razao</span>
+            <span className="accounting-arrow">→</span>
+            <span className="accounting-node">Balancete</span>
+            <span className="accounting-arrow">→</span>
+            <span className="accounting-node">DRE / Balanco</span>
+          </div>
+
+          <div className="accounting-grid">
+            <div className="accounting-column accounting-column--entry">
+              <div className="accounting-column-title">
+                <span>Plano de contas</span>
+                <span className="accounting-count">4 grupos</span>
+              </div>
+              <div className="accounting-cards">
+                {[
+                  {
+                    title: "Ativo",
+                    sub: "Bens e direitos",
+                    badge: "18 contas"
+                  },
+                  {
+                    title: "Passivo",
+                    sub: "Obrigacoes e dividas",
+                    badge: "12 contas"
+                  },
+                  {
+                    title: "Patrimonio liquido",
+                    sub: "Capital e reservas",
+                    badge: "6 contas"
+                  },
+                  {
+                    title: "Resultado",
+                    sub: "Receitas e despesas",
+                    badge: "14 contas"
+                  }
+                ].map((item) => (
+                  <div key={item.title} className="accounting-card">
+                    <div className="accounting-card-title">{item.title}</div>
+                    <p className="accounting-card-sub">{item.sub}</p>
+                    <span className="accounting-card-badge">{item.badge}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="accounting-column accounting-column--neutral">
+              <div className="accounting-column-title">
+                <span>Lancamentos contabeis</span>
+                <span className="accounting-count">debito/credito</span>
+              </div>
+              <div className="accounting-cards">
+                {[
+                  {
+                    title: "Debito",
+                    sub: "Registro de origem",
+                    badge: "22 lancamentos"
+                  },
+                  {
+                    title: "Credito",
+                    sub: "Registro de destino",
+                    badge: "22 lancamentos"
+                  },
+                  {
+                    title: "Historico padrao",
+                    sub: "Descricao recorrente",
+                    badge: "8 modelos"
+                  },
+                  {
+                    title: "Centro de custo",
+                    sub: "Rateio por area",
+                    badge: "Opcional"
+                  }
+                ].map((item) => (
+                  <div key={item.title} className="accounting-card">
+                    <div className="accounting-card-title">{item.title}</div>
+                    <p className="accounting-card-sub">{item.sub}</p>
+                    <span className="accounting-card-badge">{item.badge}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="accounting-column accounting-column--neutral">
+              <div className="accounting-column-title">
+                <span>Regime de competencia</span>
+                <span className="accounting-count">mensal</span>
+              </div>
+              <div className="accounting-cards">
+                {[
+                  {
+                    title: "Competencia",
+                    sub: "Mes/ano do fato",
+                    badge: "12 periodos"
+                  },
+                  {
+                    title: "Ajustes e provisoes",
+                    sub: "Reconhecimento futuro",
+                    badge: "4 ajustes"
+                  },
+                  {
+                    title: "Apropriacoes",
+                    sub: "Rateios por periodo",
+                    badge: "6 regras"
+                  }
+                ].map((item) => (
+                  <div key={item.title} className="accounting-card">
+                    <div className="accounting-card-title">{item.title}</div>
+                    <p className="accounting-card-sub">{item.sub}</p>
+                    <span className="accounting-card-badge">{item.badge}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="accounting-column accounting-column--alert">
+              <div className="accounting-column-title">
+                <span>Demonstracoes</span>
+                <span className="accounting-count">visual</span>
+              </div>
+              <div className="accounting-cards">
+                {[
+                  {
+                    title: "Balancete",
+                    sub: "Resumo por conta",
+                    badge: "Mensal"
+                  },
+                  {
+                    title: "DRE",
+                    sub: "Resultado do periodo",
+                    badge: "Mensal"
+                  },
+                  {
+                    title: "Balanco patrimonial",
+                    sub: "Posicao financeira",
+                    badge: "Fechamento"
+                  },
+                  {
+                    title: "DFC",
+                    sub: "Fluxo de caixa",
+                    badge: "Opcional"
+                  },
+                  {
+                    title: "DMPL / DLPA",
+                    sub: "Mutacoes do patrimonio",
+                    badge: "Opcional"
+                  },
+                  {
+                    title: "Notas explicativas",
+                    sub: "Contexto e detalhes",
+                    badge: "Anual"
+                  }
+                ].map((item) => (
+                  <div key={item.title} className="accounting-card">
+                    <div className="accounting-card-title">{item.title}</div>
+                    <p className="accounting-card-sub">{item.sub}</p>
+                    <span className="accounting-card-badge">{item.badge}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="accounting-column accounting-column--entry">
+              <div className="accounting-column-title">
+                <span>Fechamento & integracao</span>
+                <span className="accounting-count">SPED</span>
+              </div>
+              <div className="accounting-cards">
+                {[
+                  {
+                    title: "Fechamento mensal",
+                    sub: "Travamento do periodo",
+                    badge: "Checklist"
+                  },
+                  {
+                    title: "Termos de abertura/encerramento",
+                    sub: "Controle legal",
+                    badge: "Livro"
+                  },
+                  {
+                    title: "Conciliacao contabil",
+                    sub: "Revisao de contas",
+                    badge: "Controle"
+                  },
+                  {
+                    title: "Livro diario / razao",
+                    sub: "Exportacao contenciosa",
+                    badge: "Obrigatorio"
+                  },
+                  {
+                    title: "SPED ECD/ECF",
+                    sub: "Exportacao oficial",
+                    badge: "Integracao"
+                  },
+                  {
+                    title: "Plano referencial SPED",
+                    sub: "Amarracao fiscal",
+                    badge: "Vinculo"
+                  },
+                  {
+                    title: "Integracao contador",
+                    sub: "Arquivos e relatorios",
+                    badge: "Envio"
+                  }
+                ].map((item) => (
+                  <div key={item.title} className="accounting-card">
+                    <div className="accounting-card-title">{item.title}</div>
+                    <p className="accounting-card-sub">{item.sub}</p>
+                    <span className="accounting-card-badge">{item.badge}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <p className="accounting-footnote">
             Fluxo visual — regras entram depois. Nenhum dado real e alterado.
           </p>
         </section>
