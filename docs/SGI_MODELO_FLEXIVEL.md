@@ -9,9 +9,11 @@ Tudo nasce vazio.
 O cliente constrói sua própria estrutura.
 Nenhum dado é independente.
 
-## 2. Princípio Fundamental
+## 2. Fundamento do Sistema (O Coração)
 
-Tudo deve se comunicar. Nada é independente.
+Tudo precisa se comunicar.
+Nada pode ser independente.
+Tudo precisa herdar algo.
 
 Pessoa, unidade, categoria, receita, despesa e conta financeira sempre possuem relacionamento explícito.
 
@@ -20,71 +22,123 @@ Não existem:
 - saldos manuais
 - regras escondidas no código
 
-## 3. Estrutura em Camadas
+## 3. Camadas Definitivas do SGI
 
-### Camada 1 — Estrutura Organizacional
-- Organização
-- Blocos (opcional)
-- Unidades (apartamentos, salas, lotes)
+### 3.1 Cadastros Base (Genéricos e Flexíveis)
+O cliente cria o vocabulário do sistema.
 
-Nenhum dado financeiro existe sem essa base.
-
-### Camada 2 — Pessoas
-- Pessoa (CPF/CNPJ)
-- Vínculo com organização
-- Vínculo opcional com unidade
-- Papel flexível (morador, funcionário, síndico, fornecedor etc.)
-
-Pessoa é entidade única, nunca duplicada.
-
-### Camada 3 — Cadastros Genéricos (Coração do Sistema)
-
-Cadastros criados pelo cliente, todos iniciando vazios.
-
-Categorias Financeiras:
-- Tipo: Receita | Despesa | Acordo | Outros
-- Código livre
-- Nome
-- Categoria pai (hierarquia infinita)
-
-O sistema não cria categorias automaticamente.
-
-### Camada 4 — Financeiro Vivo
-- Contas financeiras
-- Lançamentos
-- Movimentações
-- Transferências
+Exemplos criados pelo cliente:
+- Tipo de Receita
+- Tipo de Despesa
+- Tipo de Acordo
+- Tipo de Inadimplência
+- Tipo de Documento
+- Tipo de Aviso
+- Tipo de Campanha
+- Tipo de Cobrança
+- Tipo de Notificação
 
 Regras:
-- Saldo não é campo editável
-- Saldo = soma das movimentações
-- Receita e despesa usam o mesmo motor
+- Nada gera dinheiro aqui
+- Nada movimenta saldo
+- Só define o que pode existir
 
-### Camada 5 — Amarrações e Regras
-- Quem gera receita
-- Quem paga
-- Quem recebe
-- Automatizações futuras (recorrência, multa, acordo)
+Uso:
+- Financeiro
+- Pessoas
+- Condomínio
+- Relatórios
 
-Nenhuma regra é obrigatória. Tudo é configurável.
+### 3.2 Estrutura do Condomínio (Hierarquia Física)
+Ordem fixa e herança clara:
+```text
+Organização
+  Condomínio
+    Bloco
+      Unidade
+        Pessoa
+```
 
-## 4. Fluxo Natural do Cliente
-- Criar organização
-- Criar estrutura (blocos/unidades)
-- Criar categorias
-- Cadastrar pessoas
-- Vincular pessoas às unidades
-- Criar contas financeiras
-- Operar o sistema
+Cadastros:
+- Condomínios
+- Blocos
+- Unidades
+- Garagens
+- Dependências
+- Áreas comuns
 
-## 5. Dor do Mercado Resolvida
+Regras:
+- Tudo que gera valor financeiro aponta para Unidade ou Condomínio
+- Nada flutua
 
-Concorrentes são engessados, complexos e pouco transparentes.
+### 3.3 Pessoas & Papéis (Quem é Quem)
+Pessoa é única, papel é múltiplo.
+
+Pessoa:
+- Nome
+- Documento
+- Contato
+- Endereço
+
+Papéis:
+- Morador
+- Funcionário
+- Síndico
+- Porteiro
+- Prestador
+- Administrador
+- Inquilino
+- Outros (cliente cria)
+
+Regras:
+- Pessoa ≠ Papel
+- Uma pessoa pode ter vários papéis
+- Financeiro sempre aponta para Pessoa + Papel
+- Histórico não se perde
+
+### 3.4 Financeiro (Núcleo Vivo)
+Tudo se conecta, nada nasce solto.
+
+Toda movimentação financeira tem:
+- Tipo (vem do Cadastro Base)
+- Origem (Pessoa / Unidade / Condomínio)
+- Destino
+- Competência
+- Status
+- Histórico
+
+Regra de ouro:
+Se não estiver ligado a Pessoa + Estrutura, não entra no financeiro.
+
+Exemplo:
+João (Pessoa)
+→ Unidade 102
+→ Receita: Condomínio
+→ Tipo: Mensal
+→ Status: Aberto / Pago / Acordado
+
+## 4. Por que é Diferente do Mercado
+
+Concorrentes engessam receita, despesa, fundo e regras.
 O SGI resolve isso sendo:
 - flexível
 - relacional
 - orgânico
 - simples por conceito e poderoso por estrutura
+
+Cliente cria o conceito.
+Sistema só organiza, amarra e executa.
+
+## 5. O que Já Temos Criado (E Fica)
+- Pessoas
+- Organizações
+- Unidades
+- Vínculos
+- Financeiro base
+- UI funcional
+
+Nada disso será descartado.
+Só reposicionado dentro desse modelo.
 
 ## 6. Diretrizes de Implementação
 - Não criar dados padrão por conveniência
