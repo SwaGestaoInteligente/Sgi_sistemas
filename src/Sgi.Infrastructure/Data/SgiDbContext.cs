@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Sgi.Domain.Contabilidade;
 using Sgi.Domain.Core;
 using Sgi.Domain.Financeiro;
 using Sgi.Domain.Operacao;
@@ -42,6 +43,12 @@ public class SgiDbContext : DbContext
     public DbSet<UnidadeCobranca> UnidadesCobrancas => Set<UnidadeCobranca>();
     public DbSet<UnidadePagamento> UnidadesPagamentos => Set<UnidadePagamento>();
     public DbSet<MovimentoBancario> MovimentosBancarios => Set<MovimentoBancario>();
+
+    public DbSet<ContaContabil> ContasContabeis => Set<ContaContabil>();
+    public DbSet<PeriodoContabil> PeriodosContabeis => Set<PeriodoContabil>();
+    public DbSet<LancamentoContabil> LancamentosContabeis => Set<LancamentoContabil>();
+    public DbSet<PartidaContabil> PartidasContabeis => Set<PartidaContabil>();
+    public DbSet<MapeamentoPlanoContasContabil> MapeamentosPlanoContasContabil => Set<MapeamentoPlanoContasContabil>();
 
     public DbSet<Chamado> Chamados => Set<Chamado>();
     public DbSet<ChamadoHistorico> ChamadosHistorico => Set<ChamadoHistorico>();
@@ -89,6 +96,12 @@ public class SgiDbContext : DbContext
         modelBuilder.Entity<UnidadePagamento>().ToTable("UnidadesPagamentos");
         modelBuilder.Entity<MovimentoBancario>().ToTable("MovimentosBancarios");
 
+        modelBuilder.Entity<ContaContabil>().ToTable("ContasContabeis");
+        modelBuilder.Entity<PeriodoContabil>().ToTable("PeriodosContabeis");
+        modelBuilder.Entity<LancamentoContabil>().ToTable("LancamentosContabeis");
+        modelBuilder.Entity<PartidaContabil>().ToTable("PartidasContabeis");
+        modelBuilder.Entity<MapeamentoPlanoContasContabil>().ToTable("MapeamentosPlanoContasContabeis");
+
         modelBuilder.Entity<Chamado>().ToTable("Chamados");
         modelBuilder.Entity<ChamadoHistorico>().ToTable("ChamadoHistoricos");
         modelBuilder.Entity<RecursoReservavel>().ToTable("RecursosReservaveis");
@@ -124,6 +137,12 @@ public class SgiDbContext : DbContext
         AddSource<UnidadeCobranca>(modelBuilder);
         AddSource<UnidadePagamento>(modelBuilder);
         AddSource<MovimentoBancario>(modelBuilder);
+
+        AddSource<ContaContabil>(modelBuilder);
+        AddSource<PeriodoContabil>(modelBuilder);
+        AddSource<LancamentoContabil>(modelBuilder);
+        AddSource<PartidaContabil>(modelBuilder);
+        AddSource<MapeamentoPlanoContasContabil>(modelBuilder);
 
         AddSource<Chamado>(modelBuilder);
         AddSource<ChamadoHistorico>(modelBuilder);
