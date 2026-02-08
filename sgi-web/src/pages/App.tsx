@@ -1750,6 +1750,15 @@ const InnerApp: React.FC = () => {
           </details>
         )}
 
+        <a
+          className="app-header-button app-header-button--ghost"
+          href="https://swagestaointeligente.github.io/swa-site/"
+          target="_blank"
+          rel="noreferrer"
+        >
+          Site SWA
+        </a>
+
         <button
           type="button"
           className="app-header-button app-header-button--ghost"
