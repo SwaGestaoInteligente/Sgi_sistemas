@@ -51,29 +51,63 @@ public class DevController : ControllerBase
         const string adminSenha = "Admin@123";
         const string sindicoEmail = "sindico@teste.com";
         const string sindicoSenha = "Sindico@123";
+        const string auxAdminEmail = "auxadmin@teste.com";
+        const string auxAdminSenha = "AuxAdmin@123";
         const string porteiroEmail = "porteiro@teste.com";
         const string porteiroSenha = "Porteiro@123";
         const string moradorEmail = "morador@teste.com";
         const string moradorSenha = "Morador@123";
 
         var admin = await EnsureUserAsync(adminEmail, adminSenha, "Usuario Admin");
+        var sindico = await EnsureUserAsync(sindicoEmail, sindicoSenha, "Sindico");
+        var auxAdmin = await EnsureUserAsync(auxAdminEmail, auxAdminSenha, "Aux Admin");
+        var porteiro = await EnsureUserAsync(porteiroEmail, porteiroSenha, "Porteiro");
+        var morador = await EnsureUserAsync(moradorEmail, moradorSenha, "Morador");
 
-        var organizacao = await _db.Organizacoes.AsNoTracking().FirstOrDefaultAsync();
+        var organizacao = await _db.Organizacoes
+            .FirstOrDefaultAsync(o => o.Documento == DemoOrgKey || o.Nome == DemoOrgName);
         if (organizacao is null)
         {
             organizacao = new Organizacao
             {
                 Id = Guid.NewGuid(),
-                Nome = "Condominio Teste",
+                Nome = DemoOrgName,
                 Tipo = "Condominios",
+                Documento = DemoOrgKey,
                 ModulosAtivos = "core,financeiro,manutencao,reservas",
                 Status = "ativo"
             };
             _db.Organizacoes.Add(organizacao);
+            MarkDemo(organizacao);
+        }
+        else
+        {
+            MarkDemoIfEmpty(organizacao);
         }
 
-        var unidade = await _db.UnidadesOrganizacionais.AsNoTracking()
-            .FirstOrDefaultAsync(u => u.OrganizacaoId == organizacao.Id);
+        var bloco = await _db.UnidadesOrganizacionais
+            .FirstOrDefaultAsync(u =>
+                u.OrganizacaoId == organizacao.Id &&
+                u.Tipo == "Bloco");
+        if (bloco is null)
+        {
+            bloco = new UnidadeOrganizacional
+            {
+                Id = Guid.NewGuid(),
+                OrganizacaoId = organizacao.Id,
+                Tipo = "Bloco",
+                CodigoInterno = "A",
+                Nome = "Bloco A",
+                Status = "ativo"
+            };
+            _db.UnidadesOrganizacionais.Add(bloco);
+            MarkDemo(bloco);
+        }
+
+        var unidade = await _db.UnidadesOrganizacionais
+            .FirstOrDefaultAsync(u =>
+                u.OrganizacaoId == organizacao.Id &&
+                u.Tipo == "Apartamento");
         if (unidade is null)
         {
             unidade = new UnidadeOrganizacional
@@ -83,21 +117,26 @@ public class DevController : ControllerBase
                 Tipo = "Apartamento",
                 CodigoInterno = "101",
                 Nome = "Apto 101",
+                ParentId = bloco.Id,
                 Status = "ativo"
             };
             _db.UnidadesOrganizacionais.Add(unidade);
+            MarkDemo(unidade);
         }
-
-        var sindico = await EnsureUserAsync(sindicoEmail, sindicoSenha, "Sindico");
-        var porteiro = await EnsureUserAsync(porteiroEmail, porteiroSenha, "Porteiro");
-        var morador = await EnsureUserAsync(moradorEmail, moradorSenha, "Morador");
 
         await _db.SaveChangesAsync();
 
         await EnsureMembershipAsync(admin.Id, null, null, UserRole.PLATFORM_ADMIN);
         await EnsureMembershipAsync(sindico.Id, organizacao.Id, null, UserRole.CONDO_ADMIN);
+        await EnsureMembershipAsync(auxAdmin.Id, organizacao.Id, null, UserRole.CONDO_STAFF);
         await EnsureMembershipAsync(porteiro.Id, organizacao.Id, null, UserRole.CONDO_STAFF);
         await EnsureMembershipAsync(morador.Id, organizacao.Id, unidade.Id, UserRole.RESIDENT);
+
+        await EnsureVinculoAsync(admin.PessoaId, organizacao.Id, null, "administrador");
+        await EnsureVinculoAsync(sindico.PessoaId, organizacao.Id, null, "sindico");
+        await EnsureVinculoAsync(auxAdmin.PessoaId, organizacao.Id, null, "aux_admin");
+        await EnsureVinculoAsync(porteiro.PessoaId, organizacao.Id, null, "porteiro");
+        await EnsureVinculoAsync(morador.PessoaId, organizacao.Id, unidade.Id, "morador");
 
         await _db.SaveChangesAsync();
 
@@ -106,6 +145,7 @@ public class DevController : ControllerBase
             message = "Seed concluido.",
             admin = new { email = adminEmail, senha = adminSenha },
             sindico = new { email = sindicoEmail, senha = sindicoSenha },
+            auxAdmin = new { email = auxAdminEmail, senha = auxAdminSenha },
             porteiro = new { email = porteiroEmail, senha = porteiroSenha },
             morador = new { email = moradorEmail, senha = moradorSenha },
             organizacaoId = organizacao.Id
@@ -1383,6 +1423,21 @@ public class DevController : ControllerBase
                 existing.PessoaId = pessoaExistente.Id;
                 _db.Pessoas.Add(pessoaExistente);
             }
+            else
+            {
+                if (string.IsNullOrWhiteSpace(pessoaExistente.Nome))
+                {
+                    pessoaExistente.Nome = nome;
+                }
+
+                if (string.IsNullOrWhiteSpace(pessoaExistente.Email))
+                {
+                    pessoaExistente.Email = email;
+                }
+            }
+
+            existing.SenhaHash = AuthController.HashPassword(senha);
+            existing.Status = "ativo";
 
             return (existing, pessoaExistente, false);
         }
@@ -1531,6 +1586,32 @@ public class DevController : ControllerBase
             .FirstOrDefaultAsync(u => u.EmailLogin == email);
         if (existing is not null)
         {
+            var pessoaExistente = await _db.Pessoas.FirstOrDefaultAsync(p => p.Id == existing.PessoaId);
+            if (pessoaExistente is null)
+            {
+                pessoaExistente = new Pessoa
+                {
+                    Id = Guid.NewGuid(),
+                    Nome = nome,
+                    Tipo = "fisica",
+                    Email = email
+                };
+                existing.PessoaId = pessoaExistente.Id;
+                _db.Pessoas.Add(pessoaExistente);
+            }
+            else
+            {
+                if (string.IsNullOrWhiteSpace(pessoaExistente.Nome))
+                {
+                    pessoaExistente.Nome = nome;
+                }
+
+                if (string.IsNullOrWhiteSpace(pessoaExistente.Email))
+                {
+                    pessoaExistente.Email = email;
+                }
+            }
+
             existing.SenhaHash = AuthController.HashPassword(senha);
             existing.Status = "ativo";
             return existing;
@@ -1581,6 +1662,30 @@ public class DevController : ControllerBase
             IsActive = true,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
+        });
+    }
+
+    private async Task EnsureVinculoAsync(Guid pessoaId, Guid organizacaoId, Guid? unidadeId, string papel)
+    {
+        var exists = await _db.VinculosPessoaOrganizacao.AsNoTracking()
+            .AnyAsync(v =>
+                v.PessoaId == pessoaId &&
+                v.OrganizacaoId == organizacaoId &&
+                v.UnidadeOrganizacionalId == unidadeId &&
+                v.Papel == papel);
+        if (exists)
+        {
+            return;
+        }
+
+        _db.VinculosPessoaOrganizacao.Add(new VinculoPessoaOrganizacao
+        {
+            Id = Guid.NewGuid(),
+            PessoaId = pessoaId,
+            OrganizacaoId = organizacaoId,
+            UnidadeOrganizacionalId = unidadeId,
+            Papel = papel,
+            DataInicio = DateTime.UtcNow
         });
     }
 }

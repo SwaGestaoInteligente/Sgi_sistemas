@@ -1,5 +1,6 @@
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Sgi.Api.Auth;
@@ -126,7 +127,16 @@ if (app.Environment.IsDevelopment())
 {
     using var scope = app.Services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<SgiDbContext>();
-    await db.Database.MigrateAsync();
+    try
+    {
+        await db.Database.MigrateAsync();
+    }
+    catch (Exception ex) when (IsSchemaAlreadyExists(ex))
+    {
+        app.Logger.LogWarning(
+            ex,
+            "Migrations skipped because schema already exists. If needed, delete src/Sgi.Api/sgi.db to recreate.");
+    }
 
     app.UseSwagger();
     app.UseSwaggerUI();
@@ -143,3 +153,15 @@ app.UseAuthorization();
 app.MapControllers();
 
 app.Run();
+
+static bool IsSchemaAlreadyExists(Exception ex)
+{
+    var sqliteEx = ex as SqliteException ?? ex.InnerException as SqliteException;
+    if (sqliteEx is null)
+    {
+        return false;
+    }
+
+    return sqliteEx.SqliteErrorCode == 1 &&
+           sqliteEx.Message.Contains("already exists", StringComparison.OrdinalIgnoreCase);
+}
