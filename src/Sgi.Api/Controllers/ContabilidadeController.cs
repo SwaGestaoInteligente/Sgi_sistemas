@@ -29,7 +29,7 @@ public class ContabilidadeController : ControllerBase
     {
         var roles = write
             ? new[] { UserRole.CONDO_ADMIN }
-            : new[] { UserRole.CONDO_ADMIN, UserRole.CONDO_STAFF };
+            : new[] { UserRole.CONDO_ADMIN };
 
         var auth = await Authz.EnsureMembershipAsync(_db, User, organizacaoId, roles);
         return auth.Error;

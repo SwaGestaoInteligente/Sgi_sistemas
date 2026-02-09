@@ -61,6 +61,10 @@ public class PessoasController : ControllerBase
         if (auth.Error is not null)
             return auth.Error;
 
+        auth.RequireRole(UserRole.CONDO_ADMIN, UserRole.CONDO_STAFF);
+        if (auth.Error is not null)
+            return auth.Error;
+
         var query =
             from v in _db.VinculosPessoaOrganizacao
             join p in _db.Pessoas on v.PessoaId equals p.Id

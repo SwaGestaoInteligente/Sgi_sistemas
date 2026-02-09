@@ -90,13 +90,13 @@ public class FinanceiroAccessFilter : IAsyncActionFilter
         if (residentActions.Contains(action))
         {
             roles = isRead
-                ? new[] { UserRole.CONDO_ADMIN, UserRole.CONDO_STAFF, UserRole.RESIDENT }
+                ? new[] { UserRole.CONDO_ADMIN, UserRole.RESIDENT }
                 : new[] { UserRole.CONDO_ADMIN, UserRole.RESIDENT };
         }
         else
         {
             roles = isRead
-                ? new[] { UserRole.CONDO_ADMIN, UserRole.CONDO_STAFF }
+                ? new[] { UserRole.CONDO_ADMIN }
                 : new[] { UserRole.CONDO_ADMIN };
         }
 
