@@ -436,21 +436,6 @@ const ConfiguracoesUnidadesTable: React.FC<UnidadesConfigProps> = ({
         </div>
       </header>
 
-      <div className="config-stats">
-        <span className="config-stat">{resumoVinculos.total} vinculos</span>
-        <span className="config-stat config-stat--active">
-          {resumoVinculos.ativos} ativos
-        </span>
-        <span className="config-stat">{resumoVinculos.inativos} inativos</span>
-        <span
-          className={
-            "config-stat" + (resumoVinculos.semUnidade ? " config-stat--alert" : "")
-          }
-        >
-          {resumoVinculos.semUnidade} sem unidade
-        </span>
-      </div>
-
       <section className="finance-table-card">
         {formAberto && !readOnly && (
           <form onSubmit={salvarUnidade} className="form config-form">
@@ -878,6 +863,21 @@ const ConfiguracoesVinculosTable: React.FC<VinculosConfigProps> = ({
           )}
         </div>
       </header>
+
+      <div className="config-stats">
+        <span className="config-stat">{resumoVinculos.total} vinculos</span>
+        <span className="config-stat config-stat--active">
+          {resumoVinculos.ativos} ativos
+        </span>
+        <span className="config-stat">{resumoVinculos.inativos} inativos</span>
+        <span
+          className={
+            "config-stat" + (resumoVinculos.semUnidade ? " config-stat--alert" : "")
+          }
+        >
+          {resumoVinculos.semUnidade} sem unidade
+        </span>
+      </div>
 
       <section className="finance-table-card">
         {formAberto && !readOnly && (

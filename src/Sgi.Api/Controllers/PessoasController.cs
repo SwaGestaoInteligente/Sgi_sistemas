@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Sgi.Api.Auth;
@@ -61,7 +61,7 @@ public class PessoasController : ControllerBase
     public async Task<ActionResult<IEnumerable<PessoaDto>>> Listar([FromQuery] Guid organizacaoId)
     {
         if (organizacaoId == Guid.Empty)
-            return BadRequest("organizacaoId é obrigatório.");
+            return BadRequest("OrganizacaoId e obrigatorio.");
 
         var auth = await Guard().RequireOrgAccess(organizacaoId);
         if (auth.Error is not null)
@@ -119,7 +119,7 @@ public class PessoasController : ControllerBase
     public async Task<ActionResult<PessoaDto>> Criar(CriarPessoaRequest request)
     {
         if (request.OrganizacaoId == Guid.Empty)
-            return BadRequest("OrganizacaoId é obrigatório.");
+            return BadRequest("OrganizacaoId e obrigatorio.");
 
         var auth = await Guard().RequireOrgAccess(request.OrganizacaoId);
         if (auth.Error is not null)
@@ -222,7 +222,7 @@ public class PessoasController : ControllerBase
         AtualizarPessoaRequest request)
     {
         if (organizacaoId == Guid.Empty)
-            return BadRequest("OrganizacaoId é obrigatório.");
+            return BadRequest("OrganizacaoId e obrigatorio.");
 
         var pessoa = await _db.Pessoas.FindAsync(id);
         if (pessoa is null)
@@ -305,11 +305,11 @@ public class PessoasController : ControllerBase
         ));
     }
 
-    [HttpDelete("{id:guid}")]
+    [HttpDelete("{id}")]
     public async Task<IActionResult> Remover(Guid id, [FromQuery] Guid organizacaoId)
     {
         if (organizacaoId == Guid.Empty)
-            return BadRequest("OrganizacaoId é obrigatório.");
+            return BadRequest("OrganizacaoId e obrigatorio.");
 
         var auth = await Guard().RequireOrgAccess(organizacaoId);
         if (auth.Error is not null)
@@ -319,23 +319,47 @@ public class PessoasController : ControllerBase
         if (auth.Error is not null)
             return auth.Error;
 
+        var pessoa = await _db.Pessoas.FindAsync(id);
+        if (pessoa is null)
+            return NotFound();
+
         var vinculos = await _db.VinculosPessoaOrganizacao
             .Where(v => v.PessoaId == id && v.OrganizacaoId == organizacaoId)
             .ToListAsync();
-        if (vinculos.Count == 0)
-            return NotFound();
-
-        _db.VinculosPessoaOrganizacao.RemoveRange(vinculos);
 
         var enderecos = await _db.Enderecos
             .Where(e => e.PessoaId == id && e.OrganizacaoId == organizacaoId)
             .ToListAsync();
+
+        var possuiOutrosVinculos = await _db.VinculosPessoaOrganizacao
+            .AsNoTracking()
+            .AnyAsync(v => v.PessoaId == id && v.OrganizacaoId != organizacaoId);
+        var possuiOutrosEnderecos = await _db.Enderecos
+            .AsNoTracking()
+            .AnyAsync(e => e.PessoaId == id && e.OrganizacaoId != organizacaoId);
+        if (vinculos.Count == 0 && enderecos.Count == 0 &&
+            (possuiOutrosVinculos || possuiOutrosEnderecos))
+        {
+            return NotFound();
+        }
+
+        if (vinculos.Count > 0)
+        {
+            _db.VinculosPessoaOrganizacao.RemoveRange(vinculos);
+        }
+
         if (enderecos.Count > 0)
         {
             _db.Enderecos.RemoveRange(enderecos);
+        }
+
+        if (!possuiOutrosVinculos && !possuiOutrosEnderecos)
+        {
+            _db.Pessoas.Remove(pessoa);
         }
 
         await _db.SaveChangesAsync();
         return NoContent();
     }
 }
+

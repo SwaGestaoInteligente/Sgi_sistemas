@@ -229,7 +229,8 @@ public class VinculosController : ControllerBase
             return BadRequest("OrganizacaoId e obrigatorio.");
         }
 
-        var vinculo = await _db.VinculosPessoaOrganizacao.FindAsync(id);
+        var vinculo = await _db.VinculosPessoaOrganizacao
+            .FirstOrDefaultAsync(v => v.Id == id);
         if (vinculo is null)
         {
             return NotFound();
@@ -297,7 +298,7 @@ public class VinculosController : ControllerBase
         return Ok(dto);
     }
 
-    [HttpDelete("{id:guid}")]
+    [HttpDelete("{id}")]
     public async Task<IActionResult> Remover(Guid id, [FromQuery] Guid organizacaoId)
     {
         if (organizacaoId == Guid.Empty)
@@ -305,18 +306,7 @@ public class VinculosController : ControllerBase
             return BadRequest("OrganizacaoId e obrigatorio.");
         }
 
-        var vinculo = await _db.VinculosPessoaOrganizacao.FindAsync(id);
-        if (vinculo is null)
-        {
-            return NotFound();
-        }
-
-        if (vinculo.OrganizacaoId != organizacaoId)
-        {
-            return BadRequest("OrganizacaoId invalido.");
-        }
-
-        var auth = await Guard().RequireOrgAccess(vinculo.OrganizacaoId);
+        var auth = await Guard().RequireOrgAccess(organizacaoId);
         if (auth.Error is not null)
         {
             return auth.Error;
@@ -328,8 +318,9 @@ public class VinculosController : ControllerBase
             return auth.Error;
         }
 
-        _db.VinculosPessoaOrganizacao.Remove(vinculo);
-        await _db.SaveChangesAsync();
+        await _db.VinculosPessoaOrganizacao
+            .Where(v => v.Id == id && v.OrganizacaoId == organizacaoId)
+            .ExecuteDeleteAsync();
 
         return NoContent();
     }

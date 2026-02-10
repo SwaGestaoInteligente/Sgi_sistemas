@@ -40,14 +40,14 @@ $apiRoot = if ($ApiBase.EndsWith("/api")) { $ApiBase.Substring(0, $ApiBase.Lengt
 $swaggerUrl = "$apiRoot/swagger/index.html"
 
 try {
-  $status = (Invoke-WebRequest -Uri $swaggerUrl -Method Get).StatusCode
+  $status = (Invoke-WebRequest -Uri $swaggerUrl -Method Get -UseBasicParsing).StatusCode
   Add-Result "API up (Swagger)" ($status -eq 200) "Status $status"
 } catch {
   Add-Result "API up (Swagger)" $false $_.Exception.Message
 }
 
 try {
-  $status = (Invoke-WebRequest -Uri $WebBase -Method Get).StatusCode
+  $status = (Invoke-WebRequest -Uri $WebBase -Method Get -UseBasicParsing).StatusCode
   Add-Result "Web up" ($status -eq 200) "Status $status"
 } catch {
   Add-Result "Web up" $false $_.Exception.Message
@@ -214,7 +214,7 @@ try {
 
 try {
   if ($vinculoId) {
-    Invoke-RestMethod -Method Delete -Uri "$ApiBase/vinculos/$vinculoId?organizacaoId=$OrgId" -Headers $headers
+    Invoke-RestMethod -Method Delete -Uri "$ApiBase/vinculos/${vinculoId}?organizacaoId=${OrgId}" -Headers $headers
     Add-Result "Cleanup: remover vinculo" $true "OK"
   } else {
     Add-Result "Cleanup: remover vinculo" $false "Sem vinculo"
@@ -225,7 +225,7 @@ try {
 
 try {
   if ($pessoaId) {
-    Invoke-RestMethod -Method Delete -Uri "$ApiBase/pessoas/$pessoaId?organizacaoId=$OrgId" -Headers $headers
+    Invoke-RestMethod -Method Delete -Uri "$ApiBase/pessoas/${pessoaId}?organizacaoId=${OrgId}" -Headers $headers
     Add-Result "Cleanup: remover pessoa" $true "OK"
   } else {
     Add-Result "Cleanup: remover pessoa" $false "Sem pessoa"
