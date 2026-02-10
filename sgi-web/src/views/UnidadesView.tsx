@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { api, Organizacao, UnidadeOrganizacional } from "../api";
 import { useAuth } from "../hooks/useAuth";
 
@@ -30,6 +30,7 @@ export default function UnidadesView({
   const [tipo, setTipo] = useState(tipoInicial ?? "Apartamento");
   const [codigoInterno, setCodigoInterno] = useState("");
   const [nome, setNome] = useState("");
+  const [parentId, setParentId] = useState("");
   const [unidadeSelecionadaId, setUnidadeSelecionadaId] = useState<string | null>(
     null
   );
@@ -37,6 +38,7 @@ export default function UnidadesView({
   const [editNome, setEditNome] = useState("");
   const [editCodigoInterno, setEditCodigoInterno] = useState("");
   const [editTipo, setEditTipo] = useState("");
+  const [editParentId, setEditParentId] = useState("");
   const [salvandoEdicao, setSalvandoEdicao] = useState(false);
   const [busca, setBusca] = useState("");
   const [filtroTipo, setFiltroTipo] = useState(filtroTipoInicial ?? "todos");
@@ -78,11 +80,79 @@ export default function UnidadesView({
     }
   }, [filtroTipoInicial]);
 
+  const normalizarTipo = (value?: string | null) =>
+    (value ?? "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .trim();
+
+  const isTipo = (value: string, tipos: string[]) =>
+    tipos.some((tipoItem) => normalizarTipo(value) === normalizarTipo(tipoItem));
+
+  const parentTiposPara = (value: string) => {
+    if (isTipo(value, ["apartamento", "unidade"])) {
+      return ["bloco"];
+    }
+    if (isTipo(value, ["garagem", "vaga", "vagas"])) {
+      return ["apartamento", "unidade"];
+    }
+    return [];
+  };
+
+  const parentOptions = useMemo(() => {
+    const tipos = parentTiposPara(tipo);
+    if (tipos.length === 0) return [];
+    return [...unidades]
+      .filter((u) => isTipo(u.tipo, tipos))
+      .sort((a, b) =>
+        `${a.codigoInterno} ${a.nome}`.localeCompare(
+          `${b.codigoInterno} ${b.nome}`,
+          "pt-BR",
+          { sensitivity: "base" }
+        )
+      );
+  }, [tipo, unidades]);
+
+  const editParentOptions = useMemo(() => {
+    const tipos = parentTiposPara(editTipo);
+    if (tipos.length === 0) return [];
+    return [...unidades]
+      .filter((u) => isTipo(u.tipo, tipos))
+      .sort((a, b) =>
+        `${a.codigoInterno} ${a.nome}`.localeCompare(
+          `${b.codigoInterno} ${b.nome}`,
+          "pt-BR",
+          { sensitivity: "base" }
+        )
+      );
+  }, [editTipo, unidades]);
+
+  const parentLookup = useMemo(() => {
+    return new Map(unidades.map((u) => [u.id, u]));
+  }, [unidades]);
+
+  useEffect(() => {
+    if (parentOptions.length === 0 && parentId) {
+      setParentId("");
+    }
+  }, [parentId, parentOptions.length]);
+
+  useEffect(() => {
+    if (editParentOptions.length === 0 && editParentId) {
+      setEditParentId("");
+    }
+  }, [editParentId, editParentOptions.length]);
+
   const salvarUnidade = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!token || !organizacao) return;
     if (!nome.trim() || !codigoInterno.trim()) {
       setErro("Preencha nome e codigo interno da unidade.");
+      return;
+    }
+    if (parentTiposPara(tipo).length > 0 && !parentId) {
+      setErro("Selecione o vinculo pai da unidade.");
       return;
     }
 
@@ -93,11 +163,13 @@ export default function UnidadesView({
         organizacaoId: organizacao.id,
         tipo,
         codigoInterno: codigoInterno.trim(),
-        nome: nome.trim()
+        nome: nome.trim(),
+        parentId: parentId || null
       });
       setUnidades((prev) => [...prev, criada]);
       setCodigoInterno("");
       setNome("");
+      setParentId("");
     } catch (e: any) {
       setErro(e.message || "Erro ao salvar unidade");
     } finally {
@@ -110,6 +182,7 @@ export default function UnidadesView({
     setEditNome(unidade.nome);
     setEditCodigoInterno(unidade.codigoInterno ?? "");
     setEditTipo(unidade.tipo ?? "");
+    setEditParentId(unidade.parentId ?? "");
     setUnidadeSelecionadaId(unidade.id);
   };
 
@@ -118,12 +191,17 @@ export default function UnidadesView({
     setEditNome("");
     setEditCodigoInterno("");
     setEditTipo("");
+    setEditParentId("");
   };
 
   const salvarEdicao = async () => {
     if (!token || !organizacao || !editandoId) return;
     if (!editNome.trim()) {
       setErro("Nome da unidade e obrigatorio.");
+      return;
+    }
+    if (parentTiposPara(editTipo).length > 0 && !editParentId) {
+      setErro("Selecione o vinculo pai da unidade.");
       return;
     }
 
@@ -133,7 +211,8 @@ export default function UnidadesView({
       const atualizada = await api.atualizarUnidade(token, editandoId, {
         nome: editNome.trim(),
         codigoInterno: editCodigoInterno.trim(),
-        tipo: editTipo.trim()
+        tipo: editTipo.trim(),
+        parentId: editParentId || null
       });
       setUnidades((prev) =>
         prev.map((u) => (u.id === atualizada.id ? atualizada : u))
@@ -221,7 +300,15 @@ export default function UnidadesView({
                   <span className="person-name">{unidade.nome}</span>
                 </div>
                 <div className="person-meta">
-                  {unidade.tipo} • {unidade.codigoInterno}
+                  {(() => {
+                    const parent = unidade.parentId
+                      ? parentLookup.get(unidade.parentId)
+                      : null;
+                    const parentLabel = parent
+                      ? ` • Pai: ${parent.codigoInterno}`
+                      : "";
+                    return `${unidade.tipo} • ${unidade.codigoInterno}${parentLabel}`;
+                  })()}
                 </div>
                 {!readOnly && (
                   <div className="person-actions">
@@ -258,6 +345,22 @@ export default function UnidadesView({
                   disabled={tipoFixo}
                 />
               </label>
+              {parentOptions.length > 0 && (
+                <label>
+                  Vinculo pai
+                  <select
+                    value={parentId}
+                    onChange={(e) => setParentId(e.target.value)}
+                  >
+                    <option value="">Selecione...</option>
+                    {parentOptions.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.codigoInterno} - {u.nome}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <label>
                 Codigo interno
                 <input
@@ -298,6 +401,22 @@ export default function UnidadesView({
                     onChange={(e) => setEditTipo(e.target.value)}
                   />
                 </label>
+                {editParentOptions.length > 0 && (
+                  <label>
+                    Vinculo pai
+                    <select
+                      value={editParentId}
+                      onChange={(e) => setEditParentId(e.target.value)}
+                    >
+                      <option value="">Selecione...</option>
+                      {editParentOptions.map((u) => (
+                        <option key={u.id} value={u.id}>
+                          {u.codigoInterno} - {u.nome}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
                 <div className="form-actions">
                   <button
                     type="button"

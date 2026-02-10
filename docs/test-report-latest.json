@@ -1,0 +1,72 @@
+{
+  "Timestamp": "2026-02-09T22:22:48",
+  "Pass": 11,
+  "Fail": 2,
+  "Tests": [
+    {
+      "Test": "API up (Swagger)",
+      "Status": "PASS",
+      "Detail": "Status 200"
+    },
+    {
+      "Test": "Web up",
+      "Status": "PASS",
+      "Detail": "Status 200"
+    },
+    {
+      "Test": "Login admin",
+      "Status": "PASS",
+      "Detail": "Token recebido"
+    },
+    {
+      "Test": "Listar organizacoes",
+      "Status": "PASS",
+      "Detail": "Total 2"
+    },
+    {
+      "Test": "Criar bloco",
+      "Status": "PASS",
+      "Detail": "Id 24cd9a68-b6ac-48b5-b612-107ac0dc369c"
+    },
+    {
+      "Test": "Criar unidade",
+      "Status": "PASS",
+      "Detail": "Id 4458d7c2-a782-4b55-81d3-43086a2b1c8c"
+    },
+    {
+      "Test": "Criar pessoa",
+      "Status": "PASS",
+      "Detail": "Id 9e5c5de4-fd35-4844-a92b-c0c80770d54c"
+    },
+    {
+      "Test": "Criar vinculo",
+      "Status": "PASS",
+      "Detail": "Id f89e9e5c-a248-41e8-87a3-5ab573b5c38e"
+    },
+    {
+      "Test": "Listar vinculos por pessoa",
+      "Status": "PASS",
+      "Detail": "Qtd 2"
+    },
+    {
+      "Test": "Cleanup: remover vinculo",
+      "Status": "FAIL",
+      "Detail": "Response status code does not indicate success: 404 (Not Found)."
+    },
+    {
+      "Test": "Cleanup: remover pessoa",
+      "Status": "FAIL",
+      "Detail": "Response status code does not indicate success: 404 (Not Found)."
+    },
+    {
+      "Test": "Cleanup: arquivar unidade",
+      "Status": "PASS",
+      "Detail": "OK"
+    },
+    {
+      "Test": "Cleanup: arquivar bloco",
+      "Status": "PASS",
+      "Detail": "OK"
+    }
+  ]
+}

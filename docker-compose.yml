@@ -1,0 +1,17 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: sgi-postgres
+    environment:
+      POSTGRES_USER: sgi
+      POSTGRES_PASSWORD: sgi
+      POSTGRES_DB: sgi
+    ports:
+      - "5432:5432"
+    volumes:
+      - sgi_postgres_data:/var/lib/postgresql/data
+
+volumes:
+  sgi_postgres_data:

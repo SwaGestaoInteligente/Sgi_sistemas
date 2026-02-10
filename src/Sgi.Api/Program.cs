@@ -14,8 +14,19 @@ var builder = WebApplication.CreateBuilder(args);
 // =======================
 builder.Services.AddDbContext<SgiDbContext>(options =>
 {
-    var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
-    options.UseSqlite(connectionString);
+    var provider = builder.Configuration.GetValue<string>("Database:Provider") ?? "sqlite";
+    if (string.Equals(provider, "postgres", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(provider, "postgresql", StringComparison.OrdinalIgnoreCase))
+    {
+        var connectionString = builder.Configuration.GetConnectionString("PostgresConnection")
+                               ?? builder.Configuration.GetConnectionString("DefaultConnection");
+        options.UseNpgsql(connectionString);
+    }
+    else
+    {
+        var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+        options.UseSqlite(connectionString);
+    }
 });
 
 // =======================

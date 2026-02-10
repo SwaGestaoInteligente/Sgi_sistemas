@@ -1,6 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, NotificacaoConfig, Organizacao, UnidadeOrganizacional } from "../api";
+import {
+  api,
+  NotificacaoConfig,
+  Organizacao,
+  Pessoa,
+  UnidadeOrganizacional,
+  VinculoPessoaOrganizacao
+} from "../api";
 import { useAuth } from "../hooks/useAuth";
+import PessoasView from "./PessoasView";
 
 export type ConfiguracoesTab =
   | "cadastros-base"
@@ -14,6 +22,13 @@ export const menuConfiguracoes: Array<{ id: ConfiguracoesTab; label: string }> =
   { id: "pessoas-papeis", label: "Pessoas & papeis" },
   { id: "financeiro-base", label: "Financeiro - Configuracoes" }
 ];
+
+const normalizarTipo = (value?: string | null) =>
+  (value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
 
 type CadastroBaseTipo =
   | "tipo_receita"
@@ -203,6 +218,19 @@ type UnidadesConfigProps = {
   readOnly: boolean;
   voltarLabel?: string;
   onVoltar?: () => void;
+  parentConfig?: {
+    label: string;
+    placeholder: string;
+    tipos: string[];
+    required?: boolean;
+  };
+};
+
+type VinculosConfigProps = {
+  organizacao: Organizacao;
+  readOnly: boolean;
+  voltarLabel?: string;
+  onVoltar?: () => void;
 };
 
 type CadastrosBaseProps = {
@@ -227,7 +255,8 @@ const ConfiguracoesUnidadesTable: React.FC<UnidadesConfigProps> = ({
   nomePlaceholder,
   readOnly,
   voltarLabel,
-  onVoltar
+  onVoltar,
+  parentConfig
 }) => {
   const { token } = useAuth();
   const [unidades, setUnidades] = useState<UnidadeOrganizacional[]>([]);
@@ -236,6 +265,7 @@ const ConfiguracoesUnidadesTable: React.FC<UnidadesConfigProps> = ({
   const [formAberto, setFormAberto] = useState(false);
   const [codigoInterno, setCodigoInterno] = useState("");
   const [nome, setNome] = useState("");
+  const [parentId, setParentId] = useState("");
   const [filtroCodigo, setFiltroCodigo] = useState("");
   const [filtroNome, setFiltroNome] = useState("");
   const [filtroStatus, setFiltroStatus] = useState("ativo");
@@ -275,11 +305,36 @@ const ConfiguracoesUnidadesTable: React.FC<UnidadesConfigProps> = ({
     });
   }, [filtroCodigo, filtroNome, filtroStatus, tipo, unidades]);
 
+  const parentLookup = useMemo(() => {
+    return new Map(unidades.map((u) => [u.id, u]));
+  }, [unidades]);
+
+  const parentOptions = useMemo(() => {
+    if (!parentConfig) return [];
+    return unidades
+      .filter((u) =>
+        parentConfig.tipos.some(
+          (t) => normalizarTipo(u.tipo) === normalizarTipo(t)
+        )
+      )
+      .sort((a, b) =>
+        `${a.codigoInterno} ${a.nome}`.localeCompare(
+          `${b.codigoInterno} ${b.nome}`,
+          "pt-BR",
+          { sensitivity: "base" }
+        )
+      );
+  }, [parentConfig, unidades]);
+
   const salvarUnidade = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!token || !organizacao) return;
     if (!nome.trim() || !codigoInterno.trim()) {
       setErro("Preencha codigo e nome.");
+      return;
+    }
+    if (parentConfig?.required && !parentId) {
+      setErro(`Selecione ${parentConfig.label.toLowerCase()}.`);
       return;
     }
 
@@ -290,11 +345,13 @@ const ConfiguracoesUnidadesTable: React.FC<UnidadesConfigProps> = ({
         organizacaoId: organizacao.id,
         tipo,
         codigoInterno: codigoInterno.trim(),
-        nome: nome.trim()
+        nome: nome.trim(),
+        parentId: parentId || null
       });
       setUnidades((prev) => [...prev, criada]);
       setCodigoInterno("");
       setNome("");
+      setParentId("");
     } catch (e: any) {
       setErro(e.message || "Erro ao salvar unidade");
     } finally {
@@ -316,7 +373,8 @@ const ConfiguracoesUnidadesTable: React.FC<UnidadesConfigProps> = ({
       const atualizada = await api.atualizarUnidade(token, unidade.id, {
         nome: novoNome.trim(),
         codigoInterno: novoCodigo.trim(),
-        tipo: unidade.tipo
+        tipo: unidade.tipo,
+        parentId: unidade.parentId ?? null
       });
       setUnidades((prev) =>
         prev.map((u) => (u.id === atualizada.id ? atualizada : u))
@@ -378,6 +436,21 @@ const ConfiguracoesUnidadesTable: React.FC<UnidadesConfigProps> = ({
         </div>
       </header>
 
+      <div className="config-stats">
+        <span className="config-stat">{resumoVinculos.total} vinculos</span>
+        <span className="config-stat config-stat--active">
+          {resumoVinculos.ativos} ativos
+        </span>
+        <span className="config-stat">{resumoVinculos.inativos} inativos</span>
+        <span
+          className={
+            "config-stat" + (resumoVinculos.semUnidade ? " config-stat--alert" : "")
+          }
+        >
+          {resumoVinculos.semUnidade} sem unidade
+        </span>
+      </div>
+
       <section className="finance-table-card">
         {formAberto && !readOnly && (
           <form onSubmit={salvarUnidade} className="form config-form">
@@ -398,6 +471,27 @@ const ConfiguracoesUnidadesTable: React.FC<UnidadesConfigProps> = ({
                   placeholder={nomePlaceholder}
                 />
               </label>
+              {parentConfig && (
+                <label>
+                  {parentConfig.label}
+                  <select
+                    value={parentId}
+                    onChange={(e) => setParentId(e.target.value)}
+                  >
+                    {!parentConfig.required && (
+                      <option value="">{parentConfig.placeholder}</option>
+                    )}
+                    {parentConfig.required && (
+                      <option value="">Selecione...</option>
+                    )}
+                    {parentOptions.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.codigoInterno} - {item.nome}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
             </div>
             <button type="submit" disabled={loading}>
               {loading ? "Salvando..." : "Salvar"}
@@ -443,6 +537,7 @@ const ConfiguracoesUnidadesTable: React.FC<UnidadesConfigProps> = ({
               <th />
               <th>{codigoLabel}</th>
               <th>{nomeLabel}</th>
+              {parentConfig && <th>{parentConfig.label}</th>}
               <th>Status</th>
             </tr>
           </thead>
@@ -471,6 +566,15 @@ const ConfiguracoesUnidadesTable: React.FC<UnidadesConfigProps> = ({
                 </td>
                 <td>{unidade.codigoInterno}</td>
                 <td>{unidade.nome}</td>
+                {parentConfig && (
+                  <td>
+                    {unidade.parentId
+                      ? `${parentLookup.get(unidade.parentId)?.codigoInterno ?? ""} ${
+                          parentLookup.get(unidade.parentId)?.nome ?? ""
+                        }`.trim()
+                      : "-"}
+                  </td>
+                )}
                 <td>
                   <span
                     className={
@@ -487,8 +591,491 @@ const ConfiguracoesUnidadesTable: React.FC<UnidadesConfigProps> = ({
             ))}
             {!loading && unidadesFiltradas.length === 0 && (
               <tr>
-                <td colSpan={4} style={{ textAlign: "center" }}>
+                <td colSpan={parentConfig ? 5 : 4} style={{ textAlign: "center" }}>
                   Nenhum registro encontrado.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </section>
+    </div>
+  );
+};
+
+const ConfiguracoesVinculosTable: React.FC<VinculosConfigProps> = ({
+  organizacao,
+  readOnly,
+  voltarLabel,
+  onVoltar
+}) => {
+  const { token } = useAuth();
+  const [vinculos, setVinculos] = useState<VinculoPessoaOrganizacao[]>([]);
+  const [pessoas, setPessoas] = useState<Pessoa[]>([]);
+  const [unidades, setUnidades] = useState<UnidadeOrganizacional[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+  const [formAberto, setFormAberto] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
+
+  const [pessoaId, setPessoaId] = useState("");
+  const [unidadeId, setUnidadeId] = useState("");
+  const [papel, setPapel] = useState("morador");
+  const [dataFim, setDataFim] = useState("");
+
+  const [filtroPessoa, setFiltroPessoa] = useState("");
+  const [filtroUnidade, setFiltroUnidade] = useState("");
+  const [filtroPapel, setFiltroPapel] = useState("");
+  const [filtroStatus, setFiltroStatus] = useState("ativos");
+  const [filtroBusca, setFiltroBusca] = useState("");
+  const [ordenacao, setOrdenacao] = useState("pessoa");
+
+  const papeisPadrao = [
+    "morador",
+    "proprietario",
+    "sindico",
+    "subsindico",
+    "conselheiro",
+    "colaborador",
+    "fornecedor",
+    "membro",
+    "outro"
+  ];
+
+  const carregarDados = useCallback(async () => {
+    if (!token) return;
+    try {
+      setErro(null);
+      setLoading(true);
+      const [listaVinculos, listaPessoas, listaUnidades] = await Promise.all([
+        api.listarVinculos(token, organizacao.id),
+        api.listarPessoas(token, organizacao.id),
+        api.listarUnidades(token, organizacao.id)
+      ]);
+      setVinculos(listaVinculos);
+      setPessoas(listaPessoas);
+      setUnidades(listaUnidades);
+    } catch (e: any) {
+      setErro(e.message || "Erro ao carregar vinculos");
+    } finally {
+      setLoading(false);
+    }
+  }, [organizacao.id, token]);
+
+  useEffect(() => {
+    void carregarDados();
+  }, [carregarDados]);
+
+  const pessoasOrdenadas = useMemo(() => {
+    return [...pessoas].sort((a, b) =>
+      a.nome.localeCompare(b.nome, "pt-BR", { sensitivity: "base" })
+    );
+  }, [pessoas]);
+
+  const unidadesOrdenadas = useMemo(() => {
+    return [...unidades].sort((a, b) =>
+      `${a.codigoInterno} ${a.nome}`.localeCompare(
+        `${b.codigoInterno} ${b.nome}`,
+        "pt-BR",
+        { sensitivity: "base" }
+      )
+    );
+  }, [unidades]);
+
+  const limparFormulario = () => {
+    setEditId(null);
+    setPessoaId("");
+    setUnidadeId("");
+    setPapel("morador");
+    setDataFim("");
+  };
+
+  const abrirNovo = () => {
+    limparFormulario();
+    setFormAberto(true);
+  };
+
+  const editarVinculo = (v: VinculoPessoaOrganizacao) => {
+    setEditId(v.id);
+    setPessoaId(v.pessoaId);
+    setUnidadeId(v.unidadeOrganizacionalId ?? "");
+    setPapel(v.papel ?? "morador");
+    setDataFim(v.dataFim ? v.dataFim.slice(0, 10) : "");
+    setFormAberto(true);
+  };
+
+  const salvarVinculo = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!token) return;
+    if (!pessoaId) {
+      setErro("Selecione uma pessoa.");
+      return;
+    }
+    if (!papel.trim()) {
+      setErro("Informe o papel.");
+      return;
+    }
+
+    try {
+      setErro(null);
+      setLoading(true);
+      if (editId) {
+        const atualizada = await api.atualizarVinculo(token, editId, {
+          organizacaoId: organizacao.id,
+          unidadeOrganizacionalId: unidadeId || null,
+          papel: papel.trim(),
+          dataFim: dataFim || null
+        });
+        setVinculos((prev) =>
+          prev.map((v) => (v.id === atualizada.id ? atualizada : v))
+        );
+      } else {
+        const criada = await api.criarVinculo(token, {
+          organizacaoId: organizacao.id,
+          pessoaId,
+          unidadeOrganizacionalId: unidadeId || null,
+          papel: papel.trim(),
+          dataFim: dataFim || null
+        });
+        setVinculos((prev) => [...prev, criada]);
+      }
+
+      limparFormulario();
+    } catch (e: any) {
+      setErro(e.message || "Erro ao salvar vinculo");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const removerVinculo = async (v: VinculoPessoaOrganizacao) => {
+    if (!token) return;
+    if (!window.confirm(`Remover vinculo de ${v.pessoaNome}?`)) return;
+    try {
+      setErro(null);
+      setLoading(true);
+      await api.removerVinculo(token, v.id, organizacao.id);
+      setVinculos((prev) => prev.filter((item) => item.id !== v.id));
+      if (editId === v.id) {
+        limparFormulario();
+      }
+    } catch (e: any) {
+      setErro(e.message || "Erro ao remover vinculo");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const isAtivo = (v: VinculoPessoaOrganizacao) => {
+    if (!v.dataFim) return true;
+    const fim = new Date(v.dataFim);
+    if (Number.isNaN(fim.getTime())) return false;
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+    return fim >= hoje;
+  };
+
+  const obterClassePapel = (value: string) => {
+    const normalizado = normalizarTipo(value).replace(/[^a-z0-9]+/g, "-");
+    if (normalizado.includes("sindico")) return "role-pill--brand";
+    if (normalizado.includes("morador") || normalizado.includes("residente")) {
+      return "role-pill--info";
+    }
+    if (normalizado.includes("proprietario")) return "role-pill--success";
+    if (
+      normalizado.includes("porteiro") ||
+      normalizado.includes("colaborador") ||
+      normalizado.includes("funcionario")
+    ) {
+      return "role-pill--warning";
+    }
+    if (normalizado.includes("fornecedor")) return "role-pill--danger";
+    return "role-pill--neutral";
+  };
+
+  const resumoVinculos = useMemo(() => {
+    const total = vinculos.length;
+    const ativos = vinculos.filter(isAtivo).length;
+    const inativos = total - ativos;
+    const semUnidade = vinculos.filter((v) => !v.unidadeOrganizacionalId).length;
+    return { total, ativos, inativos, semUnidade };
+  }, [vinculos]);
+
+  const vinculosFiltrados = useMemo(() => {
+    const termo = normalizarTipo(filtroBusca);
+    return vinculos.filter((v) => {
+      if (filtroPessoa && v.pessoaId !== filtroPessoa) return false;
+      if (filtroUnidade && v.unidadeOrganizacionalId !== filtroUnidade) return false;
+      if (filtroPapel && v.papel !== filtroPapel) return false;
+      if (filtroStatus === "ativos" && !isAtivo(v)) return false;
+      if (filtroStatus === "inativos" && isAtivo(v)) return false;
+      if (termo) {
+        const alvo = normalizarTipo(
+          `${v.pessoaNome} ${v.pessoaDocumento ?? ""} ${v.unidadeCodigo ?? ""} ${v.unidadeNome ?? ""} ${v.papel ?? ""}`
+        );
+        if (!alvo.includes(termo)) return false;
+      }
+      return true;
+    });
+  }, [filtroPessoa, filtroUnidade, filtroPapel, filtroStatus, filtroBusca, vinculos]);
+
+  const vinculosOrdenados = useMemo(() => {
+    const lista = [...vinculosFiltrados];
+    const byPessoa = (a: VinculoPessoaOrganizacao, b: VinculoPessoaOrganizacao) =>
+      a.pessoaNome.localeCompare(b.pessoaNome, "pt-BR", { sensitivity: "base" });
+    const byPapel = (a: VinculoPessoaOrganizacao, b: VinculoPessoaOrganizacao) =>
+      a.papel.localeCompare(b.papel, "pt-BR", { sensitivity: "base" });
+    const byUnidade = (a: VinculoPessoaOrganizacao, b: VinculoPessoaOrganizacao) =>
+      `${a.unidadeCodigo ?? ""} ${a.unidadeNome ?? ""}`.localeCompare(
+        `${b.unidadeCodigo ?? ""} ${b.unidadeNome ?? ""}`,
+        "pt-BR",
+        { sensitivity: "base" }
+      );
+    const byInicio = (a: VinculoPessoaOrganizacao, b: VinculoPessoaOrganizacao) =>
+      new Date(b.dataInicio ?? "").getTime() - new Date(a.dataInicio ?? "").getTime();
+
+    switch (ordenacao) {
+      case "papel":
+        return lista.sort((a, b) => byPapel(a, b) || byPessoa(a, b));
+      case "unidade":
+        return lista.sort((a, b) => byUnidade(a, b) || byPessoa(a, b));
+      case "status":
+        return lista.sort(
+          (a, b) => Number(isAtivo(b)) - Number(isAtivo(a)) || byPessoa(a, b)
+        );
+      case "inicio":
+        return lista.sort((a, b) => byInicio(a, b) || byPessoa(a, b));
+      case "pessoa":
+      default:
+        return lista.sort(byPessoa);
+    }
+  }, [ordenacao, vinculosFiltrados]);
+
+  return (
+    <div className="config-page">
+      <header className="config-header">
+        <div>
+          <h2>Vinculos</h2>
+          <p className="config-subtitle">{organizacao.nome}</p>
+        </div>
+        <div className="config-actions">
+          {onVoltar && (
+            <button type="button" className="button-secondary" onClick={onVoltar}>
+              {voltarLabel ?? "Voltar"}
+            </button>
+          )}
+          <button type="button" onClick={() => void carregarDados()}>
+            {loading ? "Carregando..." : "Atualizar"}
+          </button>
+          {!readOnly && (
+            <button
+              type="button"
+              className="button-secondary"
+              onClick={() => setFormAberto((prev) => !prev)}
+            >
+              {formAberto ? "Fechar" : "Inserir"}
+            </button>
+          )}
+        </div>
+      </header>
+
+      <section className="finance-table-card">
+        {formAberto && !readOnly && (
+          <form onSubmit={salvarVinculo} className="form config-form">
+            <div className="finance-form-grid">
+              <label>
+                Pessoa
+                <select
+                  value={pessoaId}
+                  onChange={(e) => setPessoaId(e.target.value)}
+                  disabled={Boolean(editId)}
+                >
+                  <option value="">Selecione...</option>
+                  {pessoasOrdenadas.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.nome}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Papel
+                <select value={papel} onChange={(e) => setPapel(e.target.value)}>
+                  {papeisPadrao.map((p) => (
+                    <option key={p} value={p}>
+                      {p}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Unidade (opcional)
+                <select
+                  value={unidadeId}
+                  onChange={(e) => setUnidadeId(e.target.value)}
+                >
+                  <option value="">Sem unidade</option>
+                  {unidadesOrdenadas.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.codigoInterno} - {u.nome}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Data fim (opcional)
+                <input
+                  type="date"
+                  value={dataFim}
+                  onChange={(e) => setDataFim(e.target.value)}
+                />
+              </label>
+            </div>
+            <button type="submit" disabled={loading}>
+              {loading ? "Salvando..." : editId ? "Atualizar" : "Salvar"}
+            </button>
+          </form>
+        )}
+
+        <div className="config-filters">
+          <label>
+            <span>Busca rapida</span>
+            <input
+              value={filtroBusca}
+              onChange={(e) => setFiltroBusca(e.target.value)}
+              placeholder="Nome, documento ou unidade"
+            />
+          </label>
+          <label>
+            <span>Pessoa</span>
+            <select
+              value={filtroPessoa}
+              onChange={(e) => setFiltroPessoa(e.target.value)}
+            >
+              <option value="">Todas</option>
+              {pessoasOrdenadas.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.nome}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>Unidade</span>
+            <select
+              value={filtroUnidade}
+              onChange={(e) => setFiltroUnidade(e.target.value)}
+            >
+              <option value="">Todas</option>
+              {unidadesOrdenadas.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.codigoInterno} - {u.nome}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>Papel</span>
+            <select value={filtroPapel} onChange={(e) => setFiltroPapel(e.target.value)}>
+              <option value="">Todos</option>
+              {papeisPadrao.map((p) => (
+                <option key={p} value={p}>
+                  {p}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>Status</span>
+            <select
+              value={filtroStatus}
+              onChange={(e) => setFiltroStatus(e.target.value)}
+            >
+              <option value="ativos">Ativos</option>
+              <option value="inativos">Inativos</option>
+              <option value="todos">Todos</option>
+            </select>
+          </label>
+          <label>
+            <span>Ordenar</span>
+            <select value={ordenacao} onChange={(e) => setOrdenacao(e.target.value)}>
+              <option value="pessoa">Pessoa</option>
+              <option value="papel">Papel</option>
+              <option value="unidade">Unidade</option>
+              <option value="status">Status</option>
+              <option value="inicio">Inicio</option>
+            </select>
+          </label>
+        </div>
+
+        {erro && <p className="error">{erro}</p>}
+
+        <table className="table finance-table config-table">
+          <thead>
+            <tr>
+              <th />
+              <th>Pessoa</th>
+              <th>Papel</th>
+              <th>Unidade</th>
+              <th>Inicio</th>
+              <th>Fim</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {vinculosOrdenados.map((v) => (
+              <tr key={v.id} className={isAtivo(v) ? "" : "table-row--inactive"}>
+                <td className="finance-actions-cell">
+                  {!readOnly && (
+                    <div className="table-actions">
+                      <button
+                        type="button"
+                        className="action-primary"
+                        onClick={() => editarVinculo(v)}
+                      >
+                        Editar
+                      </button>
+                      <button
+                        type="button"
+                        className="action-secondary"
+                        onClick={() => void removerVinculo(v)}
+                      >
+                        Remover
+                      </button>
+                    </div>
+                  )}
+                </td>
+                <td>
+                  <strong>{v.pessoaNome}</strong>
+                  {v.pessoaDocumento && (
+                    <div className="config-subtext">{v.pessoaDocumento}</div>
+                  )}
+                </td>
+                <td>
+                  <span className={`role-pill ${obterClassePapel(v.papel ?? "")}`}>
+                    {v.papel}
+                  </span>
+                </td>
+                <td>
+                  {v.unidadeCodigo ? `${v.unidadeCodigo} - ${v.unidadeNome ?? ""}` : "-"}
+                </td>
+                <td>{v.dataInicio ? new Date(v.dataInicio).toLocaleDateString("pt-BR") : "-"}</td>
+                <td>{v.dataFim ? new Date(v.dataFim).toLocaleDateString("pt-BR") : "-"}</td>
+                <td>
+                  <span
+                    className={
+                      "badge-status " + (isAtivo(v) ? "badge-status--ativo" : "badge-status--inativo")
+                    }
+                  >
+                    {isAtivo(v) ? "Ativo" : "Inativo"}
+                  </span>
+                </td>
+              </tr>
+            ))}
+            {!loading && vinculosOrdenados.length === 0 && (
+              <tr>
+                <td colSpan={7} style={{ textAlign: "center" }}>
+                  Nenhum vinculo encontrado.
                 </td>
               </tr>
             )}
@@ -981,6 +1568,7 @@ type EstruturaSubTab =
   | "garagens";
 
 type CadastrosSubTab = "visao" | "notificacoes" | "cadastro";
+type PessoasSubTab = "visao" | "pessoas" | "vinculos";
 
 export default function ConfiguracoesView(props: ConfiguracoesViewProps) {
   const { organizacao, abaSelecionada, readOnly = false } = props;
@@ -990,6 +1578,7 @@ export default function ConfiguracoesView(props: ConfiguracoesViewProps) {
   const [erroNotificacoes, setErroNotificacoes] = useState<string | null>(null);
   const [estruturaAba, setEstruturaAba] = useState<EstruturaSubTab>("visao");
   const [cadastrosAba, setCadastrosAba] = useState<CadastrosSubTab>("visao");
+  const [pessoasAba, setPessoasAba] = useState<PessoasSubTab>("visao");
   const [cadastroBaseTipo, setCadastroBaseTipo] =
     useState<CadastroBaseTipo | null>(null);
   const [cadastrosBase, setCadastrosBase] = useState<CadastroBaseRegistro[]>([]);
@@ -1000,6 +1589,7 @@ export default function ConfiguracoesView(props: ConfiguracoesViewProps) {
   useEffect(() => {
     setEstruturaAba("visao");
     setCadastrosAba("visao");
+    setPessoasAba("visao");
     setCadastroBaseTipo(null);
   }, [abaAtual]);
 
@@ -1044,7 +1634,13 @@ export default function ConfiguracoesView(props: ConfiguracoesViewProps) {
         codigoLabel: "Unidade",
         nomeLabel: "Responsavel financeiro",
         codigoPlaceholder: "Ex.: A101",
-        nomePlaceholder: "Nome do responsavel"
+        nomePlaceholder: "Nome do responsavel",
+        parentConfig: {
+          label: "Bloco",
+          placeholder: "Selecione o bloco",
+          tipos: ["Bloco"],
+          required: true
+        }
       },
       dependencias: {
         titulo: "Dependencias",
@@ -1060,7 +1656,12 @@ export default function ConfiguracoesView(props: ConfiguracoesViewProps) {
         codigoLabel: "Garagem",
         nomeLabel: "Proprietario/Locatario",
         codigoPlaceholder: "Ex.: G01",
-        nomePlaceholder: "Nome do responsavel"
+        nomePlaceholder: "Nome do responsavel",
+        parentConfig: {
+          label: "Unidade",
+          placeholder: "Sem unidade vinculada",
+          tipos: ["Apartamento", "Unidade"]
+        }
       }
     } as const;
   }, []);
@@ -1072,21 +1673,34 @@ export default function ConfiguracoesView(props: ConfiguracoesViewProps) {
     unidades: UnidadeOrganizacional[];
     dependencias: UnidadeOrganizacional[];
     garagens: UnidadeOrganizacional[];
+    unidadesSemBloco: number;
+    blocosSemUnidade: number;
+    garagensSemUnidade: number;
   }>({
     loading: false,
     erro: null,
     blocos: [],
     unidades: [],
     dependencias: [],
-    garagens: []
+    garagens: [],
+    unidadesSemBloco: 0,
+    blocosSemUnidade: 0,
+    garagensSemUnidade: 0
   });
 
-  const normalizarTipo = (value?: string | null) =>
-    (value ?? "")
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .toLowerCase()
-      .trim();
+  const [pessoasResumo, setPessoasResumo] = useState<{
+    loading: boolean;
+    erro: string | null;
+    totalPessoas: number;
+    totalVinculos: number;
+    pessoasSemVinculo: number;
+  }>({
+    loading: false,
+    erro: null,
+    totalPessoas: 0,
+    totalVinculos: 0,
+    pessoasSemVinculo: 0
+  });
 
   const carregarEstrutura = useCallback(async () => {
     if (!token) return;
@@ -1106,19 +1720,64 @@ export default function ConfiguracoesView(props: ConfiguracoesViewProps) {
         const tipo = normalizarTipo(item.tipo);
         return tipo !== "bloco" && tipo !== "dependencia" && tipo !== "garagem";
       });
+      const blocosIds = new Set(blocos.map((item) => item.id));
+      const unidadesIds = new Set(unidades.map((item) => item.id));
+      const unidadesSemBloco = unidades.filter(
+        (item) => !item.parentId || !blocosIds.has(item.parentId)
+      ).length;
+      const blocosComUnidade = new Set(
+        unidades
+          .map((item) => item.parentId)
+          .filter((id): id is string => Boolean(id) && blocosIds.has(id))
+      );
+      const blocosSemUnidade = blocos.filter((item) => !blocosComUnidade.has(item.id))
+        .length;
+      const garagensSemUnidade = garagens.filter(
+        (item) => !item.parentId || !unidadesIds.has(item.parentId)
+      ).length;
       setEstruturaResumo({
         loading: false,
         erro: null,
         blocos,
         unidades,
         dependencias,
-        garagens
+        garagens,
+        unidadesSemBloco,
+        blocosSemUnidade,
+        garagensSemUnidade
       });
     } catch (e: any) {
       setEstruturaResumo((prev) => ({
         ...prev,
         loading: false,
         erro: e?.message || "Erro ao carregar estrutura"
+      }));
+    }
+  }, [organizacao.id, token]);
+
+  const carregarPessoasResumo = useCallback(async () => {
+    if (!token) return;
+    try {
+      setPessoasResumo((prev) => ({ ...prev, loading: true, erro: null }));
+      const [pessoas, vinculos] = await Promise.all([
+        api.listarPessoas(token, organizacao.id),
+        api.listarVinculos(token, organizacao.id)
+      ]);
+      const totalPessoas = new Set(pessoas.map((p) => p.id)).size;
+      const pessoasComVinculo = new Set(vinculos.map((v) => v.pessoaId));
+      const pessoasSemVinculo = pessoas.filter((p) => !pessoasComVinculo.has(p.id)).length;
+      setPessoasResumo({
+        loading: false,
+        erro: null,
+        totalPessoas,
+        totalVinculos: vinculos.length,
+        pessoasSemVinculo
+      });
+    } catch (e: any) {
+      setPessoasResumo((prev) => ({
+        ...prev,
+        loading: false,
+        erro: e?.message || "Erro ao carregar pessoas"
       }));
     }
   }, [organizacao.id, token]);
@@ -1179,8 +1838,15 @@ export default function ConfiguracoesView(props: ConfiguracoesViewProps) {
   useEffect(() => {
     if (abaAtual === "estrutura-condominio") {
       void carregarEstrutura();
+      void carregarPessoasResumo();
     }
-  }, [abaAtual, carregarEstrutura]);
+  }, [abaAtual, carregarEstrutura, carregarPessoasResumo]);
+
+  useEffect(() => {
+    if (abaAtual === "pessoas-papeis") {
+      void carregarPessoasResumo();
+    }
+  }, [abaAtual, carregarPessoasResumo]);
 
   const getConfig = (tipo: string, canal: "email" | "app") =>
     notificacoes.find((n) => n.tipo === tipo && n.canal === canal);
@@ -1267,6 +1933,7 @@ export default function ConfiguracoesView(props: ConfiguracoesViewProps) {
         nomeLabel={config.nomeLabel}
         codigoPlaceholder={config.codigoPlaceholder}
         nomePlaceholder={config.nomePlaceholder}
+        parentConfig={config.parentConfig}
         readOnly={readOnly}
         onVoltar={() => setEstruturaAba("visao")}
         voltarLabel="Voltar para Estrutura"
@@ -1712,8 +2379,38 @@ export default function ConfiguracoesView(props: ConfiguracoesViewProps) {
               <p>Unidades herdam do bloco e do condominio.</p>
             </div>
             <div className="structure-info-card">
-              <span className="structure-info-title">Visual apenas</span>
-              <p>Sem regras ativas. Preparado para vinculos reais.</p>
+              <span className="structure-info-title">Mapa ativo</span>
+              <p>Estrutura carregada direto da base, com hierarquia validada.</p>
+            </div>
+          </div>
+
+          <div className="structure-alerts">
+            <div
+              className={
+                "structure-alert " +
+                (estruturaResumo.unidadesSemBloco ? "structure-alert--warn" : "structure-alert--ok")
+              }
+            >
+              <span>Unidades sem bloco</span>
+              <strong>{estruturaResumo.unidadesSemBloco}</strong>
+            </div>
+            <div
+              className={
+                "structure-alert " +
+                (estruturaResumo.blocosSemUnidade ? "structure-alert--warn" : "structure-alert--ok")
+              }
+            >
+              <span>Blocos sem unidade</span>
+              <strong>{estruturaResumo.blocosSemUnidade}</strong>
+            </div>
+            <div
+              className={
+                "structure-alert " +
+                (estruturaResumo.garagensSemUnidade ? "structure-alert--warn" : "structure-alert--ok")
+              }
+            >
+              <span>Garagens sem unidade</span>
+              <strong>{estruturaResumo.garagensSemUnidade}</strong>
             </div>
           </div>
 
@@ -1865,17 +2562,28 @@ export default function ConfiguracoesView(props: ConfiguracoesViewProps) {
 
           <div className="structure-people">
             <div>
-              <h4>Pessoas vinculadas (visual)</h4>
+              <h4>Pessoas e vinculos</h4>
               <p>
-                Este espaco exibira pessoas ligadas a unidades e blocos quando o
-                backend estiver integrado.
+                {pessoasResumo.loading
+                  ? "Carregando pessoas e vinculos..."
+                  : `${pessoasResumo.totalPessoas} pessoas e ${pessoasResumo.totalVinculos} vinculos ativos.`}
               </p>
+              {!pessoasResumo.loading && pessoasResumo.pessoasSemVinculo > 0 && (
+                <p className="config-subtext">
+                  {pessoasResumo.pessoasSemVinculo} pessoas sem vinculo ativo.
+                </p>
+              )}
             </div>
             <div className="structure-chips">
-              <span>Moradores</span>
-              <span>Funcionarios</span>
-              <span>Fornecedores</span>
-              <span>Sindicos</span>
+              <span>Pessoas: {pessoasResumo.totalPessoas}</span>
+              <span>Vinculos: {pessoasResumo.totalVinculos}</span>
+              <span
+                className={
+                  pessoasResumo.pessoasSemVinculo ? "structure-chip--alert" : undefined
+                }
+              >
+                Sem vinculo: {pessoasResumo.pessoasSemVinculo}
+              </span>
             </div>
           </div>
         </section>
@@ -1968,115 +2676,77 @@ export default function ConfiguracoesView(props: ConfiguracoesViewProps) {
     );
   }
 
-  if (abaAtual === "pessoas-papeis") {
-    const pessoasMock = [
-      {
-        id: "pessoa-1",
-        nome: "Marina Alves",
-        documento: "CPF 123.456.789-00",
-        papeis: ["Sindica", "Moradora"],
-        condominio: organizacao.nome,
-        bloco: "Bloco A",
-        unidade: "A-101"
-      },
-      {
-        id: "pessoa-2",
-        nome: "Carlos Pereira",
-        documento: "CPF 987.654.321-00",
-        papeis: ["Funcionario"],
-        condominio: organizacao.nome,
-        bloco: null,
-        unidade: null
-      },
-      {
-        id: "pessoa-3",
-        nome: "ElevasManutencao",
-        documento: "CNPJ 12.345.678/0001-99",
-        papeis: ["Fornecedor"],
-        condominio: organizacao.nome,
-        bloco: null,
-        unidade: null
-      }
-    ];
+  if (abaAtual === "pessoas-papeis" && pessoasAba === "pessoas") {
+    return (
+      <div className="config-page">
+        <header className="config-header">
+          <div>
+            <h2>Pessoas</h2>
+            <p className="config-subtitle">{organizacao.nome}</p>
+          </div>
+          <div className="config-actions">
+            <button
+              type="button"
+              className="button-secondary"
+              onClick={() => {
+                setPessoasAba("visao");
+                void carregarPessoasResumo();
+              }}
+            >
+              Voltar
+            </button>
+          </div>
+        </header>
+        <PessoasView organizacao={organizacao} readOnly={readOnly} />
+      </div>
+    );
+  }
 
+  if (abaAtual === "pessoas-papeis" && pessoasAba === "vinculos") {
+    return (
+      <ConfiguracoesVinculosTable
+        organizacao={organizacao}
+        readOnly={readOnly}
+        onVoltar={() => {
+          setPessoasAba("visao");
+          void carregarPessoasResumo();
+        }}
+        voltarLabel="Voltar para Pessoas"
+      />
+    );
+  }
+
+  if (abaAtual === "pessoas-papeis") {
     return (
       <div className="config-page">
         <header className="config-hero">
           <div>
             <h2>Pessoas & papeis</h2>
             <p className="config-subtitle">
-              Mapa visual dos vinculos entre pessoas, papeis e estrutura.
+              Cadastros e vinculos da organizacao.
             </p>
           </div>
           <div className="config-hero-actions">
-            <span className="config-pill">Visual apenas</span>
-            <span className="config-pill">Sem regras</span>
+            <span className="config-pill">
+              {pessoasResumo.loading ? "Carregando..." : `${pessoasResumo.totalPessoas} pessoas`}
+            </span>
+            <span className="config-pill">
+              {pessoasResumo.loading ? "..." : `${pessoasResumo.totalVinculos} vinculos`}
+            </span>
+            <span
+              className={
+                "config-pill" +
+                (pessoasResumo.pessoasSemVinculo ? " config-pill--alert" : "")
+              }
+            >
+              {pessoasResumo.loading
+                ? "..."
+                : `${pessoasResumo.pessoasSemVinculo} sem vinculo`}
+            </span>
           </div>
         </header>
 
-        <section className="people-map">
-          <div className="people-map-flow">
-            <span>Pessoa</span>
-            <span className="people-map-arrow">→</span>
-            <span>Papel</span>
-            <span className="people-map-arrow">→</span>
-            <span>Vinculo</span>
-          </div>
-
-          <div className="people-map-info">
-            <div className="people-map-card">
-              <span className="people-map-title">Pessoa → Papel</span>
-              <p>Uma pessoa pode ter varios papeis ao mesmo tempo.</p>
-            </div>
-            <div className="people-map-card">
-              <span className="people-map-title">Pessoa → Estrutura</span>
-              <p>Vinculo com condominio e, opcionalmente, com unidade.</p>
-            </div>
-            <div className="people-map-card people-map-card--alert">
-              <span className="people-map-title">Visual apenas</span>
-              <p>Regras entram depois. Nenhum dado real e alterado.</p>
-            </div>
-          </div>
-
-          <div className="people-map-grid">
-            {pessoasMock.map((pessoa) => (
-              <div key={pessoa.id} className="people-map-row">
-                <div className="people-card">
-                  <span className="people-label">Pessoa</span>
-                  <strong>{pessoa.nome}</strong>
-                  <span className="people-subtext">{pessoa.documento}</span>
-                </div>
-                <div className="people-connect">→</div>
-                <div className="people-role-card">
-                  <span className="people-label">Papeis</span>
-                  <div className="people-role-chips">
-                    {pessoa.papeis.map((papel) => (
-                      <span key={papel}>{papel}</span>
-                    ))}
-                  </div>
-                </div>
-                <div className="people-connect">→</div>
-                <div className="people-link-card">
-                  <span className="people-label">Vinculos</span>
-                  <div className="people-link-list">
-                    <div className="people-link-item">
-                      <span>Condominio</span>
-                      <strong>{pessoa.condominio}</strong>
-                    </div>
-                    <div className="people-link-item">
-                      <span>Bloco</span>
-                      <strong>{pessoa.bloco ?? "Opcional"}</strong>
-                    </div>
-                    <div className="people-link-item">
-                      <span>Unidade</span>
-                      <strong>{pessoa.unidade ?? "Opcional"}</strong>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
+        {pessoasResumo.erro && <p className="error">{pessoasResumo.erro}</p>}
 
         <div className="config-grid">
           {[
@@ -2084,8 +2754,17 @@ export default function ConfiguracoesView(props: ConfiguracoesViewProps) {
               id: "pessoas",
               title: "Pessoas",
               description: "Cadastro unico de pessoas e documentos.",
-              actionLabel: "Em breve",
-              disabled: true
+              actionLabel: acaoGerenciar,
+              onClick: () => setPessoasAba("pessoas"),
+              active: true
+            },
+            {
+              id: "vinculos",
+              title: "Vinculos",
+              description: "Vinculos entre pessoa, unidade e condominio.",
+              actionLabel: acaoGerenciar,
+              onClick: () => setPessoasAba("vinculos"),
+              active: true
             },
             {
               id: "tipos-pessoa",
@@ -2098,13 +2777,6 @@ export default function ConfiguracoesView(props: ConfiguracoesViewProps) {
               id: "papeis",
               title: "Papeis e funcoes",
               description: "Funcoes flexiveis ligadas ao dia a dia.",
-              actionLabel: "Em breve",
-              disabled: true
-            },
-            {
-              id: "vinculos",
-              title: "Vinculos",
-              description: "Vinculos entre pessoa, unidade e condominio.",
               actionLabel: "Em breve",
               disabled: true
             },
@@ -2125,14 +2797,24 @@ export default function ConfiguracoesView(props: ConfiguracoesViewProps) {
           ].map((card) => (
             <div
               key={card.id}
-              className={"config-card" + (card.disabled ? " config-card--disabled" : "")}
+              className={
+                "config-card" +
+                (card.disabled ? " config-card--disabled" : "") +
+                (card.active ? " config-card--active" : "")
+              }
             >
               <div className="config-card-header">
                 <h3>{card.title}</h3>
+                {card.active && <span className="config-tag">Ativo</span>}
               </div>
               <p className="config-card-desc">{card.description}</p>
               <div className="config-card-actions">
-                <button type="button" className="button-secondary" disabled>
+                <button
+                  type="button"
+                  className="button-secondary"
+                  disabled={card.disabled}
+                  onClick={card.onClick}
+                >
                   {card.actionLabel}
                 </button>
               </div>

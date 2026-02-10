@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -65,6 +67,7 @@ public class UnidadesOrganizacionaisController : ControllerBase
         public string Tipo { get; set; } = string.Empty;          // ex.: "Bloco", "Apartamento"
         public string CodigoInterno { get; set; } = string.Empty; // ex.: "1", "101", "1-101"
         public string Nome { get; set; } = string.Empty;          // ex.: "Bloco 1 - Apto 101"
+        public Guid? ParentId { get; set; }
     }
 
     // POST /api/unidades
@@ -93,6 +96,16 @@ public class UnidadesOrganizacionaisController : ControllerBase
             return BadRequest("Nome da unidade e obrigatorio.");
         }
 
+        var validacao = await ValidarHierarquiaAsync(
+            request.OrganizacaoId,
+            request.Tipo,
+            request.ParentId,
+            null);
+        if (validacao is not null)
+        {
+            return validacao;
+        }
+
         var unidade = new UnidadeOrganizacional
         {
             Id = Guid.NewGuid(),
@@ -100,7 +113,8 @@ public class UnidadesOrganizacionaisController : ControllerBase
             Tipo = request.Tipo?.Trim() ?? string.Empty,
             CodigoInterno = request.CodigoInterno?.Trim() ?? string.Empty,
             Nome = request.Nome.Trim(),
-            Status = "ativo"
+            Status = "ativo",
+            ParentId = request.ParentId
         };
 
         _db.UnidadesOrganizacionais.Add(unidade);
@@ -114,6 +128,7 @@ public class UnidadesOrganizacionaisController : ControllerBase
         public string Nome { get; set; } = string.Empty;
         public string? CodigoInterno { get; set; }
         public string? Tipo { get; set; }
+        public Guid? ParentId { get; set; }
     }
 
     // PUT /api/unidades/{id}
@@ -147,9 +162,20 @@ public class UnidadesOrganizacionaisController : ControllerBase
             return auth.Error;
         }
 
+        var validacao = await ValidarHierarquiaAsync(
+            unidade.OrganizacaoId,
+            request.Tipo ?? unidade.Tipo,
+            request.ParentId,
+            unidade.Id);
+        if (validacao is not null)
+        {
+            return validacao;
+        }
+
         unidade.Nome = request.Nome.Trim();
         unidade.CodigoInterno = request.CodigoInterno?.Trim() ?? string.Empty;
         unidade.Tipo = request.Tipo?.Trim() ?? string.Empty;
+        unidade.ParentId = request.ParentId;
 
         await _db.SaveChangesAsync();
 
@@ -189,5 +215,108 @@ public class UnidadesOrganizacionaisController : ControllerBase
         await _db.SaveChangesAsync();
 
         return Ok();
+    }
+
+    private static string NormalizarTipo(string? value)
+    {
+        var raw = value ?? string.Empty;
+        var normalized = raw.Normalize(NormalizationForm.FormD);
+        var builder = new StringBuilder(normalized.Length);
+        foreach (var c in normalized)
+        {
+            if (CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark)
+            {
+                builder.Append(c);
+            }
+        }
+
+        return builder.ToString().ToLowerInvariant().Trim();
+    }
+
+    private static bool EhTipo(string? value, params string[] tipos)
+    {
+        var normalizado = NormalizarTipo(value);
+        return tipos.Any(tipo =>
+            normalizado.Equals(NormalizarTipo(tipo), StringComparison.OrdinalIgnoreCase));
+    }
+
+    private async Task<ActionResult?> ValidarHierarquiaAsync(
+        Guid organizacaoId,
+        string? tipo,
+        Guid? parentId,
+        Guid? unidadeId)
+    {
+        var tipoNormalizado = NormalizarTipo(tipo);
+        if (string.IsNullOrWhiteSpace(tipoNormalizado))
+        {
+            return BadRequest("Tipo e obrigatorio.");
+        }
+
+        if (parentId.HasValue && unidadeId.HasValue && parentId.Value == unidadeId.Value)
+        {
+            return BadRequest("ParentId invalido.");
+        }
+
+        UnidadeOrganizacional? parent = null;
+        if (parentId.HasValue && parentId.Value != Guid.Empty)
+        {
+            parent = await _db.UnidadesOrganizacionais
+                .AsNoTracking()
+                .FirstOrDefaultAsync(u => u.Id == parentId.Value && u.OrganizacaoId == organizacaoId);
+            if (parent is null)
+            {
+                return BadRequest("ParentId invalido.");
+            }
+        }
+
+        if (EhTipo(tipoNormalizado, "bloco"))
+        {
+            if (parentId.HasValue)
+            {
+                return BadRequest("Bloco nao pode ter ParentId.");
+            }
+
+            return null;
+        }
+
+        if (EhTipo(tipoNormalizado, "dependencia"))
+        {
+            if (parentId.HasValue)
+            {
+                return BadRequest("Dependencia nao pode ter ParentId.");
+            }
+
+            return null;
+        }
+
+        if (EhTipo(tipoNormalizado, "apartamento", "unidade"))
+        {
+            if (!parentId.HasValue || parentId.Value == Guid.Empty)
+            {
+                return BadRequest("Unidade precisa estar vinculada a um Bloco.");
+            }
+
+            if (parent is null || !EhTipo(parent.Tipo, "bloco"))
+            {
+                return BadRequest("ParentId deve apontar para um Bloco.");
+            }
+
+            return null;
+        }
+
+        if (EhTipo(tipoNormalizado, "garagem", "vaga", "vagas"))
+        {
+            if (parentId.HasValue)
+            {
+                if (parent is null || !EhTipo(parent.Tipo, "apartamento", "unidade"))
+                {
+                    return BadRequest("Garagem deve vincular a uma Unidade.");
+                }
+            }
+
+            return null;
+        }
+
+        return null;
     }
 }

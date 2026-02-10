@@ -179,6 +179,21 @@ export interface UnidadeOrganizacional {
   codigoInterno: string;
   nome: string;
   status: string;
+  parentId?: string | null;
+}
+
+export interface VinculoPessoaOrganizacao {
+  id: string;
+  pessoaId: string;
+  pessoaNome: string;
+  pessoaDocumento?: string | null;
+  organizacaoId: string;
+  unidadeOrganizacionalId?: string | null;
+  unidadeCodigo?: string | null;
+  unidadeNome?: string | null;
+  papel: string;
+  dataInicio: string;
+  dataFim?: string | null;
 }
 
 export interface Chamado {
@@ -558,6 +573,7 @@ export const api = {
       tipo: string;
       codigoInterno: string;
       nome: string;
+      parentId?: string | null;
     }
   ): Promise<UnidadeOrganizacional> {
     return request<UnidadeOrganizacional>(
@@ -568,7 +584,8 @@ export const api = {
           organizacaoId: payload.organizacaoId,
           tipo: payload.tipo,
           codigoInterno: payload.codigoInterno,
-          nome: payload.nome
+          nome: payload.nome,
+          parentId: payload.parentId ?? null
         })
       },
       token
@@ -582,6 +599,7 @@ export const api = {
       nome: string;
       codigoInterno?: string;
       tipo?: string;
+      parentId?: string | null;
     }
   ): Promise<UnidadeOrganizacional> {
     const path = `/unidades/${encodeURIComponent(id)}`;
@@ -592,9 +610,84 @@ export const api = {
         body: JSON.stringify({
           nome: payload.nome,
           codigoInterno: payload.codigoInterno ?? "",
-          tipo: payload.tipo ?? ""
+          tipo: payload.tipo ?? "",
+          parentId: payload.parentId ?? null
         })
       },
+      token
+    );
+  },
+
+  async listarVinculos(
+    token: string,
+    organizacaoId: string,
+    params?: { pessoaId?: string; unidadeId?: string }
+  ): Promise<VinculoPessoaOrganizacao[]> {
+    const search = new URLSearchParams({ organizacaoId });
+    if (params?.pessoaId) {
+      search.set("pessoaId", params.pessoaId);
+    }
+    if (params?.unidadeId) {
+      search.set("unidadeId", params.unidadeId);
+    }
+    return request<VinculoPessoaOrganizacao[]>(
+      `/vinculos?${search.toString()}`,
+      {},
+      token
+    );
+  },
+
+  async criarVinculo(
+    token: string,
+    payload: {
+      organizacaoId: string;
+      pessoaId: string;
+      unidadeOrganizacionalId?: string | null;
+      papel: string;
+      dataInicio?: string | null;
+      dataFim?: string | null;
+    }
+  ): Promise<VinculoPessoaOrganizacao> {
+    return request<VinculoPessoaOrganizacao>(
+      "/vinculos",
+      {
+        method: "POST",
+        body: JSON.stringify(payload)
+      },
+      token
+    );
+  },
+
+  async atualizarVinculo(
+    token: string,
+    id: string,
+    payload: {
+      organizacaoId: string;
+      unidadeOrganizacionalId?: string | null;
+      papel?: string | null;
+      dataFim?: string | null;
+    }
+  ): Promise<VinculoPessoaOrganizacao> {
+    return request<VinculoPessoaOrganizacao>(
+      `/vinculos/${encodeURIComponent(id)}`,
+      {
+        method: "PUT",
+        body: JSON.stringify(payload)
+      },
+      token
+    );
+  },
+
+  async removerVinculo(
+    token: string,
+    id: string,
+    organizacaoId: string
+  ): Promise<void> {
+    await request<void>(
+      `/vinculos/${encodeURIComponent(id)}?organizacaoId=${encodeURIComponent(
+        organizacaoId
+      )}`,
+      { method: "DELETE" },
       token
     );
   },
