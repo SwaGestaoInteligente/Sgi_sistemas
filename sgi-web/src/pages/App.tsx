@@ -49,6 +49,11 @@ type AppView =
   | "pets"
   | "chamados"
   | "reservas"
+  | "portaria"
+  | "correspondencia"
+  | "comunicados"
+  | "documentos"
+  | "relatorios"
   | "minhaUnidade";
 
 type Segmento = {
@@ -61,32 +66,32 @@ const segmentos: Segmento[] = [
   {
     id: "condominios",
     label: "Condominios",
-    icon: "🏢"
+    icon: "\u{1F3E2}"
   },
   {
     id: "empresas",
     label: "Empresas",
-    icon: "💼"
+    icon: "\u{1F4BC}"
   },
   {
     id: "igrejas",
     label: "Igrejas",
-    icon: "⛪"
+    icon: "\u{26EA}"
   },
   {
     id: "sitios",
     label: "Sitios / Pousadas",
-    icon: "🏡"
+    icon: "\u{1F3E1}"
   },
   {
     id: "associacoes",
     label: "Associacoes / ONGs",
-    icon: "🤝"
+    icon: "\u{1F91D}"
   },
   {
     id: "outros",
     label: "Outros",
-    icon: "✨"
+    icon: "\u{2728}"
   }
 ];
 
@@ -117,7 +122,7 @@ const viewMeta: Record<AppView, { title: string; subtitle: string }> = {
     subtitle: "Contas, lancamentos, transferencias e relatorios."
   },
   configuracoes: {
-    title: "Configuracoes base",
+    title: "Configuracoes",
     subtitle: "Estrutura, cadastros e parametros do sistema."
   },
   funcionarios: {
@@ -144,11 +149,39 @@ const viewMeta: Record<AppView, { title: string; subtitle: string }> = {
     title: "Reservas",
     subtitle: "Controle de reservas e uso de recursos."
   },
+  portaria: {
+    title: "Portaria",
+    subtitle: "Visitantes, prestadores, ocorrencias e turnos."
+  },
+  correspondencia: {
+    title: "Correspondencia",
+    subtitle: "Recebidas, entregues e pendentes."
+  },
+  comunicados: {
+    title: "Comunicados",
+    subtitle: "Avisos gerais e por bloco/unidade."
+  },
+  documentos: {
+    title: "Documentos",
+    subtitle: "Atas, regimento, contratos e uploads."
+  },
+  relatorios: {
+    title: "Relatorios",
+    subtitle: "Financeiros, operacionais e contabeis."
+  },
   minhaUnidade: {
     title: "Minha unidade",
     subtitle: "Informacoes e dados da sua unidade."
   }
 };
+
+const comingSoonViews = new Set<AppView>([
+  "portaria",
+  "correspondencia",
+  "comunicados",
+  "documentos",
+  "relatorios"
+]);
 
 const financeiroSiglas: Record<FinanceiroTab, string> = {
   mapaFinanceiro: "MF",
@@ -185,6 +218,13 @@ const normalizeText = (value?: string | null) =>
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
     .trim();
+
+const ComingSoonView: React.FC = () => (
+  <div className="card">
+    <h2>Em construcao</h2>
+    <p>Estamos preparando este modulo. Em breve voce podera usar este fluxo no MVP.</p>
+  </div>
+);
 
 
 const Dashboard: React.FC<{
@@ -260,6 +300,67 @@ const Dashboard: React.FC<{
   const contasAtivas = contas.filter(
     (conta) => (conta.status ?? "").toLowerCase() === "ativo"
   ).length;
+  const normalizeStatus = (value?: string | null) => normalizeText(value);
+  const isChamadoFechado = (value?: string | null) => {
+    const status = normalizeStatus(value);
+    return (
+      status.includes("fech") ||
+      status.includes("conclu") ||
+      status.includes("resol") ||
+      status.includes("encerra")
+    );
+  };
+  const chamadosAbertos = chamados.filter((chamado) => !isChamadoFechado(chamado.status))
+    .length;
+  const reservasPendentes = reservas.filter((reserva) => {
+    const status = normalizeStatus(reserva.status);
+    if (!status) return false;
+    return (
+      status.includes("pend") ||
+      status.includes("aguard") ||
+      status.includes("solicit")
+    );
+  }).length;
+  const alertasNaoLidos = alertas.filter((alerta) => !alerta.lidoEm).length;
+
+  const buildSerieSemanal = <T,>(
+    items: T[],
+    getDate: (item: T) => string | undefined | null
+  ) => {
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+    const inicio = new Date(hoje);
+    inicio.setDate(inicio.getDate() - 6);
+    const counts = Array.from({ length: 7 }, () => 0);
+
+    items.forEach((item) => {
+      const raw = getDate(item);
+      if (!raw) return;
+      const parsed = new Date(raw);
+      if (Number.isNaN(parsed.getTime())) return;
+      parsed.setHours(0, 0, 0, 0);
+      const diff = Math.floor((parsed.getTime() - inicio.getTime()) / 86400000);
+      if (diff >= 0 && diff < 7) {
+        counts[diff] += 1;
+      }
+    });
+
+    return counts;
+  };
+
+  const serieChamados = buildSerieSemanal(chamados, (item) => item.dataAbertura);
+  const serieReservas = buildSerieSemanal(
+    reservas,
+    (item) => item.dataSolicitacao ?? item.dataInicio
+  );
+  const serieAlertas = buildSerieSemanal(alertas, (item) => item.criadoEm);
+  const serieMax = Math.max(
+    1,
+    ...serieChamados,
+    ...serieReservas,
+    ...serieAlertas
+  );
+  const chartLabels = ["D-6", "D-5", "D-4", "D-3", "D-2", "D-1", "Hoje"];
 
   return (
     <div className="dashboard">
@@ -277,6 +378,81 @@ const Dashboard: React.FC<{
         </button>
       </div>
 
+      <div className="dashboard-panels">
+        <div className="dashboard-panel dashboard-chart-card">
+          <div className="dashboard-panel-header">
+            <div>
+              <h3>Atividade semanal</h3>
+              <p>Chamados, reservas e alertas nos ultimos 7 dias.</p>
+            </div>
+            <div className="dashboard-chart-legend">
+              <span className="legend-item legend-item--chamados">Chamados</span>
+              <span className="legend-item legend-item--reservas">Reservas</span>
+              <span className="legend-item legend-item--alertas">Alertas</span>
+            </div>
+          </div>
+          <div className="dashboard-chart-bars">
+            {chartLabels.map((label, index) => {
+              const chamadosValue = serieChamados[index] ?? 0;
+              const reservasValue = serieReservas[index] ?? 0;
+              const alertasValue = serieAlertas[index] ?? 0;
+              const scale = 90;
+              const heightFor = (value: number) => {
+                if (!value) return 6;
+                return Math.max(12, Math.round((value / serieMax) * scale));
+              };
+              return (
+                <div key={label} className="dashboard-chart-day">
+                  <div className="dashboard-chart-group">
+                    <span
+                      className="dashboard-chart-bar dashboard-chart-bar--chamados"
+                      style={{ height: `${heightFor(chamadosValue)}px` }}
+                      title={`Chamados: ${chamadosValue}`}
+                    />
+                    <span
+                      className="dashboard-chart-bar dashboard-chart-bar--reservas"
+                      style={{ height: `${heightFor(reservasValue)}px` }}
+                      title={`Reservas: ${reservasValue}`}
+                    />
+                    <span
+                      className="dashboard-chart-bar dashboard-chart-bar--alertas"
+                      style={{ height: `${heightFor(alertasValue)}px` }}
+                      title={`Alertas: ${alertasValue}`}
+                    />
+                  </div>
+                  <span className="dashboard-chart-label">{label}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="dashboard-panel dashboard-insights-card">
+          <h3>Prioridades da semana</h3>
+          <ul className="dashboard-insights">
+            <li>
+              <span className="insight-label">Chamados abertos</span>
+              <strong>{chamadosAbertos}</strong>
+            </li>
+            <li>
+              <span className="insight-label">Reservas pendentes</span>
+              <strong>{reservasPendentes}</strong>
+            </li>
+            <li>
+              <span className="insight-label">Alertas nao lidos</span>
+              <strong>{alertasNaoLidos}</strong>
+            </li>
+            <li>
+              <span className="insight-label">Contas ativas</span>
+              <strong>{contasAtivas}</strong>
+            </li>
+          </ul>
+          <p className="dashboard-insights-note">
+            Organize a fila com base nas pendencias acima.
+          </p>
+        </div>
+      </div>
+
       <div className="dashboard-grid">
         <div className="dashboard-card dashboard-card--primary">
           <div className="dashboard-card-label">
@@ -284,7 +460,7 @@ const Dashboard: React.FC<{
             <span>Saldo inicial total</span>
           </div>
           <div className="dashboard-card-value">
-            {mostrarFinanceiro ? `R$ ${saldoInicialTotal.toFixed(2)}` : "—"}
+            {mostrarFinanceiro ? `R$ ${saldoInicialTotal.toFixed(2)}` : "Sem acesso"}
           </div>
           <div className="dashboard-card-sub">
             Base consolidada das contas financeiras.
@@ -1488,6 +1664,7 @@ const InnerApp: React.FC = () => {
   const podeEditarCadastros =
     IGNORAR_PERFIS || can(session, orgId, "cadastros.write");
   const podeOperacao = IGNORAR_PERFIS || can(session, orgId, "operacao.read");
+  const podeRelatorios = podeFinanceiro || podeOperacao;
   const podeCriarOperacao =
     IGNORAR_PERFIS || can(session, orgId, "operacao.create");
   const podeMinhaUnidade =
@@ -1504,6 +1681,11 @@ const InnerApp: React.FC = () => {
     pets: "cadastros.read",
     chamados: "operacao.read",
     reservas: "operacao.read",
+    portaria: "operacao.read",
+    correspondencia: "operacao.read",
+    comunicados: "operacao.read",
+    documentos: "operacao.read",
+    relatorios: "operacao.read",
     minhaUnidade: "minha_unidade.read"
   };
 
@@ -1523,6 +1705,7 @@ const InnerApp: React.FC = () => {
   };
 
   const viewPermitido = canView(view);
+  const isComingSoon = comingSoonViews.has(view);
 
   const activePathname = useMemo(() => {
     if (!token || !session) return "/login";
@@ -2068,41 +2251,29 @@ const InnerApp: React.FC = () => {
           <nav className="sidebar-menu">
             <div className="sidebar-section">
               <p className="sidebar-section-title">Resumo</p>
-              {renderSidebarItem("dashboard", "Resumo geral", "📊")}
+              {renderSidebarItem("dashboard", "Resumo geral", "\u{1F4CA}")}
               {podeMinhaUnidade &&
-                renderSidebarItem("minhaUnidade", "Minha unidade", "🏠")}
+                renderSidebarItem("minhaUnidade", "Minha unidade", "\u{1F3E0}")}
             </div>
-
-            {podeVerCadastros && (
-              <>
-                <div className="sidebar-section">
-                  <p className="sidebar-section-title">Operacao - Pessoas</p>
-                  {renderSidebarItem("pessoas", "Pessoas", "👥")}
-                  {renderSidebarItem("funcionarios", "Funcionarios", "👔")}
-                  {renderSidebarItem("fornecedores", "Fornecedores", "🤝")}
-                </div>
-
-                <div className="sidebar-section">
-                  <p className="sidebar-section-title">Operacao - Estrutura</p>
-                  {renderSidebarItem("unidades", "Unidades", "🏢")}
-                </div>
-
-                <div className="sidebar-section">
-                  <p className="sidebar-section-title">Operacao - Ativos</p>
-                  {renderSidebarItem("veiculos", "Veiculos", "🚗")}
-                  {renderSidebarItem("pets", "Pets", "🐾")}
-                </div>
-              </>
-            )}
-
             {podeOperacao && (
               <div className="sidebar-section">
-                <p className="sidebar-section-title">Operacao - Servicos</p>
-                {renderSidebarItem("chamados", "Chamados", "🛠️")}
-                {renderSidebarItem("reservas", "Reservas", "📅")}
+                <p className="sidebar-section-title">Operacao diaria</p>
+                {renderSidebarItem("chamados", "Chamados", "\u{1F6E0}")}
+                {renderSidebarItem("reservas", "Reservas", "\u{1F4C5}")}
+                {renderSidebarItem("portaria", "Portaria", "\u{1F6AA}")}
+                {renderSidebarItem("correspondencia", "Correspondencia", "\u{1F4EC}")}
               </div>
             )}
 
+            {podeVerCadastros && (
+              <div className="sidebar-section">
+                <p className="sidebar-section-title">Cadastros</p>
+                {renderSidebarItem("pessoas", "Pessoas", "\u{1F465}")}
+                {renderSidebarItem("unidades", "Unidades", "\u{1F3E2}")}
+                {renderSidebarItem("veiculos", "Veiculos", "\u{1F697}")}
+                {renderSidebarItem("pets", "Pets", "\u{1F43E}")}
+              </div>
+            )}
             {podeFinanceiro && (
               <div className="sidebar-section">
                 <p className="sidebar-section-title">Financeiro</p>
@@ -2121,7 +2292,7 @@ const InnerApp: React.FC = () => {
                   }
                   title="Financeiro"
                 >
-                  <span className="sidebar-item-icon">💰</span>
+                  <span className="sidebar-item-icon">{"\u{1F4B0}"}</span>
                   <span className="sidebar-item-label">Financeiro</span>
                 </button>
                 <div
@@ -2154,10 +2325,24 @@ const InnerApp: React.FC = () => {
                 </div>
               </div>
             )}
+            {podeOperacao && (
+              <div className="sidebar-section">
+                <p className="sidebar-section-title">Comunicacao</p>
+                <span className="sidebar-section-subtitle">avisos e documentos</span>
+                {renderSidebarItem("comunicados", "Comunicados", "\u{1F4E2}")}
+                {renderSidebarItem("documentos", "Documentos", "\u{1F4C1}")}
+              </div>
+            )}
 
+            {podeRelatorios && (
+              <div className="sidebar-section">
+                <p className="sidebar-section-title">Relatorios</p>
+                {renderSidebarItem("relatorios", "Relatorios", "\u{1F4CA}")}
+              </div>
+            )}
             {podeEditarCadastros && (
               <div className="sidebar-section">
-                <p className="sidebar-section-title">Configuracoes base</p>
+                <p className="sidebar-section-title">Configuracoes</p>
                 <button
                   type="button"
                   onClick={() => {
@@ -2174,7 +2359,7 @@ const InnerApp: React.FC = () => {
                   }
                   title="Configuracoes"
                 >
-                  <span className="sidebar-item-icon">⚙️</span>
+                  <span className="sidebar-item-icon">{"\u{2699}"}</span>
                   <span className="sidebar-item-label">Configuracoes</span>
                 </button>
                 <div
@@ -2351,6 +2536,8 @@ const InnerApp: React.FC = () => {
               unidadeId={membershipAtual?.unidadeOrganizacionalId}
             />
           )}
+
+          {viewPermitido && isComingSoon && <ComingSoonView />}
         </main>
       </div>
     </>
