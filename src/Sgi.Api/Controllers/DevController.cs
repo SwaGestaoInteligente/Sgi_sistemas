@@ -696,7 +696,13 @@ public class DevController : ControllerBase
             new PlanoContas { Id = Guid.NewGuid(), OrganizacaoId = demoOrg.Id, Codigo = "2.02", Nome = "Manutencao predial", Tipo = "Despesa", Nivel = 2, ParentId = planoDespesa.Id },
             new PlanoContas { Id = Guid.NewGuid(), OrganizacaoId = demoOrg.Id, Codigo = "2.03", Nome = "Limpeza", Tipo = "Despesa", Nivel = 2, ParentId = planoDespesa.Id },
             new PlanoContas { Id = Guid.NewGuid(), OrganizacaoId = demoOrg.Id, Codigo = "2.04", Nome = "Seguranca", Tipo = "Despesa", Nivel = 2, ParentId = planoDespesa.Id },
-            new PlanoContas { Id = Guid.NewGuid(), OrganizacaoId = demoOrg.Id, Codigo = "2.05", Nome = "Energia e agua", Tipo = "Despesa", Nivel = 2, ParentId = planoDespesa.Id }
+            new PlanoContas { Id = Guid.NewGuid(), OrganizacaoId = demoOrg.Id, Codigo = "2.05", Nome = "Energia e agua", Tipo = "Despesa", Nivel = 2, ParentId = planoDespesa.Id },
+            new PlanoContas { Id = Guid.NewGuid(), OrganizacaoId = demoOrg.Id, Codigo = "2.06", Nome = "Despesas de obras", Tipo = "Despesa", Nivel = 2, ParentId = planoDespesa.Id },
+            new PlanoContas { Id = Guid.NewGuid(), OrganizacaoId = demoOrg.Id, Codigo = "2.07", Nome = "Despesas extras", Tipo = "Despesa", Nivel = 2, ParentId = planoDespesa.Id },
+            new PlanoContas { Id = Guid.NewGuid(), OrganizacaoId = demoOrg.Id, Codigo = "2.08", Nome = "Depreciacao", Tipo = "Despesa", Nivel = 2, ParentId = planoDespesa.Id },
+            new PlanoContas { Id = Guid.NewGuid(), OrganizacaoId = demoOrg.Id, Codigo = "2.09", Nome = "Outras despesas", Tipo = "Despesa", Nivel = 2, ParentId = planoDespesa.Id },
+            new PlanoContas { Id = Guid.NewGuid(), OrganizacaoId = demoOrg.Id, Codigo = "2.10", Nome = "Impostos e taxas", Tipo = "Despesa", Nivel = 2, ParentId = planoDespesa.Id },
+            new PlanoContas { Id = Guid.NewGuid(), OrganizacaoId = demoOrg.Id, Codigo = "2.11", Nome = "Investimentos", Tipo = "Despesa", Nivel = 2, ParentId = planoDespesa.Id }
         };
 
         foreach (var plano in planosReceita.Concat(planosDespesa))

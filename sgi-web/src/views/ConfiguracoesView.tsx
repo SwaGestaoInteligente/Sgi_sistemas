@@ -4,6 +4,7 @@ import {
   NotificacaoConfig,
   Organizacao,
   Pessoa,
+  PlanoContas,
   UnidadeOrganizacional,
   VinculoPessoaOrganizacao
 } from "../api";
@@ -1569,6 +1570,7 @@ type EstruturaSubTab =
 
 type CadastrosSubTab = "visao" | "notificacoes" | "cadastro";
 type PessoasSubTab = "visao" | "pessoas" | "vinculos";
+type FinanceiroSubTab = "visao" | "plano-contas";
 
 export default function ConfiguracoesView(props: ConfiguracoesViewProps) {
   const { organizacao, abaSelecionada, readOnly = false } = props;
@@ -1579,9 +1581,20 @@ export default function ConfiguracoesView(props: ConfiguracoesViewProps) {
   const [estruturaAba, setEstruturaAba] = useState<EstruturaSubTab>("visao");
   const [cadastrosAba, setCadastrosAba] = useState<CadastrosSubTab>("visao");
   const [pessoasAba, setPessoasAba] = useState<PessoasSubTab>("visao");
+  const [financeiroAba, setFinanceiroAba] =
+    useState<FinanceiroSubTab>("visao");
   const [cadastroBaseTipo, setCadastroBaseTipo] =
     useState<CadastroBaseTipo | null>(null);
   const [cadastrosBase, setCadastrosBase] = useState<CadastroBaseRegistro[]>([]);
+  const [planosContas, setPlanosContas] = useState<PlanoContas[]>([]);
+  const [planosLoading, setPlanosLoading] = useState(false);
+  const [planosErro, setPlanosErro] = useState<string | null>(null);
+  const [novoPlanoCodigo, setNovoPlanoCodigo] = useState("");
+  const [novoPlanoNome, setNovoPlanoNome] = useState("");
+  const [novoPlanoTipo, setNovoPlanoTipo] = useState<"Receita" | "Despesa">(
+    "Despesa"
+  );
+  const [novoPlanoParentId, setNovoPlanoParentId] = useState("");
 
   const abaAtual: ConfiguracoesTab = abaSelecionada ?? "cadastros-base";
   const acaoGerenciar = readOnly ? "Visualizar" : "Gerenciar";
@@ -1590,12 +1603,185 @@ export default function ConfiguracoesView(props: ConfiguracoesViewProps) {
     setEstruturaAba("visao");
     setCadastrosAba("visao");
     setPessoasAba("visao");
+    setFinanceiroAba("visao");
     setCadastroBaseTipo(null);
   }, [abaAtual]);
 
   useEffect(() => {
     setCadastrosBase([]);
+    setPlanosContas([]);
   }, [organizacao.id]);
+
+  const carregarPlanosContas = useCallback(async () => {
+    if (!token) return;
+    try {
+      setPlanosErro(null);
+      setPlanosLoading(true);
+      const lista = await api.listarPlanosContas(token, organizacao.id);
+      setPlanosContas(lista);
+    } catch (e: any) {
+      setPlanosErro(e?.message || "Erro ao carregar plano de contas");
+    } finally {
+      setPlanosLoading(false);
+    }
+  }, [organizacao.id, token]);
+
+  const gerarPlanoPadrao = useCallback(async () => {
+    if (!token) return;
+    try {
+      setPlanosErro(null);
+      setPlanosLoading(true);
+      let lista = planosContas.length
+        ? [...planosContas]
+        : await api.listarPlanosContas(token, organizacao.id);
+      const porCodigo = new Map<string, PlanoContas>();
+      lista.forEach((p) => porCodigo.set(`${p.tipo}:${p.codigo}`, p));
+
+      const criarSeNecessario = async (payload: {
+        codigo: string;
+        nome: string;
+        tipo: "Receita" | "Despesa";
+        nivel: number;
+        parentId?: string;
+      }) => {
+        const chave = `${payload.tipo}:${payload.codigo}`;
+        const existente = porCodigo.get(chave);
+        if (existente) return existente;
+        const criado = await api.criarPlanoContas(token, {
+          organizacaoId: organizacao.id,
+          codigo: payload.codigo,
+          nome: payload.nome,
+          tipo: payload.tipo,
+          nivel: payload.nivel,
+          parentId: payload.parentId
+        });
+        lista = [...lista, criado];
+        porCodigo.set(chave, criado);
+        return criado;
+      };
+
+      const receitaRoot = await criarSeNecessario({
+        codigo: "1",
+        nome: "Receitas",
+        tipo: "Receita",
+        nivel: 1
+      });
+
+      const despesaRoot = await criarSeNecessario({
+        codigo: "2",
+        nome: "Despesas",
+        tipo: "Despesa",
+        nivel: 1
+      });
+
+      await criarSeNecessario({
+        codigo: "1.01",
+        nome: "Taxa condominial",
+        tipo: "Receita",
+        nivel: receitaRoot.nivel + 1,
+        parentId: receitaRoot.id
+      });
+      await criarSeNecessario({
+        codigo: "1.02",
+        nome: "Multas e juros",
+        tipo: "Receita",
+        nivel: receitaRoot.nivel + 1,
+        parentId: receitaRoot.id
+      });
+      await criarSeNecessario({
+        codigo: "1.03",
+        nome: "Areas comuns",
+        tipo: "Receita",
+        nivel: receitaRoot.nivel + 1,
+        parentId: receitaRoot.id
+      });
+
+      const despesaNivel = despesaRoot.nivel + 1;
+      await criarSeNecessario({
+        codigo: "2.01",
+        nome: "Folha e encargos",
+        tipo: "Despesa",
+        nivel: despesaNivel,
+        parentId: despesaRoot.id
+      });
+      await criarSeNecessario({
+        codigo: "2.02",
+        nome: "Manutencao predial",
+        tipo: "Despesa",
+        nivel: despesaNivel,
+        parentId: despesaRoot.id
+      });
+      await criarSeNecessario({
+        codigo: "2.03",
+        nome: "Limpeza",
+        tipo: "Despesa",
+        nivel: despesaNivel,
+        parentId: despesaRoot.id
+      });
+      await criarSeNecessario({
+        codigo: "2.04",
+        nome: "Seguranca",
+        tipo: "Despesa",
+        nivel: despesaNivel,
+        parentId: despesaRoot.id
+      });
+      await criarSeNecessario({
+        codigo: "2.05",
+        nome: "Energia e agua",
+        tipo: "Despesa",
+        nivel: despesaNivel,
+        parentId: despesaRoot.id
+      });
+      await criarSeNecessario({
+        codigo: "2.06",
+        nome: "Despesas de obras",
+        tipo: "Despesa",
+        nivel: despesaNivel,
+        parentId: despesaRoot.id
+      });
+      await criarSeNecessario({
+        codigo: "2.07",
+        nome: "Despesas extras",
+        tipo: "Despesa",
+        nivel: despesaNivel,
+        parentId: despesaRoot.id
+      });
+      await criarSeNecessario({
+        codigo: "2.08",
+        nome: "Depreciacao",
+        tipo: "Despesa",
+        nivel: despesaNivel,
+        parentId: despesaRoot.id
+      });
+      await criarSeNecessario({
+        codigo: "2.09",
+        nome: "Outras despesas",
+        tipo: "Despesa",
+        nivel: despesaNivel,
+        parentId: despesaRoot.id
+      });
+      await criarSeNecessario({
+        codigo: "2.10",
+        nome: "Impostos e taxas",
+        tipo: "Despesa",
+        nivel: despesaNivel,
+        parentId: despesaRoot.id
+      });
+      await criarSeNecessario({
+        codigo: "2.11",
+        nome: "Investimentos",
+        tipo: "Despesa",
+        nivel: despesaNivel,
+        parentId: despesaRoot.id
+      });
+
+      setPlanosContas(lista);
+    } catch (e: any) {
+      setPlanosErro(e?.message || "Erro ao gerar plano de contas");
+    } finally {
+      setPlanosLoading(false);
+    }
+  }, [organizacao.id, planosContas, token]);
 
   const storageKey = `sgi:cadastros-base:${organizacao.id}`;
 
@@ -1848,6 +2034,12 @@ export default function ConfiguracoesView(props: ConfiguracoesViewProps) {
     }
   }, [abaAtual, carregarPessoasResumo]);
 
+  useEffect(() => {
+    if (abaAtual === "financeiro-base" && financeiroAba === "plano-contas") {
+      void carregarPlanosContas();
+    }
+  }, [abaAtual, financeiroAba, carregarPlanosContas]);
+
   const getConfig = (tipo: string, canal: "email" | "app") =>
     notificacoes.find((n) => n.tipo === tipo && n.canal === canal);
 
@@ -2096,6 +2288,286 @@ export default function ConfiguracoesView(props: ConfiguracoesViewProps) {
             </tbody>
           </table>
         </section>
+      </div>
+    );
+  }
+
+  if (abaAtual === "financeiro-base" && financeiroAba === "plano-contas") {
+    const planoParent = planosContas.find((p) => p.id === novoPlanoParentId);
+    const podeEditar = !readOnly;
+    const planosOrdenados = [...planosContas].sort((a, b) =>
+      a.codigo.localeCompare(b.codigo)
+    );
+    return (
+      <div className="config-page">
+        <header className="config-header">
+          <div>
+            <h2>Plano de contas</h2>
+            <p className="config-subtitle">
+              Categorias financeiras para receitas e despesas.
+            </p>
+          </div>
+          <div className="config-actions">
+            <button
+              type="button"
+              className="button-secondary"
+              onClick={() => setFinanceiroAba("visao")}
+            >
+              Voltar
+            </button>
+            <button
+              type="button"
+              className="button-secondary"
+              disabled={!podeEditar || planosLoading}
+              onClick={() => void gerarPlanoPadrao()}
+            >
+              Gerar padrao
+            </button>
+          </div>
+        </header>
+
+        <div className="finance-layout">
+          <section className="finance-form-card">
+            <h3>Nova categoria</h3>
+            {podeEditar ? (
+              <form
+                className="form"
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  if (!token) return;
+                  if (!novoPlanoCodigo.trim() || !novoPlanoNome.trim()) return;
+                  try {
+                    setPlanosErro(null);
+                    setPlanosLoading(true);
+                    const tipoFinal = planoParent?.tipo ?? novoPlanoTipo;
+                    const nivelFinal = planoParent ? planoParent.nivel + 1 : 1;
+                    const criada = await api.criarPlanoContas(token, {
+                      organizacaoId: organizacao.id,
+                      codigo: novoPlanoCodigo.trim(),
+                      nome: novoPlanoNome.trim(),
+                      tipo: tipoFinal,
+                      nivel: nivelFinal,
+                      parentId: planoParent?.id
+                    });
+                    setPlanosContas((prev) => [...prev, criada]);
+                    setNovoPlanoCodigo("");
+                    setNovoPlanoNome("");
+                    setNovoPlanoParentId("");
+                  } catch (e: any) {
+                    setPlanosErro(e?.message || "Erro ao criar categoria");
+                  } finally {
+                    setPlanosLoading(false);
+                  }
+                }}
+              >
+                <div className="finance-form-grid">
+                  <label>
+                    Codigo
+                    <input
+                      value={novoPlanoCodigo}
+                      onChange={(e) => setNovoPlanoCodigo(e.target.value)}
+                      placeholder="Ex.: 2.06"
+                      required
+                    />
+                  </label>
+                  <label>
+                    Tipo
+                    <select
+                      value={planoParent?.tipo ?? novoPlanoTipo}
+                      onChange={(e) =>
+                        setNovoPlanoTipo(
+                          e.target.value === "Receita" ? "Receita" : "Despesa"
+                        )
+                      }
+                      disabled={Boolean(planoParent)}
+                    >
+                      <option value="Receita">Receita</option>
+                      <option value="Despesa">Despesa</option>
+                    </select>
+                  </label>
+                </div>
+
+                <label>
+                  Nome da categoria
+                  <input
+                    value={novoPlanoNome}
+                    onChange={(e) => setNovoPlanoNome(e.target.value)}
+                    placeholder="Ex.: Despesas de obras"
+                    required
+                  />
+                </label>
+
+                <label>
+                  Conta pai (opcional)
+                  <select
+                    value={novoPlanoParentId}
+                    onChange={(e) => setNovoPlanoParentId(e.target.value)}
+                  >
+                    <option value="">Sem conta pai</option>
+                    {planosOrdenados.map((plano) => (
+                      <option key={plano.id} value={plano.id}>
+                        {plano.codigo} • {plano.nome}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button type="submit" disabled={planosLoading}>
+                  {planosLoading ? "Salvando..." : "Adicionar categoria"}
+                </button>
+              </form>
+            ) : (
+              <p className="finance-form-sub">Sem acesso para editar.</p>
+            )}
+          </section>
+
+          <section className="finance-table-card">
+            <div className="finance-table-header">
+              <div>
+                <h3>Plano de contas</h3>
+                <p className="finance-form-sub">
+                  {planosOrdenados.length} categorias cadastradas.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => void carregarPlanosContas()}
+                disabled={planosLoading || !token}
+              >
+                {planosLoading ? "Carregando..." : "Atualizar lista"}
+              </button>
+            </div>
+
+            {planosErro && <p className="error">{planosErro}</p>}
+
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Codigo</th>
+                  <th>Nome</th>
+                  <th>Tipo</th>
+                  <th>Nivel</th>
+                  <th>Pai</th>
+                  {podeEditar && <th>Acoes</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {planosOrdenados.map((plano) => {
+                  const parent = plano.parentId
+                    ? planosContas.find((p) => p.id === plano.parentId)
+                    : null;
+                  return (
+                    <tr key={plano.id}>
+                      <td>{plano.codigo}</td>
+                      <td style={{ paddingLeft: (plano.nivel - 1) * 12 }}>
+                        {plano.nome}
+                      </td>
+                      <td>{plano.tipo}</td>
+                      <td>{plano.nivel}</td>
+                      <td>{parent ? parent.nome : "-"}</td>
+                      {podeEditar && (
+                        <td>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (!token) return;
+                              const novoNome = window.prompt(
+                                "Novo nome da categoria:",
+                                plano.nome
+                              );
+                              if (!novoNome || !novoNome.trim()) return;
+                              try {
+                                setPlanosErro(null);
+                                setPlanosLoading(true);
+                                const atualizada = await api.atualizarPlanoContas(
+                                  token,
+                                  plano.id,
+                                  {
+                                    codigo: plano.codigo,
+                                    nome: novoNome.trim(),
+                                    tipo: plano.tipo,
+                                    nivel: plano.nivel,
+                                    parentId: plano.parentId
+                                  }
+                                );
+                                setPlanosContas((prev) =>
+                                  prev.map((p) =>
+                                    p.id === atualizada.id ? atualizada : p
+                                  )
+                                );
+                              } catch (e: any) {
+                                setPlanosErro(
+                                  e?.message || "Erro ao atualizar categoria"
+                                );
+                              } finally {
+                                setPlanosLoading(false);
+                              }
+                            }}
+                            style={{
+                              marginRight: 8,
+                              backgroundColor: "#e5e7eb",
+                              color: "#111827"
+                            }}
+                          >
+                            Renomear
+                          </button>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (!token) return;
+                              const possuiFilhos = planosContas.some(
+                                (p) => p.parentId === plano.id
+                              );
+                              if (possuiFilhos) {
+                                window.alert(
+                                  "Remova primeiro as categorias filhas."
+                                );
+                                return;
+                              }
+                              if (
+                                !window.confirm(
+                                  `Remover categoria \"${plano.nome}\"?`
+                                )
+                              ) {
+                                return;
+                              }
+                              try {
+                                setPlanosErro(null);
+                                setPlanosLoading(true);
+                                await api.removerPlanoContas(token, plano.id);
+                                setPlanosContas((prev) =>
+                                  prev.filter((p) => p.id !== plano.id)
+                                );
+                              } catch (e: any) {
+                                setPlanosErro(
+                                  e?.message || "Erro ao remover categoria"
+                                );
+                              } finally {
+                                setPlanosLoading(false);
+                              }
+                            }}
+                            style={{
+                              backgroundColor: "#ef4444",
+                              color: "#ffffff"
+                            }}
+                          >
+                            Remover
+                          </button>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
+                {planosOrdenados.length === 0 && (
+                  <tr>
+                    <td colSpan={podeEditar ? 6 : 5} style={{ textAlign: "center" }}>
+                      Nenhuma categoria cadastrada ainda.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </section>
+        </div>
       </div>
     );
   }
@@ -2833,8 +3305,9 @@ export default function ConfiguracoesView(props: ConfiguracoesViewProps) {
       id: "plano-contas",
       title: "Plano de contas",
       description: "Estrutura pai/filho para receitas e despesas.",
-      actionLabel: "Em breve",
-      disabled: true
+      actionLabel: acaoGerenciar,
+      onClick: () => setFinanceiroAba("plano-contas"),
+      active: true
     },
     {
       id: "tipos-receita",
