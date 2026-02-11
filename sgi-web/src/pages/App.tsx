@@ -17,6 +17,7 @@ import {
   Reserva,
   RecursoReservavel,
   UnidadeCobranca,
+  UnidadeOrganizacional,
   UnidadePagamento,
   Veiculo
 } from "../api";
@@ -26,6 +27,7 @@ import FornecedoresView from "../views/FornecedoresView";
 import UnidadesView from "../views/UnidadesView";
 import VeiculosView from "../views/VeiculosView";
 import PetsView from "../views/PetsView";
+import PortariaView from "../views/PortariaView";
 import ConfiguracoesView, {
   ConfiguracoesTab,
   menuConfiguracoes
@@ -177,7 +179,6 @@ const viewMeta: Record<AppView, { title: string; subtitle: string }> = {
 };
 
 const comingSoonViews = new Set<AppView>([
-  "portaria",
   "correspondencia",
   "comunicados",
   "documentos",
@@ -546,13 +547,21 @@ const NoAccessPage: React.FC<{ mensagem?: string; onSair?: () => void }> = ({
 const MinhaUnidadeView: React.FC<{
   organizacao: Organizacao;
   unidadeId?: string | null;
-}> = ({ organizacao, unidadeId }) => {
+  onAbrirChamados?: () => void;
+  onAbrirFinanceiro?: (aba: FinanceiroTab) => void;
+}> = ({ organizacao, unidadeId, onAbrirChamados, onAbrirFinanceiro }) => {
   const { token } = useAuth();
-  const [unidade, setUnidade] = useState<any | null>(null);
+  const [unidades, setUnidades] = useState<UnidadeOrganizacional[]>([]);
+  const [unidadeSelecionadaId, setUnidadeSelecionadaId] = useState<string | null>(
+    unidadeId ?? null
+  );
   const [moradores, setMoradores] = useState<Pessoa[]>([]);
   const [veiculos, setVeiculos] = useState<Veiculo[]>([]);
   const [pets, setPets] = useState<Pet[]>([]);
   const [cobrancas, setCobrancas] = useState<UnidadeCobranca[]>([]);
+  const [pagamentos, setPagamentos] = useState<
+    Array<{ pagamento: UnidadePagamento; cobranca?: UnidadeCobranca }>
+  >([]);
   const [creditoUnidade, setCreditoUnidade] = useState<CreditoUnidadeResponse | null>(
     null
   );
@@ -560,16 +569,69 @@ const MinhaUnidadeView: React.FC<{
     Record<string, Anexo[]>
   >({});
   const [competenciaFiltro, setCompetenciaFiltro] = useState("");
+  const [statusFiltro, setStatusFiltro] = useState("todas");
+  const [busca, setBusca] = useState("");
   const [erro, setErro] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadingUnidades, setLoadingUnidades] = useState(false);
+  const [loadingPagamentos, setLoadingPagamentos] = useState(false);
+
+  const formatarMoeda = useCallback((valor?: number | null) => {
+    return (valor ?? 0).toLocaleString("pt-BR", {
+      style: "currency",
+      currency: "BRL"
+    });
+  }, []);
+
+  const formatarData = useCallback((valor?: string | null) => {
+    if (!valor) return "-";
+    const base = valor.slice(0, 10);
+    if (base.includes("/")) return base;
+    const partes = base.split("-");
+    if (partes.length === 3) {
+      return `${partes[2]}/${partes[1]}/${partes[0]}`;
+    }
+    return base;
+  }, []);
+
+  useEffect(() => {
+    setUnidadeSelecionadaId(unidadeId ?? null);
+  }, [unidadeId]);
+
+  useEffect(() => {
+    const carregarUnidades = async () => {
+      if (!token) return;
+      try {
+        setLoadingUnidades(true);
+        const lista = await api.listarUnidades(token, organizacao.id);
+        setUnidades(lista);
+        if (!unidadeId && !unidadeSelecionadaId && lista.length === 1) {
+          setUnidadeSelecionadaId(lista[0].id);
+        }
+      } catch (e: any) {
+        setErro(e.message || "Erro ao carregar unidades");
+      } finally {
+        setLoadingUnidades(false);
+      }
+    };
+
+    void carregarUnidades();
+  }, [token, organizacao.id, unidadeId, unidadeSelecionadaId]);
 
   useEffect(() => {
     const carregar = async () => {
-      if (!token || !unidadeId) return;
+      if (!token || !unidadeSelecionadaId) {
+        setMoradores([]);
+        setVeiculos([]);
+        setPets([]);
+        setCobrancas([]);
+        setCreditoUnidade(null);
+        setAnexosCobrancas({});
+        return;
+      }
       try {
         setLoading(true);
         const [
-          listaUnidades,
           listaPessoas,
           listaVeiculos,
           listaPets,
@@ -577,23 +639,26 @@ const MinhaUnidadeView: React.FC<{
           listaAnexos,
           creditos
         ] = await Promise.all([
-          api.listarUnidades(token, organizacao.id),
           api.listarPessoas(token, organizacao.id),
-          api.listarVeiculos(token, organizacao.id, { unidadeId }),
-          api.listarPets(token, organizacao.id, { unidadeId }),
+          api.listarVeiculos(token, organizacao.id, {
+            unidadeId: unidadeSelecionadaId
+          }),
+          api.listarPets(token, organizacao.id, {
+            unidadeId: unidadeSelecionadaId
+          }),
           api.listarCobrancasUnidade(
             token,
-            unidadeId,
+            unidadeSelecionadaId,
             competenciaFiltro || undefined
           ),
           api.listarAnexos(token, organizacao.id, "cobranca_unidade"),
-          api.listarCreditosUnidade(token, unidadeId)
+          api.listarCreditosUnidade(token, unidadeSelecionadaId)
         ]);
 
-        setUnidade(listaUnidades.find((u) => u.id === unidadeId) ?? null);
-
         const moradoresUnidade = listaPessoas.filter(
-          (p) => p.unidadeOrganizacionalId === unidadeId && p.papel === "morador"
+          (p) =>
+            p.unidadeOrganizacionalId === unidadeSelecionadaId &&
+            p.papel === "morador"
         );
         setMoradores(moradoresUnidade);
         setVeiculos(listaVeiculos);
@@ -616,14 +681,87 @@ const MinhaUnidadeView: React.FC<{
       }
     };
     void carregar();
-  }, [token, organizacao.id, unidadeId, competenciaFiltro]);
+  }, [token, organizacao.id, unidadeSelecionadaId, competenciaFiltro]);
 
-  if (!unidadeId) {
-    return <p className="error">Unidade nao vinculada.</p>;
-  }
+  const carregarPagamentos = useCallback(async () => {
+    if (!token || !unidadeSelecionadaId) return;
+    if (cobrancas.length === 0) {
+      setPagamentos([]);
+      return;
+    }
+    setLoadingPagamentos(true);
+    try {
+      const cobrancasOrdenadas = [...cobrancas]
+        .sort((a, b) => (b.vencimento ?? "").localeCompare(a.vencimento ?? ""))
+        .slice(0, 12);
+      const respostas = await Promise.all(
+        cobrancasOrdenadas.map(async (c) => {
+          try {
+            return await api.listarPagamentosCobranca(token, c.id);
+          } catch {
+            return [];
+          }
+        })
+      );
+      const lista = cobrancasOrdenadas.flatMap((c, index) =>
+        (respostas[index] ?? []).map((p) => ({ pagamento: p, cobranca: c }))
+      );
+      lista.sort((a, b) =>
+        (b.pagamento.dataPagamento ?? "").localeCompare(a.pagamento.dataPagamento ?? "")
+      );
+      setPagamentos(lista);
+    } finally {
+      setLoadingPagamentos(false);
+    }
+  }, [token, unidadeSelecionadaId, cobrancas]);
+
+  useEffect(() => {
+    void carregarPagamentos();
+  }, [carregarPagamentos]);
+
+  const unidade = useMemo(
+    () => unidades.find((item) => item.id === unidadeSelecionadaId) ?? null,
+    [unidades, unidadeSelecionadaId]
+  );
 
   if (erro) {
     return <p className="error">{erro}</p>;
+  }
+
+  if (!unidadeSelecionadaId) {
+    return (
+      <div className="finance-layout finance-layout--single">
+        <section className="finance-table-card unit-card">
+          <div className="finance-table-header">
+            <h3>Minha unidade</h3>
+          </div>
+          <p className="unit-muted">
+            Seu usuario nao esta vinculado a uma unidade. Escolha abaixo para
+            visualizar os dados ou solicite o vinculo a administracao.
+          </p>
+          {loadingUnidades ? (
+            <p className="unit-muted">Carregando unidades...</p>
+          ) : unidades.length > 0 ? (
+            <label className="unit-select">
+              Unidade
+              <select
+                value={unidadeSelecionadaId ?? ""}
+                onChange={(e) => setUnidadeSelecionadaId(e.target.value || null)}
+              >
+                <option value="">Selecione</option>
+                {unidades.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.nome} ({item.codigoInterno})
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            <p className="unit-muted">Nenhuma unidade cadastrada.</p>
+          )}
+        </section>
+      </div>
+    );
   }
 
   if (!unidade) {
@@ -633,144 +771,240 @@ const MinhaUnidadeView: React.FC<{
   const pendentes = cobrancas.filter(
     (c) => (c.status ?? "").toUpperCase() !== "PAGA"
   );
-  const ultimasCobrancas = cobrancas
-    .slice()
-    .sort((a, b) => (a.vencimento ?? "").localeCompare(b.vencimento ?? ""))
-    .slice(-5)
-    .reverse();
+  const vencidas = cobrancas.filter((c) => {
+    const status = (c.status ?? "").toUpperCase();
+    if (status === "PAGA") return false;
+    if (status === "ATRASADA" || status === "VENCIDA") return true;
+    if (c.diasAtraso && c.diasAtraso > 0) return true;
+    if (!c.vencimento) return false;
+    return c.vencimento < new Date().toISOString().slice(0, 10);
+  });
+  const totalPago = cobrancas
+    .filter((c) => (c.status ?? "").toUpperCase() === "PAGA")
+    .reduce((acc, item) => acc + (item.valorAtualizado ?? item.valor ?? 0), 0);
+  const totalAberto = cobrancas
+    .filter((c) => (c.status ?? "").toUpperCase() !== "PAGA")
+    .reduce((acc, item) => acc + (item.valorAtualizado ?? item.valor ?? 0), 0);
   const competencias = Array.from(
-    new Set(cobrancas.map((c) => c.competencia))
+    new Set(cobrancas.map((c) => c.competencia).filter(Boolean))
   ).sort((a, b) => b.localeCompare(a));
+  const statusDisponiveis = Array.from(
+    new Set(cobrancas.map((c) => (c.status ?? "ABERTA").toUpperCase()))
+  ).sort((a, b) => a.localeCompare(b));
+  const cobrancasFiltradas = cobrancas
+    .slice()
+    .sort((a, b) => (b.vencimento ?? "").localeCompare(a.vencimento ?? ""))
+    .filter((item) => {
+      if (statusFiltro !== "todas") {
+        if ((item.status ?? "").toUpperCase() !== statusFiltro) return false;
+      }
+      if (busca.trim()) {
+        const alvo = normalizeText(busca);
+        const descricao = normalizeText(item.descricao);
+        const competencia = normalizeText(item.competencia);
+        if (!descricao.includes(alvo) && !competencia.includes(alvo)) {
+          return false;
+        }
+      }
+      return true;
+    });
+  const movimentosCredito = (creditoUnidade?.movimentos ?? [])
+    .slice()
+    .sort((a, b) => (b.dataMovimento ?? "").localeCompare(a.dataMovimento ?? ""))
+    .slice(0, 8);
 
   return (
     <div className="finance-layout">
-      <section className="finance-table-card">
-        <h3>{unidade.nome}</h3>
-        <div className="finance-card-grid" style={{ marginTop: 12 }}>
-          <div className="finance-card">
-            <div className="finance-card-header-row">
-              <strong>Tipo</strong>
+      <div className="finance-side-column">
+        <section className="finance-table-card">
+          <div className="finance-table-header">
+            <div>
+              <p className="finance-form-sub">Condominio {organizacao.nome}</p>
+              <h3>{unidade.nome}</h3>
+              <p className="unit-muted">
+                {unidade.tipo} • Codigo {unidade.codigoInterno}
+              </p>
             </div>
-            <p>{unidade.tipo}</p>
-          </div>
-          <div className="finance-card">
-            <div className="finance-card-header-row">
-              <strong>Codigo</strong>
+            <div className="unit-actions">
+              <button
+                type="button"
+                className="button-secondary"
+                onClick={() => setUnidadeSelecionadaId(null)}
+              >
+                Trocar unidade
+              </button>
+              <button
+                type="button"
+                className="button-secondary"
+                onClick={() => onAbrirFinanceiro?.("faturas")}
+                disabled={!onAbrirFinanceiro}
+              >
+                2a via / Faturas
+              </button>
+              <button
+                type="button"
+                className="button-secondary"
+                onClick={() => onAbrirFinanceiro?.("inadimplentes")}
+                disabled={!onAbrirFinanceiro}
+              >
+                Inadimplencia
+              </button>
+              <button
+                type="button"
+                className="button-secondary"
+                onClick={() => onAbrirChamados?.()}
+                disabled={!onAbrirChamados}
+              >
+                Falar com administracao
+              </button>
             </div>
-            <p>{unidade.codigoInterno}</p>
           </div>
-          <div className="finance-card">
-            <div className="finance-card-header-row">
-              <strong>Status</strong>
+          <div className="unit-summary-grid">
+            <div className="finance-card">
+              <span className="finance-summary-label">Status</span>
+              <div className="finance-summary-value">{unidade.status}</div>
             </div>
-            <p>{unidade.status}</p>
-          </div>
-          <div className="finance-card">
-            <div className="finance-card-header-row">
-              <strong>Credito disponivel</strong>
+            <div className="finance-card">
+              <span className="finance-summary-label">Moradores</span>
+              <div className="finance-summary-value">{moradores.length}</div>
+              <div className="finance-summary-sub">Vinculos ativos</div>
             </div>
-            <p>
-              {(creditoUnidade?.saldo ?? 0).toLocaleString("pt-BR", {
-                style: "currency",
-                currency: "BRL"
-              })}
-            </p>
+            <div className="finance-card">
+              <span className="finance-summary-label">Pendencias</span>
+              <div className="finance-summary-value">{pendentes.length}</div>
+              <div className="finance-summary-sub">Cobrancas em aberto</div>
+            </div>
+            <div className="finance-card">
+              <span className="finance-summary-label">Em atraso</span>
+              <div className="finance-summary-value">{vencidas.length}</div>
+              <div className="finance-summary-sub">Cobrancas vencidas</div>
+            </div>
+            <div className="finance-card">
+              <span className="finance-summary-label">Total em aberto</span>
+              <div className="finance-summary-value">{formatarMoeda(totalAberto)}</div>
+            </div>
+            <div className="finance-card">
+              <span className="finance-summary-label">Total pago</span>
+              <div className="finance-summary-value">{formatarMoeda(totalPago)}</div>
+            </div>
+            <div className="finance-card">
+              <span className="finance-summary-label">Credito disponivel</span>
+              <div className="finance-summary-value">
+                {formatarMoeda(creditoUnidade?.saldo ?? 0)}
+              </div>
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      <section className="finance-table-card">
+      <section className="finance-table-card unit-card">
         <div className="finance-table-header">
-          <h3>Moradores vinculados</h3>
+          <div className="finance-header-badges">
+            <h3>Moradores vinculados</h3>
+            <span className="badge">{moradores.length}</span>
+          </div>
         </div>
-        <div className="people-list-card">
+        <div className="unit-list">
           {moradores.map((m) => (
-            <div key={m.id} className="people-item">
+            <div key={m.id} className="unit-list-item">
               <span className="people-name">{m.nome}</span>
               <span className="people-meta">{m.telefone ?? "-"}</span>
             </div>
           ))}
-          {moradores.length === 0 && <p className="empty">Nenhum morador vinculado.</p>}
+          {moradores.length === 0 && (
+            <p className="unit-muted">Nenhum morador vinculado.</p>
+          )}
         </div>
       </section>
 
-      <section className="finance-table-card">
+      <section className="finance-table-card unit-card">
         <div className="finance-table-header">
-          <h3>Veiculos</h3>
+          <div className="finance-header-badges">
+            <h3>Veiculos</h3>
+            <span className="badge">{veiculos.length}</span>
+          </div>
         </div>
-        <table className="table finance-table table--fixed table--chamados">
-          <thead>
-            <tr>
-              <th>Placa</th>
-              <th>Modelo</th>
-              <th>Cor</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {veiculos.map((v) => (
-              <tr key={v.id}>
-                <td>{v.placa}</td>
-                <td>
-                  {v.marca} {v.modelo}
-                </td>
-                <td>{v.cor}</td>
-                <td>{v.status}</td>
-              </tr>
-            ))}
-            {veiculos.length === 0 && (
+        <div className="unit-table-scroll">
+          <table className="table finance-table table--fixed table--chamados">
+            <thead>
               <tr>
-                <td colSpan={4} style={{ textAlign: "center" }}>
-                  Nenhum veiculo cadastrado.
-                </td>
+                <th>Placa</th>
+                <th>Modelo</th>
+                <th>Cor</th>
+                <th>Status</th>
               </tr>
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {veiculos.map((v) => (
+                <tr key={v.id}>
+                  <td>{v.placa}</td>
+                  <td>
+                    {v.marca} {v.modelo}
+                  </td>
+                  <td>{v.cor}</td>
+                  <td>{v.status}</td>
+                </tr>
+              ))}
+              {veiculos.length === 0 && (
+                <tr>
+                  <td colSpan={4} style={{ textAlign: "center" }}>
+                    Nenhum veiculo cadastrado.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </section>
 
-      <section className="finance-table-card">
+      <section className="finance-table-card unit-card">
         <div className="finance-table-header">
-          <h3>Pets</h3>
+          <div className="finance-header-badges">
+            <h3>Pets</h3>
+            <span className="badge">{pets.length}</span>
+          </div>
         </div>
-        <table className="table finance-table">
-          <thead>
-            <tr>
-              <th>Nome</th>
-              <th>Especie</th>
-              <th>Porte</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {pets.map((p) => (
-              <tr key={p.id}>
-                <td>{p.nome}</td>
-                <td>{p.especie}</td>
-                <td>{p.porte}</td>
-                <td>{p.status}</td>
-              </tr>
-            ))}
-            {pets.length === 0 && (
+        <div className="unit-table-scroll">
+          <table className="table finance-table">
+            <thead>
               <tr>
-                <td colSpan={4} style={{ textAlign: "center" }}>
-                  Nenhum pet cadastrado.
-                </td>
+                <th>Nome</th>
+                <th>Especie</th>
+                <th>Porte</th>
+                <th>Status</th>
               </tr>
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {pets.map((p) => (
+                <tr key={p.id}>
+                  <td>{p.nome}</td>
+                  <td>{p.especie}</td>
+                  <td>{p.porte}</td>
+                  <td>{p.status}</td>
+                </tr>
+              ))}
+              {pets.length === 0 && (
+                <tr>
+                  <td colSpan={4} style={{ textAlign: "center" }}>
+                    Nenhum pet cadastrado.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </section>
+      </div>
 
-      <section className="finance-table-card">
+      <div className="finance-side-column">
+      <section className="finance-table-card unit-card">
         <div className="finance-table-header">
           <div>
-            <h3>Cobrancas e pendencias</h3>
+            <h3>Extrato completo</h3>
             <p className="finance-form-sub">
-              {pendentes.length} cobranca(s) pendente(s).
+              {cobrancasFiltradas.length} cobranca(s) encontradas.
             </p>
           </div>
-          <div className="finance-form-inline">
+          <div className="finance-card-actions">
             <label>
               Competencia
               <select
@@ -785,47 +1019,139 @@ const MinhaUnidadeView: React.FC<{
                 ))}
               </select>
             </label>
+            <label>
+              Status
+              <select
+                value={statusFiltro}
+                onChange={(e) => setStatusFiltro(e.target.value)}
+              >
+                <option value="todas">Todos</option>
+                {statusDisponiveis.map((status) => (
+                  <option key={status} value={status}>
+                    {status}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <input
+              type="text"
+              placeholder="Buscar descricao"
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+            />
           </div>
         </div>
-        <table className="table finance-table">
-          <thead>
-            <tr>
-              <th>Descricao</th>
-              <th>Vencimento</th>
-              <th>Status</th>
-              <th className="finance-value-header">Valor</th>
-              <th className="finance-value-header">Atualizado</th>
-              <th>Comprovante</th>
-            </tr>
-          </thead>
-          <tbody>
-            {ultimasCobrancas.map((c) => {
-              const anexos = anexosCobrancas[c.id] ?? [];
-              const valorAtualizado = c.valorAtualizado ?? c.valor;
-              return (
-                <tr key={c.id}>
-                  <td>{c.descricao}</td>
-                  <td>{c.vencimento?.slice(0, 10) ?? "-"}</td>
-                  <td>{c.status}</td>
-                  <td className="finance-value-cell">
-                    {c.valor.toLocaleString("pt-BR", {
-                      style: "currency",
-                      currency: "BRL"
-                    })}
+        <div className="unit-table-scroll">
+          <table className="table finance-table">
+            <thead>
+              <tr>
+                <th>Competencia</th>
+                <th>Descricao</th>
+                <th>Vencimento</th>
+                <th>Status</th>
+                <th className="finance-value-header">Valor</th>
+                <th className="finance-value-header">Atualizado</th>
+                <th>Pago em</th>
+                <th>Comprovante</th>
+              </tr>
+            </thead>
+            <tbody>
+              {cobrancasFiltradas.map((c) => {
+                const anexos = anexosCobrancas[c.id] ?? [];
+                const valorAtualizado = c.valorAtualizado ?? c.valor;
+                return (
+                  <tr key={c.id}>
+                    <td>{c.competencia}</td>
+                    <td>{c.descricao}</td>
+                    <td>{formatarData(c.vencimento)}</td>
+                    <td>{c.status}</td>
+                    <td className="finance-value-cell">{formatarMoeda(c.valor)}</td>
+                    <td className="finance-value-cell">
+                      {formatarMoeda(valorAtualizado)}
+                    </td>
+                    <td>{formatarData(c.pagoEm)}</td>
+                    <td>
+                      {anexos.length > 0 ? (
+                        <button
+                          type="button"
+                          className="button-secondary"
+                          onClick={async () => {
+                            const blob = await api.baixarAnexo(
+                              token!,
+                              anexos[0].id
+                            );
+                            const url = URL.createObjectURL(blob);
+                            window.open(url, "_blank");
+                          }}
+                        >
+                          Baixar
+                        </button>
+                      ) : (
+                        "-"
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+              {cobrancasFiltradas.length === 0 && (
+                <tr>
+                  <td colSpan={8} style={{ textAlign: "center" }}>
+                    Nenhuma cobranca encontrada.
                   </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="finance-table-card unit-card">
+        <div className="finance-table-header">
+          <div>
+            <h3>Historico de pagamentos</h3>
+            <p className="finance-form-sub">Ultimos pagamentos da unidade.</p>
+          </div>
+          <div className="finance-card-actions">
+            <button
+              type="button"
+              className="button-secondary"
+              onClick={() => carregarPagamentos()}
+              disabled={loadingPagamentos}
+            >
+              {loadingPagamentos ? "Atualizando..." : "Atualizar"}
+            </button>
+          </div>
+        </div>
+        <div className="unit-table-scroll">
+          <table className="table finance-table">
+            <thead>
+              <tr>
+                <th>Data</th>
+                <th>Descricao</th>
+                <th className="finance-value-header">Valor pago</th>
+                <th>Observacao</th>
+                <th>Comprovante</th>
+              </tr>
+            </thead>
+            <tbody>
+              {pagamentos.map((item) => (
+                <tr key={item.pagamento.id}>
+                  <td>{formatarData(item.pagamento.dataPagamento)}</td>
+                  <td>{item.cobranca?.descricao ?? "Pagamento de cobranca"}</td>
                   <td className="finance-value-cell">
-                    {valorAtualizado.toLocaleString("pt-BR", {
-                      style: "currency",
-                      currency: "BRL"
-                    })}
+                    {formatarMoeda(item.pagamento.valorPago)}
                   </td>
+                  <td>{item.pagamento.observacao ?? "-"}</td>
                   <td>
-                    {anexos.length > 0 ? (
+                    {item.pagamento.comprovanteAnexoId ? (
                       <button
                         type="button"
                         className="button-secondary"
                         onClick={async () => {
-                          const blob = await api.baixarAnexo(token!, anexos[0].id);
+                          const blob = await api.baixarAnexo(
+                            token!,
+                            item.pagamento.comprovanteAnexoId!
+                          );
                           const url = URL.createObjectURL(blob);
                           window.open(url, "_blank");
                         }}
@@ -837,18 +1163,59 @@ const MinhaUnidadeView: React.FC<{
                     )}
                   </td>
                 </tr>
-              );
-            })}
-            {ultimasCobrancas.length === 0 && (
-              <tr>
-                <td colSpan={6} style={{ textAlign: "center" }}>
-                  Nenhuma cobranca encontrada.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+              ))}
+              {pagamentos.length === 0 && (
+                <tr>
+                  <td colSpan={5} style={{ textAlign: "center" }}>
+                    Nenhum pagamento encontrado.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </section>
+
+      <section className="finance-table-card unit-card">
+        <div className="finance-table-header">
+          <div>
+            <h3>Movimentos de credito</h3>
+            <p className="finance-form-sub">
+              Saldo atual: {formatarMoeda(creditoUnidade?.saldo ?? 0)}
+            </p>
+          </div>
+        </div>
+        <div className="unit-table-scroll">
+          <table className="table finance-table">
+            <thead>
+              <tr>
+                <th>Data</th>
+                <th>Tipo</th>
+                <th className="finance-value-header">Valor</th>
+                <th>Observacao</th>
+              </tr>
+            </thead>
+            <tbody>
+              {movimentosCredito.map((mov) => (
+                <tr key={mov.id}>
+                  <td>{formatarData(mov.dataMovimento)}</td>
+                  <td>{mov.tipo}</td>
+                  <td className="finance-value-cell">{formatarMoeda(mov.valor)}</td>
+                  <td>{mov.observacao ?? "-"}</td>
+                </tr>
+              ))}
+              {movimentosCredito.length === 0 && (
+                <tr>
+                  <td colSpan={4} style={{ textAlign: "center" }}>
+                    Nenhum movimento registrado.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
     </div>
   );
 };
@@ -2540,10 +2907,22 @@ const InnerApp: React.FC = () => {
             />
           )}
 
-          {viewPermitido && view === "minhaUnidade" && membershipAtual && (
+          {viewPermitido && view === "minhaUnidade" && (
             <MinhaUnidadeView
               organizacao={organizacaoSelecionada}
-              unidadeId={membershipAtual.unidadeOrganizacionalId}
+              unidadeId={membershipAtual?.unidadeOrganizacionalId ?? null}
+              onAbrirChamados={() => setViewIfAllowed("chamados")}
+              onAbrirFinanceiro={(aba) => {
+                setFinanceiroAba(aba);
+                setViewIfAllowed("financeiro");
+              }}
+            />
+          )}
+
+          {viewPermitido && view === "portaria" && (
+            <PortariaView
+              organizacao={organizacaoSelecionada}
+              readOnly={!podeCriarOperacao}
             />
           )}
 

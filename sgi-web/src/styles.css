@@ -795,6 +795,107 @@ button:focus-visible {
   box-shadow: none;
 }
 
+.unit-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.unit-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.unit-actions button {
+  min-height: 32px;
+  padding: 0 12px;
+  font-size: 12px;
+  border-radius: 999px;
+}
+
+.unit-select {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  color: #475569;
+}
+
+.unit-select select {
+  min-height: 36px;
+  border-radius: 10px;
+  border: 1px solid var(--divider-strong);
+  padding: 0 10px;
+  background: #fff;
+  color: #0f172a;
+}
+
+.unit-card {
+  overflow: hidden;
+  max-height: none;
+}
+
+.unit-card .finance-table-header {
+  position: static;
+  margin: 0 0 8px;
+  padding: 0 0 8px;
+  background: transparent;
+  box-shadow: none;
+  border-bottom: 1px solid var(--divider);
+}
+
+.unit-table-scroll {
+  max-height: 360px;
+  overflow: auto;
+}
+
+.unit-table-scroll .table {
+  min-width: 520px;
+}
+
+.unit-table-scroll .table th,
+.unit-table-scroll .table td {
+  white-space: nowrap;
+  word-break: keep-all;
+}
+
+.unit-table-scroll .table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background-color: #dfe9ff;
+}
+
+.unit-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 240px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.unit-list-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--divider-strong);
+}
+
+.unit-list-item:last-child {
+  border-bottom: 0;
+}
+
+.unit-muted {
+  font-size: 12px;
+  color: #64748b;
+}
+
 .finance-table-card {
   background: #f7fbff;
   border: 1px solid var(--border-strong);
@@ -915,6 +1016,17 @@ button:focus-visible {
 
 .table tbody tr:nth-child(even) {
   background-color: #eef4ff;
+}
+
+.portaria-table {
+  min-width: 960px;
+}
+
+.portaria-table th,
+.portaria-table td {
+  white-space: nowrap;
+  word-break: keep-all;
+  overflow-wrap: normal;
 }
 
 .finance-table th,
