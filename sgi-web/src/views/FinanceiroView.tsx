@@ -3841,6 +3841,12 @@ export default function FinanceiroView({
     pessoasFinanceiro.map((p) => [p.id, p])
   );
   const receitasPorIdMap = Object.fromEntries(receitas.map((r) => [r.id, r]));
+  const unidadesCobrancaMap = Object.fromEntries(
+    cobrancasUnidadeOrg.map((c) => [
+      c.unidadeOrganizacionalId,
+      `${c.unidadeCodigo} - ${c.unidadeNome}`
+    ])
+  );
   const hojeIso = new Date().toISOString().slice(0, 10);
   const inadimplentes = receitas
     .filter(
@@ -4100,12 +4106,6 @@ export default function FinanceiroView({
   const totalCobrancasUnidadePendentes = cobrancasUnidadePendentes.reduce(
     (sum, item) => sum + (item.valorAtualizado ?? item.valor ?? 0),
     0
-  );
-  const unidadesCobrancaMap = Object.fromEntries(
-    cobrancasUnidadeOrg.map((c) => [
-      c.unidadeOrganizacionalId,
-      `${c.unidadeCodigo} - ${c.unidadeNome}`
-    ])
   );
   const filtroAcordo = acordoBusca.trim().toLowerCase();
   const acordosFiltrados = !filtroAcordo
