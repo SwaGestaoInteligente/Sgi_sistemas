@@ -1270,17 +1270,187 @@ const ChamadosView: React.FC<{
   const [prioridade, setPrioridade] = useState("MEDIA");
   const [responsavelPessoaId, setResponsavelPessoaId] = useState("");
   const [comentario, setComentario] = useState("");
+  const [busca, setBusca] = useState("");
+  const [filtroStatus, setFiltroStatus] = useState("");
+  const [filtroPrioridade, setFiltroPrioridade] = useState("");
+  const [filtroCategoria, setFiltroCategoria] = useState("");
+  const [ocultarEncerrados, setOcultarEncerrados] = useState(true);
+  const [relatorioDe, setRelatorioDe] = useState("");
+  const [relatorioAte, setRelatorioAte] = useState("");
+  const [relatorioStatus, setRelatorioStatus] = useState("");
+  const [relatorioFormato, setRelatorioFormato] = useState<"pdf" | "csv">("pdf");
+  const [dossieTexto, setDossieTexto] = useState("");
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  const pastaRef = useRef<HTMLDivElement | null>(null);
 
   const canCriar = IGNORAR_PERFIS || can(session, organizacao.id, "operacao.create");
   const canGerenciar =
     IGNORAR_PERFIS || can(session, organizacao.id, "operacao.manage");
   const canAnexos = IGNORAR_PERFIS || can(session, organizacao.id, "anexos.write");
 
-  const pessoasResponsaveis = pessoas.filter((p) =>
-    ["funcionario", "colaborador", "administrador"].includes(p.papel ?? "")
+  const pessoasResponsaveis = useMemo(
+    () =>
+      pessoas.filter((p) =>
+        ["funcionario", "colaborador", "administrador"].includes(p.papel ?? "")
+      ),
+    [pessoas]
   );
+
+  const pessoaNomeMap = useMemo(() => {
+    return new Map(pessoas.map((p) => [p.id, p.nome]));
+  }, [pessoas]);
+
+  const categoriasDisponiveis = useMemo(() => {
+    return Array.from(
+      new Set(chamados.map((c) => c.categoria).filter(Boolean))
+    ).sort();
+  }, [chamados]);
+
+  const statusDisponiveis = useMemo(() => {
+    return Array.from(new Set(chamados.map((c) => c.status).filter(Boolean)));
+  }, [chamados]);
+
+  const prioridadesDisponiveis = useMemo(() => {
+    return Array.from(
+      new Set(chamados.map((c) => c.prioridade).filter(Boolean))
+    );
+  }, [chamados]);
+
+  const normalizarTexto = useCallback((texto: string) => {
+    return texto
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+  }, []);
+
+  const chamadosOrdenados = useMemo(() => {
+    const statusOrdem: Record<string, number> = {
+      ABERTO: 0,
+      EM_ATENDIMENTO: 1,
+      AGUARDANDO: 2,
+      RESOLVIDO: 3,
+      ENCERRADO: 4
+    };
+    const prioridadeOrdem: Record<string, number> = {
+      URGENTE: 0,
+      ALTA: 1,
+      MEDIA: 2,
+      BAIXA: 3
+    };
+    return [...chamados].sort((a, b) => {
+      const statusDiff =
+        (statusOrdem[a.status] ?? 9) - (statusOrdem[b.status] ?? 9);
+      if (statusDiff !== 0) return statusDiff;
+      const prioDiff =
+        (prioridadeOrdem[a.prioridade ?? ""] ?? 9) -
+        (prioridadeOrdem[b.prioridade ?? ""] ?? 9);
+      if (prioDiff !== 0) return prioDiff;
+      const dataA = a.dataAbertura ? new Date(a.dataAbertura).getTime() : 0;
+      const dataB = b.dataAbertura ? new Date(b.dataAbertura).getTime() : 0;
+      return dataB - dataA;
+    });
+  }, [chamados]);
+
+  const chamadosFiltrados = useMemo(() => {
+    const buscaNormalizada = normalizarTexto(busca.trim());
+    return chamadosOrdenados.filter((c) => {
+      if (ocultarEncerrados && c.status === "ENCERRADO") {
+        return false;
+      }
+      if (filtroStatus && c.status !== filtroStatus) {
+        return false;
+      }
+      if (filtroPrioridade && (c.prioridade ?? "") !== filtroPrioridade) {
+        return false;
+      }
+      if (
+        filtroCategoria &&
+        normalizarTexto(c.categoria) !== normalizarTexto(filtroCategoria)
+      ) {
+        return false;
+      }
+      if (!buscaNormalizada) return true;
+      const pessoaNome = pessoaNomeMap.get(c.pessoaSolicitanteId) ?? "";
+      const alvo = [c.titulo, c.descricao, c.categoria, pessoaNome]
+        .filter(Boolean)
+        .join(" ");
+      return normalizarTexto(alvo).includes(buscaNormalizada);
+    });
+  }, [
+    busca,
+    chamadosOrdenados,
+    filtroCategoria,
+    filtroPrioridade,
+    filtroStatus,
+    normalizarTexto,
+    ocultarEncerrados,
+    pessoaNomeMap
+  ]);
+
+  const resumoChamados = useMemo(() => {
+    const total = chamados.length;
+    const abertos = chamados.filter((c) => c.status === "ABERTO").length;
+    const emAtendimento = chamados.filter(
+      (c) => c.status === "EM_ATENDIMENTO"
+    ).length;
+    const aguardando = chamados.filter((c) => c.status === "AGUARDANDO").length;
+    const resolvidos = chamados.filter((c) => c.status === "RESOLVIDO").length;
+    const encerrados = chamados.filter((c) => c.status === "ENCERRADO").length;
+    const urgentes = chamados.filter((c) => c.prioridade === "URGENTE").length;
+    return {
+      total,
+      abertos,
+      emAtendimento,
+      aguardando,
+      resolvidos,
+      encerrados,
+      urgentes
+    };
+  }, [chamados]);
+
+  const pessoaSelecionada = useMemo(() => {
+    if (!selecionado) return null;
+    return pessoas.find((p) => p.id === selecionado.pessoaSolicitanteId) ?? null;
+  }, [selecionado, pessoas]);
+
+  const chamadosMorador = useMemo(() => {
+    if (!selecionado) return [];
+    return chamados.filter(
+      (c) => c.pessoaSolicitanteId === selecionado.pessoaSolicitanteId
+    );
+  }, [chamados, selecionado]);
+
+  const resumoMorador = useMemo(() => {
+    const total = chamadosMorador.length;
+    const abertos = chamadosMorador.filter(
+      (c) => !["RESOLVIDO", "ENCERRADO"].includes(c.status)
+    ).length;
+    const atrasados = chamadosMorador.filter(
+      (c) => c.status === "AGUARDANDO"
+    ).length;
+    const urgentes = chamadosMorador.filter(
+      (c) => c.prioridade === "URGENTE"
+    ).length;
+    return { total, abertos, atrasados, urgentes };
+  }, [chamadosMorador]);
+
+  const moradorTags = useMemo(() => {
+    if (!selecionado) return [];
+    const tags = new Set<string>();
+    chamadosMorador.forEach((c) => {
+      if (c.categoria) {
+        tags.add(c.categoria.toUpperCase());
+      }
+      if (c.prioridade === "URGENTE") {
+        tags.add("ATENCAO");
+      }
+    });
+    if (chamadosMorador.some((c) => c.status === "AGUARDANDO")) {
+      tags.add("PENDENCIA");
+    }
+    return Array.from(tags).slice(0, 6);
+  }, [chamadosMorador, selecionado]);
 
   const carregar = async () => {
     if (!token) return;
@@ -1318,6 +1488,15 @@ const ChamadosView: React.FC<{
     if (!selecionado) return;
     setResponsavelPessoaId(selecionado.responsavelPessoaId ?? "");
     void carregarHistorico(selecionado.id);
+  }, [selecionado]);
+
+  useEffect(() => {
+    if (!selecionado) {
+      setDossieTexto("");
+      return;
+    }
+    const key = `dossie-morador-${selecionado.pessoaSolicitanteId}`;
+    setDossieTexto(localStorage.getItem(key) ?? "");
   }, [selecionado]);
 
   const adicionarComentario = async () => {
@@ -1362,24 +1541,29 @@ const ChamadosView: React.FC<{
     }
   };
 
-  const atualizarChamado = async (payload: {
-    status?: string;
-    prioridade?: string;
-    responsavelPessoaId?: string | null;
-  }) => {
-    if (!token || !selecionado) return;
+  const atualizarChamadoDireto = async (
+    chamadoId: string,
+    payload: {
+      status?: string;
+      prioridade?: string;
+      responsavelPessoaId?: string | null;
+    }
+  ) => {
+    if (!token) return;
     try {
       setErro(null);
       setLoading(true);
-      const atualizado = await api.atualizarChamado(token, selecionado.id, {
+      const atualizado = await api.atualizarChamado(token, chamadoId, {
         ...payload,
         observacao: "Atualizacao via painel"
       });
       setChamados((prev) =>
         prev.map((c) => (c.id === atualizado.id ? atualizado : c))
       );
-      setSelecionado(atualizado);
-      await carregarHistorico(atualizado.id);
+      if (selecionado?.id === atualizado.id) {
+        setSelecionado(atualizado);
+        await carregarHistorico(atualizado.id);
+      }
     } catch (e: any) {
       setErro(e.message || "Erro ao atualizar chamado");
     } finally {
@@ -1387,195 +1571,645 @@ const ChamadosView: React.FC<{
     }
   };
 
+  const baixarArquivo = (blob: Blob, nome: string) => {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = nome;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const gerarRelatorio = async () => {
+    if (!token) return;
+    try {
+      setErro(null);
+      setLoading(true);
+      const blob = await api.relatorioChamados(token, organizacao.id, {
+        de: relatorioDe || undefined,
+        ate: relatorioAte || undefined,
+        status: relatorioStatus || undefined,
+        formato: relatorioFormato
+      });
+      const data = new Date().toISOString().slice(0, 10);
+      const nomeBase = (organizacao.nome || "condominio")
+        .toLowerCase()
+        .replace(/\s+/g, "-");
+      baixarArquivo(blob, `chamados-${nomeBase}-${data}.${relatorioFormato}`);
+    } catch (e: any) {
+      setErro(e.message || "Erro ao gerar relatorio");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const gerarRelatorioMorador = () => {
+    if (!selecionado) return;
+    const linhas = [
+      "titulo;categoria;status;prioridade;abertura;fechamento"
+    ];
+    chamadosMorador.forEach((c) => {
+      linhas.push(
+        [
+          c.titulo,
+          c.categoria,
+          c.status,
+          c.prioridade ?? "",
+          c.dataAbertura ?? "",
+          c.dataFechamento ?? ""
+        ]
+          .map((item) => `"${String(item ?? "").replace(/\"/g, '\"\"')}"`)
+          .join(";")
+      );
+    });
+    const blob = new Blob([linhas.join("\n")], {
+      type: "text/csv;charset=utf-8"
+    });
+    const nome = (pessoaSelecionada?.nome || "morador")
+      .toLowerCase()
+      .replace(/\s+/g, "-");
+    baixarArquivo(blob, `morador-${nome}-chamados.csv`);
+  };
+
+  const salvarDossie = () => {
+    if (!selecionado) return;
+    const key = `dossie-morador-${selecionado.pessoaSolicitanteId}`;
+    localStorage.setItem(key, dossieTexto.trim());
+  };
+
+  const formatarStatus = (status: string) => {
+    return status.replace(/_/g, " ");
+  };
+
+  const statusBadgeClass = (status: string) => {
+    switch (status) {
+      case "ABERTO":
+        return "badge-status--aberto";
+      case "EM_ATENDIMENTO":
+        return "badge-status--atendimento";
+      case "AGUARDANDO":
+        return "badge-status--aguardando";
+      case "RESOLVIDO":
+        return "badge-status--resolvido";
+      case "ENCERRADO":
+        return "badge-status--encerrado";
+      default:
+        return "badge-status--alerta";
+    }
+  };
+
+  const prioridadePillClass = (valor?: string | null) => {
+    switch (valor) {
+      case "URGENTE":
+        return "role-pill--danger";
+      case "ALTA":
+        return "role-pill--warning";
+      case "MEDIA":
+        return "role-pill--info";
+      case "BAIXA":
+        return "role-pill--neutral";
+      default:
+        return "role-pill--neutral";
+    }
+  };
+
+  const abrirPastaMorador = () => {
+    pastaRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
   return (
     <div className="finance-layout">
-      <section className="finance-form-card">
-        <h3>Novo chamado</h3>
-        {canCriar ? (
-          <form onSubmit={criarChamado} className="form">
-          <label>
-            Categoria
-            <input value={categoria} onChange={(e) => setCategoria(e.target.value)} />
-          </label>
-          <label>
-            Titulo
-            <input value={titulo} onChange={(e) => setTitulo(e.target.value)} />
-          </label>
-          <label>
-            Descricao
-            <textarea value={descricao} onChange={(e) => setDescricao(e.target.value)} />
-          </label>
-          <label>
-            Prioridade
-            <select value={prioridade} onChange={(e) => setPrioridade(e.target.value)}>
-              <option value="BAIXA">Baixa</option>
-              <option value="MEDIA">Media</option>
-              <option value="ALTA">Alta</option>
-              <option value="URGENTE">Urgente</option>
-            </select>
-          </label>
-          <button type="submit" disabled={loading}>
-            {loading ? "Enviando..." : "Criar chamado"}
-          </button>
-          </form>
-        ) : (
-          <p className="finance-form-sub">Sem acesso para criar chamados.</p>
-        )}
-        {erro && <p className="error">{erro}</p>}
-      </section>
+      <div className="finance-side-column">
+        <section className="finance-form-card">
+          <h3>Novo chamado</h3>
+          {canCriar ? (
+            <form onSubmit={criarChamado} className="form">
+              <label>
+                Categoria
+                <input
+                  value={categoria}
+                  onChange={(e) => setCategoria(e.target.value)}
+                  list="chamado-categorias"
+                />
+                <datalist id="chamado-categorias">
+                  {categoriasDisponiveis.map((cat) => (
+                    <option key={cat} value={cat} />
+                  ))}
+                </datalist>
+              </label>
+              <label>
+                Titulo
+                <input value={titulo} onChange={(e) => setTitulo(e.target.value)} />
+              </label>
+              <label>
+                Descricao
+                <textarea
+                  value={descricao}
+                  onChange={(e) => setDescricao(e.target.value)}
+                />
+              </label>
+              <label>
+                Prioridade
+                <select
+                  value={prioridade}
+                  onChange={(e) => setPrioridade(e.target.value)}
+                >
+                  <option value="BAIXA">Baixa</option>
+                  <option value="MEDIA">Media</option>
+                  <option value="ALTA">Alta</option>
+                  <option value="URGENTE">Urgente</option>
+                </select>
+              </label>
+              <button type="submit" disabled={loading}>
+                {loading ? "Enviando..." : "Criar chamado"}
+              </button>
+            </form>
+          ) : (
+            <p className="finance-form-sub">Sem acesso para criar chamados.</p>
+          )}
+          {erro && <p className="error">{erro}</p>}
+        </section>
 
-      <section className="finance-table-card">
-        <div className="finance-table-header">
-          <h3>Chamados</h3>
-          <button type="button" onClick={carregar} disabled={loading}>
-            Atualizar
-          </button>
-        </div>
-        <table className="table finance-table">
-          <thead>
-            <tr>
-              <th>Titulo</th>
-              <th>Status</th>
-              <th>Prioridade</th>
-            </tr>
-          </thead>
-          <tbody>
-            {chamados.map((c) => (
-              <tr
-                key={c.id}
-                style={{ cursor: "pointer" }}
-                onClick={() => setSelecionado(c)}
-              >
-                <td>{c.titulo}</td>
-                <td>{c.status}</td>
-                <td>{c.prioridade ?? "-"}</td>
-              </tr>
-            ))}
-            {chamados.length === 0 && (
-              <tr>
-                <td colSpan={3} style={{ textAlign: "center" }}>
-                  Nenhum chamado encontrado.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </section>
-
-      <section className="finance-form-card">
-        <div className="finance-table-header">
-          <h3>Detalhes</h3>
-        </div>
-        {!selecionado && <p className="finance-form-sub">Selecione um chamado.</p>}
-        {selecionado && (
-          <>
-            <div className="finance-card-grid" style={{ marginTop: 8 }}>
-              <div className="finance-card">
-                <strong>Status atual</strong>
-                <p>{selecionado.status}</p>
-              </div>
-              <div className="finance-card">
-                <strong>Prioridade</strong>
-                <p>{selecionado.prioridade ?? "-"}</p>
-              </div>
-              <div className="finance-card">
-                <strong>SLA</strong>
-                <p>
-                  {selecionado.dataPrazoSla
-                    ? new Date(selecionado.dataPrazoSla).toLocaleString("pt-BR")
-                    : "-"}
-                </p>
-                {selecionado.dataPrazoSla &&
-                  !["RESOLVIDO", "ENCERRADO"].includes(selecionado.status) &&
-                  new Date(selecionado.dataPrazoSla) < new Date() && (
-                    <span className="badge-status badge-status--alerta">
-                      Atrasado
-                    </span>
-                  )}
-              </div>
-            </div>
-
-            {canGerenciar && (
-              <div className="form" style={{ marginTop: 12 }}>
-                <label>
-                  Status
-                  <select
-                    value={selecionado.status}
-                    onChange={(e) => atualizarChamado({ status: e.target.value })}
-                  >
-                    <option value="ABERTO">Aberto</option>
-                    <option value="EM_ATENDIMENTO">Em atendimento</option>
-                    <option value="AGUARDANDO">Aguardando</option>
-                    <option value="RESOLVIDO">Resolvido</option>
-                    <option value="ENCERRADO">Encerrado</option>
-                  </select>
-                </label>
-                <label>
-                  Responsavel
-                  <select
-                    value={responsavelPessoaId}
-                    onChange={(e) => {
-                      const novo = e.target.value;
-                      setResponsavelPessoaId(novo);
-                      void atualizarChamado({ responsavelPessoaId: novo || null });
-                    }}
-                  >
-                    <option value="">Sem responsavel</option>
-                    {pessoasResponsaveis.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.nome}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-            )}
-
-            <div style={{ marginTop: 16 }}>
-              <h4>Timeline</h4>
-              {historico.length === 0 && (
-                <p className="finance-form-sub">Sem historico registrado.</p>
-              )}
-              <ul className="list">
-                {historico.map((h) => (
-                  <li key={h.id}>
-                    <strong>{new Date(h.dataHora).toLocaleString("pt-BR")}</strong>
-                    <span> - {h.acao}</span>
-                    {h.detalhes && <span> ({h.detalhes})</span>}
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            <div className="finance-form-card" style={{ marginTop: 16 }}>
-              <h4>Comentarios</h4>
-              <textarea
-                value={comentario}
-                onChange={(e) => setComentario(e.target.value)}
-                placeholder="Escreva uma atualizacao..."
+        <section className="finance-form-card">
+          <h3>Filtros</h3>
+          <div className="chamados-filters">
+            <label className="span-2">
+              Buscar
+              <input
+                value={busca}
+                onChange={(e) => setBusca(e.target.value)}
+                placeholder="Titulo, descricao ou morador"
               />
+            </label>
+            <label>
+              Status
+              <select value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value)}>
+                <option value="">Todos</option>
+                {statusDisponiveis.map((status) => (
+                  <option key={status} value={status}>
+                    {formatarStatus(status)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Prioridade
+              <select
+                value={filtroPrioridade}
+                onChange={(e) => setFiltroPrioridade(e.target.value)}
+              >
+                <option value="">Todas</option>
+                {prioridadesDisponiveis.map((item) => (
+                  <option key={item ?? ""} value={item ?? ""}>
+                    {item ?? "-"}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="span-2">
+              Categoria
+              <select
+                value={filtroCategoria}
+                onChange={(e) => setFiltroCategoria(e.target.value)}
+              >
+                <option value="">Todas</option>
+                {categoriasDisponiveis.map((cat) => (
+                  <option key={cat} value={cat}>
+                    {cat}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="span-2 checkbox-row">
+              <input
+                type="checkbox"
+                checked={ocultarEncerrados}
+                onChange={(e) => setOcultarEncerrados(e.target.checked)}
+              />
+              Ocultar encerrados
+            </label>
+            <div className="chamados-actions-row span-2">
               <button
                 type="button"
                 className="button-secondary"
-                onClick={adicionarComentario}
-                disabled={loading}
+                onClick={() => {
+                  setBusca("");
+                  setFiltroStatus("");
+                  setFiltroPrioridade("");
+                  setFiltroCategoria("");
+                }}
               >
-                Adicionar comentario
+                Limpar filtros
+              </button>
+              <button type="button" onClick={carregar} disabled={loading}>
+                Atualizar lista
               </button>
             </div>
+          </div>
+        </section>
 
-            <div className="finance-form-card" style={{ marginTop: 16 }}>
-              <AnexosPanel
-                organizacaoId={organizacao.id}
-                tipoEntidade="chamado"
-                entidadeId={selecionado.id}
-                titulo="Anexos do chamado"
-                readOnly={!canAnexos}
-              />
+        <section className="finance-form-card">
+          <h3>Relatorios</h3>
+          <div className="chamados-filters">
+            <label>
+              De
+              <input type="date" value={relatorioDe} onChange={(e) => setRelatorioDe(e.target.value)} />
+            </label>
+            <label>
+              Ate
+              <input type="date" value={relatorioAte} onChange={(e) => setRelatorioAte(e.target.value)} />
+            </label>
+            <label>
+              Status
+              <select
+                value={relatorioStatus}
+                onChange={(e) => setRelatorioStatus(e.target.value)}
+              >
+                <option value="">Todos</option>
+                {statusDisponiveis.map((status) => (
+                  <option key={status} value={status}>
+                    {formatarStatus(status)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Formato
+              <select
+                value={relatorioFormato}
+                onChange={(e) =>
+                  setRelatorioFormato(e.target.value as "pdf" | "csv")
+                }
+              >
+                <option value="pdf">PDF</option>
+                <option value="csv">CSV</option>
+              </select>
+            </label>
+            <div className="chamados-actions-row span-2">
+              <button type="button" onClick={gerarRelatorio} disabled={loading}>
+                Gerar relatorio
+              </button>
             </div>
-          </>
-        )}
-      </section>
+          </div>
+        </section>
+
+        <section className="finance-form-card">
+          <h3>Resumo</h3>
+          <div className="chamados-summary-grid">
+            <div className="finance-card">
+              <strong>Total</strong>
+              <p>{resumoChamados.total}</p>
+            </div>
+            <div className="finance-card">
+              <strong>Abertos</strong>
+              <p>{resumoChamados.abertos}</p>
+            </div>
+            <div className="finance-card">
+              <strong>Em atendimento</strong>
+              <p>{resumoChamados.emAtendimento}</p>
+            </div>
+            <div className="finance-card">
+              <strong>Aguardando</strong>
+              <p>{resumoChamados.aguardando}</p>
+            </div>
+            <div className="finance-card">
+              <strong>Resolvidos</strong>
+              <p>{resumoChamados.resolvidos}</p>
+            </div>
+            <div className="finance-card">
+              <strong>Encerrados</strong>
+              <p>{resumoChamados.encerrados}</p>
+            </div>
+            <div className="finance-card">
+              <strong>Urgentes</strong>
+              <p>{resumoChamados.urgentes}</p>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div className="finance-main-column">
+        <section className="finance-table-card">
+          <div className="finance-table-header">
+            <div>
+              <h3>Chamados</h3>
+              <p className="finance-form-sub">
+                {chamadosFiltrados.length} de {chamados.length} chamados
+              </p>
+            </div>
+            <button type="button" onClick={carregar} disabled={loading}>
+              Atualizar
+            </button>
+          </div>
+          <div className="chamados-scroll">
+            <table className="table finance-table chamados-table table--chamados">
+              <thead>
+                <tr>
+                  <th>Titulo</th>
+                  <th>Status</th>
+                  <th>Prioridade</th>
+                  <th>Acoes</th>
+                </tr>
+              </thead>
+              <tbody>
+                {chamadosFiltrados.map((c) => (
+                  <tr
+                    key={c.id}
+                    className={selecionado?.id === c.id ? "chamados-row-active" : ""}
+                    onClick={() => setSelecionado(c)}
+                    style={{ cursor: "pointer" }}
+                  >
+                    <td>
+                      <div className="chamado-title">{c.titulo}</div>
+                      <div className="chamado-meta">
+                        {c.categoria} • {pessoaNomeMap.get(c.pessoaSolicitanteId) ?? "Morador"}
+                        {c.dataAbertura
+                          ? ` • ${new Date(c.dataAbertura).toLocaleDateString("pt-BR")}`
+                          : ""}
+                      </div>
+                    </td>
+                    <td>
+                      <span className={`badge-status ${statusBadgeClass(c.status)}`}>
+                        {formatarStatus(c.status)}
+                      </span>
+                    </td>
+                    <td>
+                      <span className={`role-pill ${prioridadePillClass(c.prioridade)}`}>
+                        {c.prioridade ?? "-"}
+                      </span>
+                    </td>
+                    <td>
+                      <div className="table-actions">
+                        <button
+                          type="button"
+                          className="action-primary"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelecionado(c);
+                          }}
+                        >
+                          Ver
+                        </button>
+                        <button
+                          type="button"
+                          className="action-secondary"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const novoStatus =
+                              c.status === "ENCERRADO" ? "ABERTO" : "ENCERRADO";
+                            void atualizarChamadoDireto(c.id, { status: novoStatus });
+                          }}
+                        >
+                          {c.status === "ENCERRADO" ? "Reabrir" : "Encerrar"}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {chamadosFiltrados.length === 0 && (
+                  <tr>
+                    <td colSpan={4} style={{ textAlign: "center" }}>
+                      Nenhum chamado encontrado.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section className="finance-form-card">
+          <div className="finance-table-header">
+            <h3>Detalhes</h3>
+            {selecionado && (
+              <button type="button" className="button-secondary" onClick={abrirPastaMorador}>
+                Ver pasta do morador
+              </button>
+            )}
+          </div>
+          {!selecionado && <p className="finance-form-sub">Selecione um chamado.</p>}
+          {selecionado && (
+            <>
+              <div className="finance-card-grid" style={{ marginTop: 8 }}>
+                <div className="finance-card">
+                  <strong>Status atual</strong>
+                  <p>{formatarStatus(selecionado.status)}</p>
+                </div>
+                <div className="finance-card">
+                  <strong>Prioridade</strong>
+                  <p>{selecionado.prioridade ?? "-"}</p>
+                </div>
+                <div className="finance-card">
+                  <strong>SLA</strong>
+                  <p>
+                    {selecionado.dataPrazoSla
+                      ? new Date(selecionado.dataPrazoSla).toLocaleString("pt-BR")
+                      : "-"}
+                  </p>
+                  {selecionado.dataPrazoSla &&
+                    !["RESOLVIDO", "ENCERRADO"].includes(selecionado.status) &&
+                    new Date(selecionado.dataPrazoSla) < new Date() && (
+                      <span className="badge-status badge-status--alerta">
+                        Atrasado
+                      </span>
+                    )}
+                </div>
+                <div className="finance-card">
+                  <strong>Solicitante</strong>
+                  <p>{pessoaSelecionada?.nome ?? "Morador"}</p>
+                </div>
+              </div>
+
+              {canGerenciar && (
+                <div className="form" style={{ marginTop: 12 }}>
+                  <label>
+                    Status
+                    <select
+                      value={selecionado.status}
+                      onChange={(e) =>
+                        atualizarChamadoDireto(selecionado.id, { status: e.target.value })
+                      }
+                    >
+                      <option value="ABERTO">Aberto</option>
+                      <option value="EM_ATENDIMENTO">Em atendimento</option>
+                      <option value="AGUARDANDO">Aguardando</option>
+                      <option value="RESOLVIDO">Resolvido</option>
+                      <option value="ENCERRADO">Encerrado</option>
+                    </select>
+                  </label>
+                  <label>
+                    Responsavel
+                    <select
+                      value={responsavelPessoaId}
+                      onChange={(e) => {
+                        const novo = e.target.value;
+                        setResponsavelPessoaId(novo);
+                        void atualizarChamadoDireto(selecionado.id, {
+                          responsavelPessoaId: novo || null
+                        });
+                      }}
+                    >
+                      <option value="">Sem responsavel</option>
+                      {pessoasResponsaveis.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.nome}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              )}
+
+              <div style={{ marginTop: 16 }}>
+                <h4>Timeline</h4>
+                {historico.length === 0 && (
+                  <p className="finance-form-sub">Sem historico registrado.</p>
+                )}
+                <ul className="list">
+                  {historico.map((h) => (
+                    <li key={h.id}>
+                      <strong>{new Date(h.dataHora).toLocaleString("pt-BR")}</strong>
+                      <span> - {h.acao}</span>
+                      {h.detalhes && <span> ({h.detalhes})</span>}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className="finance-form-card" style={{ marginTop: 16 }}>
+                <h4>Comentarios</h4>
+                <textarea
+                  value={comentario}
+                  onChange={(e) => setComentario(e.target.value)}
+                  placeholder="Escreva uma atualizacao..."
+                />
+                <button
+                  type="button"
+                  className="button-secondary"
+                  onClick={adicionarComentario}
+                  disabled={loading}
+                >
+                  Adicionar comentario
+                </button>
+              </div>
+
+              <div className="finance-form-card" style={{ marginTop: 16 }}>
+                <AnexosPanel
+                  organizacaoId={organizacao.id}
+                  tipoEntidade="chamado"
+                  entidadeId={selecionado.id}
+                  titulo="Anexos do chamado"
+                  readOnly={!canAnexos}
+                />
+              </div>
+            </>
+          )}
+        </section>
+
+        <section className="finance-form-card" ref={pastaRef}>
+          <div className="finance-table-header">
+            <h3>Pasta do morador</h3>
+            <button
+              type="button"
+              className="button-secondary"
+              onClick={gerarRelatorioMorador}
+              disabled={!selecionado}
+            >
+              Relatorio do morador
+            </button>
+          </div>
+          {!selecionado && (
+            <p className="finance-form-sub">
+              Selecione um chamado para visualizar a pasta do morador.
+            </p>
+          )}
+          {selecionado && (
+            <>
+              <div className="chamados-pasta-header">
+                <div>
+                  <strong>{pessoaSelecionada?.nome ?? "Morador"}</strong>
+                  <p className="finance-form-sub">
+                    Unidade vinculada: {unidadeId ?? "-"}
+                  </p>
+                </div>
+                <div className="chamados-tags">
+                  {moradorTags.length === 0 && (
+                    <span className="org-tag">Sem tags</span>
+                  )}
+                  {moradorTags.map((tag) => (
+                    <span key={tag} className="org-tag">
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              <div className="chamados-summary-grid">
+                <div className="finance-card">
+                  <strong>Chamados do morador</strong>
+                  <p>{resumoMorador.total}</p>
+                </div>
+                <div className="finance-card">
+                  <strong>Pendencias ativas</strong>
+                  <p>{resumoMorador.abertos}</p>
+                </div>
+                <div className="finance-card">
+                  <strong>Aguardando retorno</strong>
+                  <p>{resumoMorador.atrasados}</p>
+                </div>
+                <div className="finance-card">
+                  <strong>Urgentes</strong>
+                  <p>{resumoMorador.urgentes}</p>
+                </div>
+              </div>
+
+              <div className="chamados-pasta-grid">
+                <div className="finance-card">
+                  <strong>Multas e advertencias</strong>
+                  <p>R$ 0,00</p>
+                  <span className="finance-form-sub">
+                    Sem registro no modulo atual.
+                  </span>
+                </div>
+                <div className="finance-card">
+                  <strong>Reclamacoes recentes</strong>
+                  {chamadosMorador.length === 0 && (
+                    <p className="finance-form-sub">Nenhuma reclamacao.</p>
+                  )}
+                  {chamadosMorador.slice(0, 3).map((c) => (
+                    <div key={c.id} className="chamados-reclamacao">
+                      <span>{c.titulo}</span>
+                      <button
+                        type="button"
+                        className="link-button"
+                        onClick={() => setSelecionado(c)}
+                      >
+                        Ver
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="finance-form-card" style={{ marginTop: 16 }}>
+                <h4>Observacoes do morador</h4>
+                <textarea
+                  value={dossieTexto}
+                  onChange={(e) => setDossieTexto(e.target.value)}
+                  placeholder="Registre contatos, combinados e ocorrencias..."
+                />
+                <div className="chamados-actions-row">
+                  <button type="button" className="button-secondary" onClick={salvarDossie}>
+                    Salvar observacoes
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+        </section>
+      </div>
     </div>
   );
 };
