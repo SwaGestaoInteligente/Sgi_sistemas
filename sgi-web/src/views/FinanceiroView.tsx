@@ -118,6 +118,8 @@ export default function FinanceiroView({
 }: FinanceiroViewProps) {
   const topoRef = useRef<HTMLDivElement | null>(null);
   const inadimplenciaRef = useRef<HTMLDivElement | null>(null);
+  const cobrancasRef = useRef<HTMLDivElement | null>(null);
+  const acordosRef = useRef<HTMLDivElement | null>(null);
   const { token, session } = useAuth();
   const ignorarPerfis = true;
   const [abaLocal, setAbaLocal] = useState<FinanceiroTab>("mapaFinanceiro");
@@ -275,6 +277,8 @@ export default function FinanceiroView({
     useState(true);
   const [livroIncluirDetalhes, setLivroIncluirDetalhes] = useState(true);
   const [inadimplenciaBusca, setInadimplenciaBusca] = useState("");
+  const [cobrancaBusca, setCobrancaBusca] = useState("");
+  const [acordoBusca, setAcordoBusca] = useState("");
 
   // Previsao orcamentaria
   const [previsaoAno, setPrevisaoAno] = useState(() => new Date().getFullYear());
@@ -2107,6 +2111,65 @@ export default function FinanceiroView({
     return [linha1, linha2, cep].filter(Boolean).join(" • ");
   };
 
+  const montarBoletoFallback = (fatura: DocumentoCobranca): BoletoFatura => {
+    const lanc = receitasPorIdMap[fatura.lancamentoFinanceiroId];
+    const pessoa = lanc?.pessoaId
+      ? pessoasFinanceiro.find((p) => p.id === lanc.pessoaId)
+      : undefined;
+    const identificador = fatura.identificadorExterno ?? fatura.id;
+    const digits = identificador.replace(/\D/g, "");
+    const linhaDigitavel =
+      fatura.linhaDigitavel ??
+      (digits ? digits.padEnd(47, "0").slice(0, 47) : "0".repeat(47));
+    const emissao = fatura.dataEmissao ?? new Date().toISOString();
+    const vencimento = fatura.dataVencimento ?? emissao;
+
+    return {
+      id: fatura.id,
+      tipo: fatura.tipo,
+      identificador,
+      descricao: lanc?.descricao ?? "Cobranca",
+      valor: lanc?.valor ?? 0,
+      emissao,
+      vencimento,
+      status: fatura.status,
+      linhaDigitavel,
+      qrCode: fatura.qrCode ?? "",
+      urlPagamento: fatura.urlPagamento ?? "",
+      banco: {
+        nome: "Banco Ficticio",
+        codigo: "999-9",
+        agencia: "-",
+        conta: "-"
+      },
+      cedente: {
+        nome: organizacao.nome ?? "Condominio",
+        documento: "",
+        email: "",
+        telefone: ""
+      },
+      enderecoCedente: null,
+      sacado: {
+        nome: pessoa?.nome ?? "Morador",
+        documento: pessoa?.documento,
+        email: pessoa?.email,
+        telefone: pessoa?.telefone
+      },
+      enderecoSacado: pessoa
+        ? {
+            logradouro: pessoa.logradouro ?? "",
+            numero: pessoa.numero ?? "",
+            complemento: null,
+            bairro: pessoa.bairro ?? "",
+            cidade: pessoa.cidade ?? "",
+            estado: pessoa.estado ?? "",
+            cep: pessoa.cep ?? ""
+          }
+        : null,
+      instrucoes: ["Boleto de teste (nao pagavel)."]
+    };
+  };
+
   const desenharCodigoBarras = (
     doc: jsPDF,
     digits: string,
@@ -2128,106 +2191,159 @@ export default function FinanceiroView({
     }
   };
 
+  const renderResumoPrestacao = (doc: jsPDF, boleto: BoletoFatura) => {
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const margin = 10;
+    const fullWidth = pageWidth - margin * 2;
+    const valorTexto = formatarValor(boleto.valor);
+    const vencimentoTexto = formatarData(boleto.vencimento);
+
+    let y = 12;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.text("PRESTACAO DE CONTAS", margin, y);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.text(
+      `${boleto.cedente.nome} • ${boleto.cedente.email ?? "contato@condominio.teste"}`,
+      margin,
+      y + 4
+    );
+
+    y += 8;
+    doc.rect(margin, y, fullWidth, 26);
+    doc.setFontSize(7);
+    doc.text(`Morador: ${boleto.sacado.nome}`, margin + 2, y + 6);
+    doc.text(`Descricao: ${boleto.descricao}`, margin + 2, y + 12, {
+      maxWidth: fullWidth - 4
+    });
+    doc.text(`Valor: ${valorTexto}`, margin + 2, y + 18);
+    doc.text(`Vencimento: ${vencimentoTexto}`, margin + 2, y + 24);
+    return y + 30;
+  };
+
+  const renderBoletoPdf = (doc: jsPDF, boleto: BoletoFatura, offsetY = 0) => {
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const margin = 10;
+    const fullWidth = pageWidth - margin * 2;
+
+    const linhaDigitavel = boleto.linhaDigitavel ?? "-";
+    const valorTexto = formatarValor(boleto.valor);
+    const vencimentoTexto = formatarData(boleto.vencimento);
+
+    const drawField = (
+      x: number,
+      y: number,
+      w: number,
+      h: number,
+      label: string,
+      value: string,
+      align: "left" | "right" = "left"
+    ) => {
+      doc.rect(x, y, w, h);
+      doc.setFontSize(7);
+      doc.text(label, x + 1.5, y + 3.5);
+      doc.setFontSize(9);
+      const valueX = align === "right" ? x + w - 1.5 : x + 1.5;
+      doc.text(value, valueX, y + h - 3, { align });
+    };
+
+    // Header estilo boleto
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.text(boleto.banco.nome.toUpperCase(), margin, offsetY + 13);
+    doc.setFontSize(12);
+    doc.text(boleto.banco.codigo, margin + 55, offsetY + 13);
+    doc.setFont("courier", "normal");
+    doc.setFontSize(10);
+    doc.text(linhaDigitavel, margin + 75, offsetY + 13, { maxWidth: fullWidth - 75 });
+    doc.setFont("helvetica", "normal");
+    doc.setDrawColor(0);
+    doc.line(margin, offsetY + 15, margin + fullWidth, offsetY + 15);
+
+    doc.setFontSize(7);
+    doc.text("Recibo do pagador", margin, offsetY + 18);
+    doc.setTextColor(170);
+    doc.text("BOLETO DE TESTE (NAO PAGAVEL)", margin + 120, offsetY + 18);
+    doc.setTextColor(0);
+
+    let y = offsetY + 20;
+    drawField(margin, y, 120, 10, "Local de pagamento", "Pagavel em qualquer banco ate o vencimento");
+    drawField(margin + 120, y, 70, 10, "Vencimento", vencimentoTexto, "right");
+    y += 10;
+    drawField(margin, y, 120, 10, "Beneficiario", boleto.cedente.nome);
+    const agenciaConta = [boleto.banco.agencia, boleto.banco.conta].filter(Boolean).join(" / ");
+    drawField(margin + 120, y, 70, 10, "Agencia/Codigo beneficiario", agenciaConta || "0000-0/00000-0");
+    y += 10;
+
+    drawField(margin, y, 30, 10, "Data doc.", formatarData(boleto.emissao));
+    drawField(margin + 30, y, 40, 10, "Numero doc.", boleto.identificador);
+    drawField(margin + 70, y, 25, 10, "Especie", "DM");
+    drawField(margin + 95, y, 15, 10, "Aceite", "N");
+    drawField(margin + 110, y, 40, 10, "Data proc.", formatarData(boleto.emissao));
+    drawField(margin + 150, y, 40, 10, "Nosso numero", boleto.identificador.slice(-10));
+    y += 10;
+
+    drawField(margin, y, 60, 10, "Uso do banco", "");
+    drawField(margin + 60, y, 20, 10, "Carteira", "17");
+    drawField(margin + 80, y, 20, 10, "Especie moeda", "R$");
+    drawField(margin + 100, y, 30, 10, "Qtd.", "");
+    drawField(margin + 130, y, 60, 10, "Valor", valorTexto, "right");
+    y += 10;
+
+    drawField(margin, y, 130, 18, "Instrucoes", (boleto.instrucoes?.[0] ?? "Boleto de teste."));
+    drawField(margin + 130, y, 60, 18, "Valor do documento", valorTexto, "right");
+    y += 18;
+
+    drawField(margin, y, 130, 18, "Sacado", boleto.sacado.nome);
+    drawField(margin + 130, y, 60, 18, "CPF/CNPJ", boleto.sacado.documento ?? "-");
+    y += 18;
+
+    drawField(margin, y, fullWidth, 14, "Endereco do sacado", formatarEndereco(boleto.enderecoSacado));
+    y += 16;
+
+    doc.setLineDashPattern([1, 1], 0);
+    doc.line(margin, y, margin + fullWidth, y);
+    doc.setLineDashPattern([], 0);
+    doc.setFontSize(7);
+    doc.text("Corte aqui", margin, y + 4);
+    y += 8;
+
+    if (boleto.qrCode) {
+      doc.setFontSize(7);
+      doc.text("PIX copia e cola:", margin, y + 4);
+      doc.setFontSize(7);
+      doc.text(boleto.qrCode, margin + 25, y + 4, { maxWidth: fullWidth - 25 });
+      y += 10;
+    }
+
+    doc.setFontSize(7);
+    doc.text("Ficha de compensacao", margin, y + 4);
+    const codigoBase =
+      boleto.linhaDigitavel?.replace(/\D/g, "") ||
+      boleto.identificador.replace(/\D/g, "") ||
+      "00000000000000000000000000000000000000000000";
+    const codigo = codigoBase.padEnd(44, "0").slice(0, 44);
+    desenharCodigoBarras(doc, codigo, margin, y + 6, fullWidth, 18);
+    doc.setFontSize(7);
+    doc.text(codigo, margin, y + 28);
+  };
+
   const gerarBoletoPdf = async (fatura: DocumentoCobranca) => {
     if (!token) return;
     try {
       setErro(null);
       setLoading(true);
-      const boleto = await api.obterBoletoFatura(token, fatura.id, organizacaoId);
-      const doc = new jsPDF({ orientation: "portrait", unit: "mm" });
-      const pageWidth = doc.internal.pageSize.getWidth();
-      const margin = 10;
-      const fullWidth = pageWidth - margin * 2;
-
-      const linhaDigitavel = boleto.linhaDigitavel ?? "-";
-      const valorTexto = formatarValor(boleto.valor);
-      const vencimentoTexto = formatarData(boleto.vencimento);
-
-      const drawField = (
-        x: number,
-        y: number,
-        w: number,
-        h: number,
-        label: string,
-        value: string,
-        align: "left" | "right" = "left"
-      ) => {
-        doc.rect(x, y, w, h);
-        doc.setFontSize(7);
-        doc.text(label, x + 1.5, y + 3.5);
-        doc.setFontSize(9);
-        const valueX = align === "right" ? x + w - 1.5 : x + 1.5;
-        doc.text(value, valueX, y + h - 3, { align });
-      };
-
-      // Header
-      doc.setFontSize(10);
-      doc.text(boleto.banco.nome.toUpperCase(), margin, 14);
-      doc.setFontSize(12);
-      doc.text(boleto.banco.codigo, margin + 55, 14);
-      doc.setFontSize(9);
-      doc.text(linhaDigitavel, margin + 75, 14);
-
-      doc.setFontSize(7);
-      doc.text("Recibo do pagador", margin, 18);
-      doc.setFontSize(7);
-      doc.setTextColor(180);
-      doc.text("BOLETO DE TESTE (NAO PAGAVEL)", margin + 120, 18);
-      doc.setTextColor(0);
-
-      let y = 20;
-      drawField(margin, y, 120, 10, "Local de pagamento", "Pagavel em qualquer banco ate o vencimento");
-      drawField(margin + 120, y, 70, 10, "Vencimento", vencimentoTexto, "right");
-      y += 10;
-      drawField(margin, y, 120, 10, "Beneficiario", boleto.cedente.nome);
-      const agenciaConta = [boleto.banco.agencia, boleto.banco.conta].filter(Boolean).join(" / ");
-      drawField(margin + 120, y, 70, 10, "Agencia/Codigo beneficiario", agenciaConta || "0000-0/00000-0");
-      y += 10;
-
-      drawField(margin, y, 30, 10, "Data doc.", formatarData(boleto.emissao));
-      drawField(margin + 30, y, 40, 10, "Numero doc.", boleto.identificador);
-      drawField(margin + 70, y, 25, 10, "Especie", "DM");
-      drawField(margin + 95, y, 15, 10, "Aceite", "N");
-      drawField(margin + 110, y, 40, 10, "Data proc.", formatarData(boleto.emissao));
-      drawField(margin + 150, y, 40, 10, "Nosso numero", boleto.identificador.slice(-10));
-      y += 10;
-
-      drawField(margin, y, 60, 10, "Uso do banco", "");
-      drawField(margin + 60, y, 20, 10, "Carteira", "17");
-      drawField(margin + 80, y, 20, 10, "Especie moeda", "R$");
-      drawField(margin + 100, y, 30, 10, "Qtd.", "");
-      drawField(margin + 130, y, 60, 10, "Valor", valorTexto, "right");
-      y += 10;
-
-      drawField(margin, y, 130, 18, "Instrucoes", (boleto.instrucoes?.[0] ?? "Boleto de teste."));
-      drawField(margin + 130, y, 60, 18, "Valor do documento", valorTexto, "right");
-      y += 18;
-
-      drawField(margin, y, 130, 18, "Sacado", boleto.sacado.nome);
-      drawField(margin + 130, y, 60, 18, "CPF/CNPJ", boleto.sacado.documento ?? "-");
-      y += 18;
-
-      drawField(margin, y, fullWidth, 14, "Endereco do sacado", formatarEndereco(boleto.enderecoSacado));
-      y += 16;
-
-      if (boleto.qrCode) {
-        doc.setFontSize(7);
-        doc.text("PIX copia e cola:", margin, y + 4);
-        doc.setFontSize(7);
-        doc.text(boleto.qrCode, margin + 25, y + 4, { maxWidth: fullWidth - 25 });
-        y += 10;
+      let boleto: BoletoFatura;
+      try {
+        boleto = await api.obterBoletoFatura(token, fatura.id, organizacaoId);
+      } catch (error) {
+        console.warn("Falha ao obter boleto completo, usando fallback.", error);
+        boleto = montarBoletoFallback(fatura);
       }
-
-      doc.setFontSize(7);
-      doc.text("Ficha de compensacao", margin, y + 4);
-      const codigoBase =
-        boleto.linhaDigitavel?.replace(/\D/g, "") ||
-        boleto.identificador.replace(/\D/g, "") ||
-        "00000000000000000000000000000000000000000000";
-      const codigo = codigoBase.padEnd(44, "0").slice(0, 44);
-      desenharCodigoBarras(doc, codigo, margin, y + 6, fullWidth, 18);
-      doc.setFontSize(7);
-      doc.text(codigo, margin, y + 28);
+      const doc = new jsPDF({ orientation: "portrait", unit: "mm" });
+      const resumoBottom = renderResumoPrestacao(doc, boleto);
+      renderBoletoPdf(doc, boleto, resumoBottom + 6);
 
       const stamp = new Date()
         .toISOString()
@@ -2249,6 +2365,34 @@ export default function FinanceiroView({
     setAba("inadimplentes");
     setTimeout(() => {
       inadimplenciaRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start"
+      });
+    }, 100);
+  };
+
+  const irParaCobrancas = (lanc: LancamentoFinanceiro) => {
+    const pessoa = pessoasPorIdMap[lanc.pessoaId];
+    const unidadeLabel = pessoa?.unidadeOrganizacionalId
+      ? unidadesCobrancaMap[pessoa.unidadeOrganizacionalId]
+      : null;
+    const termo = unidadeLabel || lanc.descricao || pessoa?.nome || "";
+    setCobrancaBusca(termo);
+    setTimeout(() => {
+      cobrancasRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start"
+      });
+    }, 100);
+  };
+
+  const irParaAcordos = (unidadeId?: string | null) => {
+    const termo = unidadeId ? unidadesCobrancaMap[unidadeId] ?? "" : "";
+    if (termo) {
+      setAcordoBusca(termo);
+    }
+    setTimeout(() => {
+      acordosRef.current?.scrollIntoView({
         behavior: "smooth",
         block: "start"
       });
@@ -2338,67 +2482,71 @@ export default function FinanceiroView({
         organizacaoId,
         tipo: remessaTipo || undefined
       });
-
-      const doc = new jsPDF({ orientation: "landscape" });
-      const titulo = `Remessa ${remessaTipo || "todas"}`.toUpperCase();
-      doc.setFontSize(14);
-      doc.text(titulo, 14, 16);
-
-      const dataHoje = new Date().toLocaleString("pt-BR");
-      doc.setFontSize(9);
-      doc.text(`Gerado em: ${dataHoje}`, 14, 22);
-
-      const head = [
-        [
-          "Id",
-          "Identificador",
-          "Tipo",
-          "Valor",
-          "Vencimento",
-          "Status",
-          "Linha digitavel",
-          "PIX/URL"
-        ]
-      ];
-
-      const body = itens.map((item: RemessaCobrancaItem) => [
-        item.id,
-        item.identificador ?? "-",
-        item.tipo,
-        formatarValor(item.valor),
-        formatarData(item.vencimento),
-        item.status,
-        item.linhaDigitavel ?? "-",
-        item.qrCode ?? item.urlPagamento ?? "-"
-      ]);
-
-      if (body.length === 0) {
-        body.push(["-", "-", "-", "-", "-", "Sem itens", "-", "-"]);
+      if (itens.length === 0) {
+        throw new Error("Sem itens para gerar boletos.");
       }
 
-      autoTable(doc, {
-        startY: 28,
-        head,
-        body,
-        styles: { fontSize: 7, cellPadding: 2 },
-        headStyles: { fillColor: [230, 238, 255], textColor: 20 },
-        columnStyles: {
-          0: { cellWidth: 32 },
-          1: { cellWidth: 28 },
-          2: { cellWidth: 16 },
-          3: { cellWidth: 18 },
-          4: { cellWidth: 20 },
-          5: { cellWidth: 20 },
-          6: { cellWidth: 45 },
-          7: { cellWidth: 80 }
+      const doc = new jsPDF({ orientation: "portrait", unit: "mm" });
+      for (let i = 0; i < itens.length; i += 1) {
+        const item = itens[i];
+        let boleto: BoletoFatura;
+        try {
+          boleto = await api.obterBoletoFatura(token, item.id, organizacaoId);
+        } catch (error) {
+          console.warn("Falha ao obter boleto da remessa, usando fallback.", error);
+          const identificador = item.identificador ?? item.id;
+          const digits = identificador.replace(/\D/g, "");
+          const linhaDigitavel =
+            item.linhaDigitavel ??
+            (digits ? digits.padEnd(47, "0").slice(0, 47) : "0".repeat(47));
+          boleto = {
+            id: item.id,
+            tipo: item.tipo,
+            identificador,
+            descricao: "Cobranca",
+            valor: item.valor,
+            emissao: new Date().toISOString(),
+            vencimento: item.vencimento,
+            status: item.status,
+            linhaDigitavel,
+            qrCode: item.qrCode ?? "",
+            urlPagamento: item.urlPagamento ?? "",
+            banco: {
+              nome: "Banco Ficticio",
+              codigo: "999-9",
+              agencia: "-",
+              conta: "-"
+            },
+            cedente: {
+              nome: organizacao.nome ?? "Condominio",
+              documento: "",
+              email: "",
+              telefone: ""
+            },
+            enderecoCedente: null,
+            sacado: {
+              nome: "Morador",
+              documento: null,
+              email: null,
+              telefone: null
+            },
+            enderecoSacado: null,
+            instrucoes: ["Boleto de teste (nao pagavel)."]
+          };
         }
-      });
+
+        if (i > 0) {
+          doc.addPage();
+        }
+        const resumoBottom = renderResumoPrestacao(doc, boleto);
+        renderBoletoPdf(doc, boleto, resumoBottom + 6);
+      }
 
       const stamp = new Date()
         .toISOString()
         .replace(/[-:]/g, "")
         .slice(0, 14);
-      doc.save(`remessa-${remessaTipo || "todas"}-${stamp}.pdf`);
+      doc.save(`boletos-${remessaTipo || "todas"}-${stamp}.pdf`);
     } catch (e: any) {
       setErro(e.message || "Erro ao gerar PDF.");
     } finally {
@@ -2938,8 +3086,13 @@ export default function FinanceiroView({
       currency: "BRL"
     });
 
-  const formatarData = (data?: string) =>
-    data ? new Date(data).toLocaleDateString("pt-BR") : "-";
+  const formatarData = (data?: string) => {
+    if (!data) return "-";
+    const parsed = new Date(data);
+    return Number.isNaN(parsed.getTime())
+      ? "-"
+      : parsed.toLocaleDateString("pt-BR");
+  };
 
   const formatarConsumo = (valor: number) =>
     valor.toLocaleString("pt-BR", {
@@ -3650,6 +3803,9 @@ export default function FinanceiroView({
   const pessoasPorId = Object.fromEntries(
     pessoasFinanceiro.map((p) => [p.id, p.nome])
   );
+  const pessoasPorIdMap = Object.fromEntries(
+    pessoasFinanceiro.map((p) => [p.id, p])
+  );
   const hojeIso = new Date().toISOString().slice(0, 10);
   const inadimplentes = receitas
     .filter(
@@ -3849,6 +4005,18 @@ export default function FinanceiroView({
     const status = (c.status ?? "").toUpperCase();
     return !["PAGA", "NEGOCIADA", "CANCELADA", "FECHADA"].includes(status);
   });
+  const cobrancaPorUnidade = cobrancasUnidadePendentes.reduce((acc, item) => {
+    if (!acc.has(item.unidadeOrganizacionalId)) {
+      acc.set(item.unidadeOrganizacionalId, item);
+    }
+    return acc;
+  }, new Map<string, CobrancaOrganizacaoResumo>());
+  const acordoPorUnidade = acordosCobranca.reduce((acc, item) => {
+    if (!acc.has(item.unidadeOrganizacionalId)) {
+      acc.set(item.unidadeOrganizacionalId, item);
+    }
+    return acc;
+  }, new Map<string, AcordoCobranca>());
   const totalCobrancasUnidadePendentes = cobrancasUnidadePendentes.reduce(
     (sum, item) => sum + (item.valorAtualizado ?? item.valor ?? 0),
     0
@@ -3858,6 +4026,33 @@ export default function FinanceiroView({
       c.unidadeOrganizacionalId,
       `${c.unidadeCodigo} - ${c.unidadeNome}`
     ])
+  );
+  const filtroAcordo = acordoBusca.trim().toLowerCase();
+  const acordosFiltrados = !filtroAcordo
+    ? acordosCobranca
+    : acordosCobranca.filter((acordo) => {
+        const unidade =
+          unidadesCobrancaMap[acordo.unidadeOrganizacionalId] ??
+          acordo.unidadeOrganizacionalId;
+        const status = acordo.status ?? "";
+        return (
+          unidade.toLowerCase().includes(filtroAcordo) ||
+          status.toLowerCase().includes(filtroAcordo)
+        );
+      });
+  const filtroCobranca = cobrancaBusca.trim().toLowerCase();
+  const cobrancasUnidadeFiltradas = !filtroCobranca
+    ? cobrancasUnidadePendentes
+    : cobrancasUnidadePendentes.filter((c) => {
+        return (
+          c.descricao.toLowerCase().includes(filtroCobranca) ||
+          c.unidadeCodigo.toLowerCase().includes(filtroCobranca) ||
+          c.unidadeNome.toLowerCase().includes(filtroCobranca)
+        );
+      });
+  const totalCobrancasUnidadeFiltradas = cobrancasUnidadeFiltradas.reduce(
+    (sum, item) => sum + (item.valorAtualizado ?? item.valor ?? 0),
+    0
   );
   const pendentesParaBaixaOrdenados = [...pendentesParaBaixa].sort((a, b) =>
     (a.dataVencimento ?? a.dataCompetencia ?? "").localeCompare(
@@ -8944,8 +9139,8 @@ export default function FinanceiroView({
                         {receitasPorId[fat.lancamentoFinanceiroId]?.descricao ??
                           fat.lancamentoFinanceiroId}
                       </td>
-                      <td>{new Date(fat.dataEmissao).toLocaleDateString("pt-BR")}</td>
-                      <td>{new Date(fat.dataVencimento).toLocaleDateString("pt-BR")}</td>
+                      <td>{formatarData(fat.dataEmissao)}</td>
+                      <td>{formatarData(fat.dataVencimento)}</td>
                       <td>{fat.status}</td>
                       {canWrite && (
                         <td>
@@ -9173,11 +9368,13 @@ export default function FinanceiroView({
               <thead>
                 <tr>
                   <th>Morador</th>
+                  <th>Unidade</th>
                   <th>Descricao</th>
                   <th>Vencimento</th>
                   <th>Dias atraso</th>
                   <th className="finance-value-header">Valor</th>
                   <th>Status</th>
+                  {canWrite && <th>Acoes</th>}
                 </tr>
               </thead>
               <tbody>
@@ -9185,15 +9382,27 @@ export default function FinanceiroView({
                   const venc = lanc.dataVencimento
                     ? new Date(lanc.dataVencimento)
                     : null;
-                  const diasAtraso = venc
-                    ? Math.max(
-                        0,
-                        Math.floor((Date.now() - venc.getTime()) / 86400000)
-                      )
-                    : 0;
+                  const vencTime = venc?.getTime();
+                  const diasAtraso =
+                    vencTime && Number.isFinite(vencTime)
+                      ? Math.max(
+                          0,
+                          Math.floor((Date.now() - vencTime) / 86400000)
+                        )
+                      : 0;
+                  const pessoaInfo = pessoasPorIdMap[lanc.pessoaId];
+                  const unidadeId = pessoaInfo?.unidadeOrganizacionalId;
+                  const acordo = unidadeId ? acordoPorUnidade.get(unidadeId) : null;
+                  const cobranca = unidadeId ? cobrancaPorUnidade.get(unidadeId) : null;
+                  const unidadeLabel = unidadeId
+                    ? unidadesCobrancaMap[unidadeId] ??
+                      pessoaInfo?.unidadeCodigo ??
+                      unidadeId
+                    : pessoaInfo?.unidadeCodigo ?? "-";
                   return (
                     <tr key={lanc.id}>
                       <td>{pessoasPorId[lanc.pessoaId] ?? "-"}</td>
+                      <td>{unidadeLabel}</td>
                       <td>{lanc.descricao}</td>
                       <td>
                         {lanc.dataVencimento
@@ -9207,13 +9416,57 @@ export default function FinanceiroView({
                           currency: "BRL"
                         })}
                       </td>
-                      <td>{statusMeta(lanc.situacao).label}</td>
+                      <td>
+                        <div>{statusMeta(lanc.situacao).label}</div>
+                        {acordo && (
+                          <div className="finance-item-sub">
+                            Acordo: {acordo.status}
+                          </div>
+                        )}
+                      </td>
+                      {canWrite && (
+                        <td>
+                          <div className="table-actions">
+                            <details className="action-menu">
+                              <summary title="Mais acoes" aria-label="Mais acoes">
+                                ⋮
+                              </summary>
+                              <div className="action-menu-panel">
+                                <button
+                                  type="button"
+                                  className="action-secondary"
+                                  onClick={() => irParaCobrancas(lanc)}
+                                >
+                                  Ir para cobrancas
+                                </button>
+                                {cobranca && (
+                                  <button
+                                    type="button"
+                                    className="action-secondary"
+                                    onClick={() => void criarAcordoRapido(cobranca)}
+                                    disabled={acordosLoading}
+                                  >
+                                    Criar acordo
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  className="action-secondary"
+                                  onClick={() => irParaAcordos(unidadeId)}
+                                >
+                                  Ver acordos
+                                </button>
+                              </div>
+                            </details>
+                          </div>
+                        </td>
+                      )}
                     </tr>
                   );
                 })}
                 {inadimplentesFiltrados.length === 0 && (
                   <tr>
-                    <td colSpan={6} style={{ textAlign: "center" }}>
+                    <td colSpan={canWrite ? 8 : 7} style={{ textAlign: "center" }}>
                       Nenhum inadimplente encontrado.
                     </td>
                   </tr>
@@ -9222,16 +9475,32 @@ export default function FinanceiroView({
             </table>
           </section>
 
-          <section className="finance-table-card">
+          <section className="finance-table-card" ref={cobrancasRef}>
             <div className="finance-table-header">
               <div>
                 <h3>Cobrancas por unidade</h3>
                 <p className="finance-form-sub">
-                  {cobrancasUnidadePendentes.length} pendente(s) • Total{" "}
-                  {formatarValor(totalCobrancasUnidadePendentes)}
+                  {cobrancasUnidadeFiltradas.length}
+                  {cobrancaBusca.trim()
+                    ? ` de ${cobrancasUnidadePendentes.length}`
+                    : ""}{" "}
+                  pendente(s) • Total{" "}
+                  {formatarValor(
+                    cobrancaBusca.trim()
+                      ? totalCobrancasUnidadeFiltradas
+                      : totalCobrancasUnidadePendentes
+                  )}
                 </p>
               </div>
               <div className="finance-card-actions">
+                <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  Buscar
+                  <input
+                    value={cobrancaBusca}
+                    onChange={(e) => setCobrancaBusca(e.target.value)}
+                    placeholder="Unidade ou descricao"
+                  />
+                </label>
                 <button
                   type="button"
                   onClick={carregarCobrancasUnidadeOrg}
@@ -9255,47 +9524,58 @@ export default function FinanceiroView({
                   <th>Dias atraso</th>
                   <th className="finance-value-header">Valor</th>
                   <th className="finance-value-header">Atualizado</th>
+                  <th className="finance-value-header">Credito</th>
+                  <th className="finance-value-header">Saldo</th>
                   <th>Status</th>
                   {canWrite && <th>Acoes</th>}
                 </tr>
               </thead>
               <tbody>
-                {cobrancasUnidadePendentes.map((cobranca) => (
-                  <tr key={cobranca.id}>
-                    <td>
-                      {cobranca.unidadeCodigo} - {cobranca.unidadeNome}
-                    </td>
-                    <td>{cobranca.descricao}</td>
-                    <td>{formatarData(cobranca.vencimento)}</td>
-                    <td>{cobranca.diasAtraso ?? 0}</td>
-                    <td className="finance-value-cell">
-                      {formatarValor(cobranca.valor)}
-                    </td>
-                    <td className="finance-value-cell">
-                      {formatarValor(
-                        cobranca.valorAtualizado ?? cobranca.valor
-                      )}
-                    </td>
-                    <td>{cobranca.status}</td>
-                    {canWrite && (
+                {cobrancasUnidadeFiltradas.map((cobranca) => {
+                  const valorAtualizado = cobranca.valorAtualizado ?? cobranca.valor;
+                  const credito = Math.max(0, cobranca.creditoDisponivel ?? 0);
+                  const saldo = Math.max(0, valorAtualizado - credito);
+                  return (
+                    <tr key={cobranca.id}>
                       <td>
-                        <div className="finance-table-actions">
-                          <button
-                            type="button"
-                            className="action-secondary"
-                            onClick={() => void criarAcordoRapido(cobranca)}
-                            disabled={acordosLoading}
-                          >
-                            Criar acordo
-                          </button>
-                        </div>
+                        {cobranca.unidadeCodigo} - {cobranca.unidadeNome}
                       </td>
-                    )}
-                  </tr>
-                ))}
-                {cobrancasUnidadePendentes.length === 0 && (
+                      <td>{cobranca.descricao}</td>
+                      <td>{formatarData(cobranca.vencimento)}</td>
+                      <td>{cobranca.diasAtraso ?? 0}</td>
+                      <td className="finance-value-cell">
+                        {formatarValor(cobranca.valor)}
+                      </td>
+                      <td className="finance-value-cell">
+                        {formatarValor(valorAtualizado)}
+                      </td>
+                      <td className="finance-value-cell">
+                        {credito > 0 ? formatarValor(credito) : "-"}
+                      </td>
+                      <td className="finance-value-cell">
+                        {formatarValor(saldo)}
+                      </td>
+                      <td>{cobranca.status}</td>
+                      {canWrite && (
+                        <td>
+                          <div className="finance-table-actions">
+                            <button
+                              type="button"
+                              className="action-secondary"
+                              onClick={() => void criarAcordoRapido(cobranca)}
+                              disabled={acordosLoading}
+                            >
+                              Criar acordo
+                            </button>
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
+                {cobrancasUnidadeFiltradas.length === 0 && (
                   <tr>
-                    <td colSpan={canWrite ? 8 : 7} style={{ textAlign: "center" }}>
+                    <td colSpan={canWrite ? 10 : 9} style={{ textAlign: "center" }}>
                       Nenhuma cobranca pendente encontrada.
                     </td>
                   </tr>
@@ -9304,15 +9584,27 @@ export default function FinanceiroView({
             </table>
           </section>
 
-          <section className="finance-table-card">
+          <section className="finance-table-card" ref={acordosRef}>
             <div className="finance-table-header">
               <div>
                 <h3>Acordos gerados</h3>
                 <p className="finance-form-sub">
-                  {acordosCobranca.length} acordo(s) cadastrados.
+                  {acordosFiltrados.length}
+                  {acordoBusca.trim()
+                    ? ` de ${acordosCobranca.length}`
+                    : ""}{" "}
+                  acordo(s) cadastrados.
                 </p>
               </div>
               <div className="finance-card-actions">
+                <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  Buscar
+                  <input
+                    value={acordoBusca}
+                    onChange={(e) => setAcordoBusca(e.target.value)}
+                    placeholder="Unidade ou status"
+                  />
+                </label>
                 <button
                   type="button"
                   onClick={carregarAcordosCobranca}
@@ -9338,7 +9630,7 @@ export default function FinanceiroView({
                 </tr>
               </thead>
               <tbody>
-                {acordosCobranca.map((acordo) => (
+                {acordosFiltrados.map((acordo) => (
                   <tr key={acordo.id}>
                     <td>
                       {unidadesCobrancaMap[acordo.unidadeOrganizacionalId] ??
@@ -9370,7 +9662,7 @@ export default function FinanceiroView({
                     )}
                   </tr>
                 ))}
-                {acordosCobranca.length === 0 && (
+                {acordosFiltrados.length === 0 && (
                   <tr>
                     <td colSpan={canWrite ? 6 : 5} style={{ textAlign: "center" }}>
                       Nenhum acordo cadastrado.

@@ -759,7 +759,9 @@ button:focus-visible {
 .finance-card-actions {
   display: flex;
   gap: 6px;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
 }
 
 .finance-card-actions button {
@@ -771,6 +773,24 @@ button:focus-visible {
   box-shadow: none;
 }
 
+.finance-card-actions label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #475569;
+}
+
+.finance-card-actions input {
+  min-height: 30px;
+  border-radius: 999px;
+  padding: 0 10px;
+  border: 1px solid var(--divider-strong);
+  background-color: #f7fbff;
+  font-size: 12px;
+  color: #0f172a;
+}
+
 .finance-card-actions button:hover {
   box-shadow: none;
 }
@@ -780,7 +800,48 @@ button:focus-visible {
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-lg);
   padding: 12px 14px;
-  overflow-x: auto;
+  overflow: auto;
+  max-height: min(72vh, 680px);
+  position: relative;
+  scrollbar-gutter: stable both-edges;
+  --table-sticky-offset: 0px;
+  --card-sticky-bg: #fbfdff;
+  --card-sticky-pad: 12px;
+}
+
+.finance-table-card .finance-table-header,
+.finance-table-card .config-filters {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  background-color: var(--card-sticky-bg);
+  margin: 0 -14px;
+  padding: 10px 14px 8px;
+  box-shadow: 0 6px 12px rgba(15, 23, 42, 0.08);
+  border-bottom: 1px solid var(--divider);
+}
+
+.finance-table-card .finance-table-header {
+  padding-bottom: 10px;
+}
+
+.finance-table-card .table thead th {
+  position: sticky;
+  top: var(--table-sticky-offset, 0px);
+  z-index: 2;
+  background-color: #dfe9ff;
+}
+
+.finance-table-card > .finance-table-header ~ .table thead th {
+  --table-sticky-offset: 60px;
+}
+
+.finance-table-card > .config-filters ~ .table thead th {
+  --table-sticky-offset: 72px;
+}
+
+.finance-table-card > .finance-table-header ~ .config-filters ~ .table thead th {
+  --table-sticky-offset: 132px;
 }
 
 .finance-table-card .table {
@@ -796,7 +857,7 @@ button:focus-visible {
   border-collapse: collapse;
   margin-top: 12px;
   font-size: 14px;
-  table-layout: fixed;
+  table-layout: auto;
 }
 
 .table--fixed {
@@ -890,6 +951,18 @@ button:focus-visible {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  white-space: nowrap;
+}
+
+.finance-table th:last-child,
+.finance-table td:last-child {
+  min-width: 120px;
+}
+
+.action-primary,
+.action-secondary,
+.finance-table summary {
+  white-space: nowrap;
 }
 
 .action-primary {
