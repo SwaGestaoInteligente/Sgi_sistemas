@@ -551,6 +551,11 @@ export interface RemessaCobrancaItem {
   urlPagamento?: string | null;
 }
 
+export interface GerarBoletosAcordoResumo {
+  criadas: number;
+  ignoradas: number;
+}
+
 export interface AcordoCobranca {
   id: string;
   organizacaoId: string;
@@ -2708,6 +2713,21 @@ export const api = {
   ): Promise<RemessaCobrancaItem[]> {
     return request<RemessaCobrancaItem[]>(
       "/financeiro/faturas/remessa/dados",
+      {
+        method: "POST",
+        body: JSON.stringify(payload)
+      },
+      token
+    );
+  },
+
+  async gerarBoletosAcordo(
+    token: string,
+    acordoId: string,
+    payload: { organizacaoId: string; tipo?: string }
+  ): Promise<GerarBoletosAcordoResumo> {
+    return request<GerarBoletosAcordoResumo>(
+      `/financeiro/cobrancas/acordos/${acordoId}/boletos`,
       {
         method: "POST",
         body: JSON.stringify(payload)

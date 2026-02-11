@@ -4101,6 +4101,14 @@ public class FinanceiroController : ControllerBase
         public string? Observacao { get; set; }
     }
 
+    public class GerarBoletosAcordoRequest
+    {
+        public Guid OrganizacaoId { get; set; }
+        public string? Tipo { get; set; }
+    }
+
+    public record GerarBoletosAcordoResumo(int Criadas, int Ignoradas);
+
     [HttpGet("cobrancas/acordos")]
     public async Task<ActionResult<IEnumerable<AcordoCobranca>>> ListarAcordosCobranca(
         [FromQuery] Guid organizacaoId,
@@ -4153,6 +4161,199 @@ public class FinanceiroController : ControllerBase
             .ToListAsync();
 
         return Ok(parcelas);
+    }
+
+    [HttpPost("cobrancas/acordos/{id:guid}/boletos")]
+    public async Task<ActionResult<GerarBoletosAcordoResumo>> GerarBoletosAcordo(
+        Guid id,
+        GerarBoletosAcordoRequest request)
+    {
+        if (request.OrganizacaoId == Guid.Empty)
+        {
+            return BadRequest("Organizacao e obrigatoria.");
+        }
+
+        if (id == Guid.Empty)
+        {
+            return BadRequest("Acordo invalido.");
+        }
+
+        var acordo = await _db.AcordosCobranca
+            .FirstOrDefaultAsync(a => a.Id == id && a.OrganizacaoId == request.OrganizacaoId);
+        if (acordo is null)
+        {
+            return NotFound("Acordo nao encontrado.");
+        }
+
+        var auth = await EnsureRoleAsync(request.OrganizacaoId, UserRole.CONDO_ADMIN);
+        if (auth.Error is not null)
+        {
+            return auth.Error;
+        }
+
+        var tipo = string.IsNullOrWhiteSpace(request.Tipo)
+            ? "boleto"
+            : request.Tipo.Trim().ToLowerInvariant();
+
+        var parcelas = await _db.AcordosParcelas.AsNoTracking()
+            .Where(p => p.AcordoId == acordo.Id)
+            .OrderBy(p => p.Numero)
+            .ToListAsync();
+
+        if (parcelas.Count == 0)
+        {
+            return Ok(new GerarBoletosAcordoResumo(0, 0));
+        }
+
+        var cobrancasIds = parcelas
+            .Where(p => p.CobrancaId.HasValue)
+            .Select(p => p.CobrancaId!.Value)
+            .ToList();
+
+        var cobrancas = await _db.UnidadesCobrancas.AsNoTracking()
+            .Where(c => cobrancasIds.Contains(c.Id))
+            .ToDictionaryAsync(c => c.Id, c => c);
+
+        var planoContasId = cobrancas.Values
+            .Select(c => c.CategoriaId)
+            .FirstOrDefault(c => c.HasValue)
+            ?.Value ?? Guid.Empty;
+
+        if (planoContasId == Guid.Empty)
+        {
+            var planoFallback = await _db.PlanosContas.AsNoTracking()
+                .Where(p => p.OrganizacaoId == request.OrganizacaoId && p.Tipo == "receita")
+                .OrderBy(p => p.Nivel)
+                .ThenBy(p => p.Codigo)
+                .FirstOrDefaultAsync();
+            planoContasId = planoFallback?.Id ?? Guid.Empty;
+        }
+
+        if (planoContasId == Guid.Empty)
+        {
+            return BadRequest("Cadastre uma categoria (plano de contas) de receita para gerar boletos.");
+        }
+
+        var pessoaId = await _db.VinculosPessoaOrganizacao.AsNoTracking()
+            .Where(v => v.OrganizacaoId == request.OrganizacaoId &&
+                        v.UnidadeOrganizacionalId == acordo.UnidadeOrganizacionalId &&
+                        (v.DataFim == null || v.DataFim > DateTime.UtcNow))
+            .Select(v => (Guid?)v.PessoaId)
+            .FirstOrDefaultAsync();
+
+        if (!pessoaId.HasValue)
+        {
+            pessoaId = await _db.VinculosPessoaOrganizacao.AsNoTracking()
+                .Where(v => v.OrganizacaoId == request.OrganizacaoId)
+                .Select(v => (Guid?)v.PessoaId)
+                .FirstOrDefaultAsync();
+        }
+
+        if (!pessoaId.HasValue || pessoaId.Value == Guid.Empty)
+        {
+            return BadRequest("Nenhuma pessoa vinculada a organizacao para gerar boletos.");
+        }
+
+        var criadas = 0;
+        var ignoradas = 0;
+
+        foreach (var parcela in parcelas)
+        {
+            if (parcela.Status == "pago")
+            {
+                ignoradas++;
+                continue;
+            }
+
+            if (!parcela.CobrancaId.HasValue ||
+                !cobrancas.TryGetValue(parcela.CobrancaId.Value, out var cobranca))
+            {
+                ignoradas++;
+                continue;
+            }
+
+            if (string.Equals(cobranca.Status, "PAGA", StringComparison.OrdinalIgnoreCase))
+            {
+                ignoradas++;
+                continue;
+            }
+
+            var identificador = $"ACORDO-{acordo.Id:N}-P{parcela.Numero}";
+
+            var existe = await _db.DocumentosCobranca.AsNoTracking()
+                .AnyAsync(f =>
+                    f.OrganizacaoId == request.OrganizacaoId &&
+                    f.IdentificadorExterno == identificador &&
+                    f.Status != "cancelada");
+
+            if (existe)
+            {
+                ignoradas++;
+                continue;
+            }
+
+            var lancamento = new LancamentoFinanceiro
+            {
+                Id = Guid.NewGuid(),
+                OrganizacaoId = request.OrganizacaoId,
+                Tipo = "receber",
+                Situacao = SituacaoAberto,
+                PlanoContasId = planoContasId,
+                CentroCustoId = cobranca.CentroCustoId,
+                PessoaId = pessoaId.Value,
+                Descricao = cobranca.Descricao,
+                Valor = cobranca.Valor,
+                DataCompetencia = cobranca.Vencimento.Date,
+                DataVencimento = cobranca.Vencimento.Date,
+                FormaPagamento = tipo,
+                ParcelaNumero = cobranca.ParcelaNumero,
+                ParcelaTotal = cobranca.ParcelaTotal,
+                Referencia = identificador
+            };
+
+            _db.LancamentosFinanceiros.Add(lancamento);
+
+            var faturaId = Guid.NewGuid();
+            var linhaDigitavel = string.Equals(tipo, "boleto", StringComparison.OrdinalIgnoreCase) ||
+                                 string.Equals(tipo, "pix", StringComparison.OrdinalIgnoreCase)
+                ? GerarLinhaDigitavelFicticia(faturaId)
+                : null;
+            var qrCode = string.Equals(tipo, "pix", StringComparison.OrdinalIgnoreCase)
+                ? GerarQrCodePixFicticio(faturaId, lancamento.Valor)
+                : null;
+
+            var statusInicial = cobranca.Vencimento.Date < DateTime.UtcNow.Date ? "vencida" : "emitida";
+
+            _db.DocumentosCobranca.Add(new DocumentoCobranca
+            {
+                Id = faturaId,
+                OrganizacaoId = request.OrganizacaoId,
+                LancamentoFinanceiroId = lancamento.Id,
+                Tipo = tipo,
+                IdentificadorExterno = identificador,
+                LinhaDigitavel = linhaDigitavel,
+                QrCode = qrCode,
+                UrlPagamento = GerarUrlPagamentoFicticia(tipo, faturaId),
+                Status = statusInicial,
+                DataEmissao = DateTime.UtcNow,
+                DataVencimento = cobranca.Vencimento.Date
+            });
+
+            criadas++;
+        }
+
+        if (criadas > 0)
+        {
+            RegistrarAudit(request.OrganizacaoId, acordo.Id, "AcordoCobranca", "GERAR_BOLETOS_ACORDO", new
+            {
+                criadas,
+                ignoradas,
+                tipo
+            });
+        }
+
+        await _db.SaveChangesAsync();
+        return Ok(new GerarBoletosAcordoResumo(criadas, ignoradas));
     }
 
     [HttpPost("cobrancas/acordos")]

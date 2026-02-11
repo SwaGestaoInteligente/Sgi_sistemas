@@ -363,6 +363,8 @@ export default function FinanceiroView({
   const [acordosCobranca, setAcordosCobranca] = useState<AcordoCobranca[]>([]);
   const [acordosLoading, setAcordosLoading] = useState(false);
   const [acordosErro, setAcordosErro] = useState<string | null>(null);
+  const [acordosAviso, setAcordosAviso] = useState<string | null>(null);
+  const [acordosGerandoId, setAcordosGerandoId] = useState<string | null>(null);
 
   const [remessaTipo, setRemessaTipo] = useState("boleto");
   const [retornoArquivo, setRetornoArquivo] = useState<File | null>(null);
@@ -2055,6 +2057,7 @@ export default function FinanceiroView({
     if (!token) return;
     try {
       setAcordosErro(null);
+      setAcordosAviso(null);
       setAcordosLoading(true);
       const lista = await api.listarAcordosCobranca(token, organizacaoId);
       setAcordosCobranca(lista);
@@ -2062,6 +2065,27 @@ export default function FinanceiroView({
       setAcordosErro(e.message || "Erro ao carregar acordos.");
     } finally {
       setAcordosLoading(false);
+    }
+  };
+
+  const gerarBoletosAcordo = async (acordo: AcordoCobranca) => {
+    if (!token) return;
+    try {
+      setAcordosErro(null);
+      setAcordosAviso(null);
+      setAcordosGerandoId(acordo.id);
+      const resumo = await api.gerarBoletosAcordo(token, acordo.id, {
+        organizacaoId,
+        tipo: "boleto"
+      });
+      setAcordosAviso(
+        `Boletos gerados: ${resumo.criadas} • Ignorados: ${resumo.ignoradas}`
+      );
+      await carregarFaturas();
+    } catch (e: any) {
+      setAcordosErro(e.message || "Erro ao gerar boletos.");
+    } finally {
+      setAcordosGerandoId(null);
     }
   };
 
@@ -9087,6 +9111,7 @@ export default function FinanceiroView({
             </div>
 
             {acordosErro && <p className="error">{acordosErro}</p>}
+            {acordosAviso && <p className="finance-form-sub">{acordosAviso}</p>}
 
             <table className="table finance-table">
               <thead>
@@ -9096,6 +9121,7 @@ export default function FinanceiroView({
                   <th className="finance-value-header">Total</th>
                   <th className="finance-value-header">Desconto</th>
                   <th>Status</th>
+                  {canWrite && <th>Acoes</th>}
                 </tr>
               </thead>
               <tbody>
@@ -9113,11 +9139,27 @@ export default function FinanceiroView({
                       {formatarValor(acordo.desconto)}
                     </td>
                     <td>{acordo.status}</td>
+                    {canWrite && (
+                      <td>
+                        <div className="finance-table-actions">
+                          <button
+                            type="button"
+                            className="action-secondary"
+                            onClick={() => void gerarBoletosAcordo(acordo)}
+                            disabled={acordosGerandoId === acordo.id}
+                          >
+                            {acordosGerandoId === acordo.id
+                              ? "Gerando..."
+                              : "Gerar boletos"}
+                          </button>
+                        </div>
+                      </td>
+                    )}
                   </tr>
                 ))}
                 {acordosCobranca.length === 0 && (
                   <tr>
-                    <td colSpan={5} style={{ textAlign: "center" }}>
+                    <td colSpan={canWrite ? 6 : 5} style={{ textAlign: "center" }}>
                       Nenhum acordo cadastrado.
                     </td>
                   </tr>
