@@ -544,11 +544,16 @@ const NoAccessPage: React.FC<{ mensagem?: string; onSair?: () => void }> = ({
   </div>
 );
 
+type MinhaUnidadeFinanceiroFiltro = {
+  tipo: "faturas" | "inadimplencia";
+  termo: string;
+};
+
 const MinhaUnidadeView: React.FC<{
   organizacao: Organizacao;
   unidadeId?: string | null;
   onAbrirChamados?: () => void;
-  onAbrirFinanceiro?: (aba: FinanceiroTab) => void;
+  onAbrirFinanceiro?: (aba: FinanceiroTab, filtro?: MinhaUnidadeFinanceiroFiltro) => void;
 }> = ({ organizacao, unidadeId, onAbrirChamados, onAbrirFinanceiro }) => {
   const { token } = useAuth();
   const [unidades, setUnidades] = useState<UnidadeOrganizacional[]>([]);
@@ -768,6 +773,22 @@ const MinhaUnidadeView: React.FC<{
     return <p>{loading ? "Carregando unidade..." : "Unidade nao encontrada."}</p>;
   }
 
+  const termoUnidade = unidade.codigoInterno || unidade.nome || "";
+  const abrirFaturas = () => {
+    if (!onAbrirFinanceiro) return;
+    onAbrirFinanceiro("faturas", {
+      tipo: "faturas",
+      termo: termoUnidade
+    });
+  };
+  const abrirInadimplencia = () => {
+    if (!onAbrirFinanceiro) return;
+    onAbrirFinanceiro("inadimplentes", {
+      tipo: "inadimplencia",
+      termo: termoUnidade
+    });
+  };
+
   const pendentes = cobrancas.filter(
     (c) => (c.status ?? "").toUpperCase() !== "PAGA"
   );
@@ -836,7 +857,7 @@ const MinhaUnidadeView: React.FC<{
               <button
                 type="button"
                 className="button-secondary"
-                onClick={() => onAbrirFinanceiro?.("faturas")}
+                onClick={abrirFaturas}
                 disabled={!onAbrirFinanceiro}
               >
                 2a via / Faturas
@@ -844,7 +865,7 @@ const MinhaUnidadeView: React.FC<{
               <button
                 type="button"
                 className="button-secondary"
-                onClick={() => onAbrirFinanceiro?.("inadimplentes")}
+                onClick={abrirInadimplencia}
                 disabled={!onAbrirFinanceiro}
               >
                 Inadimplencia
@@ -894,6 +915,19 @@ const MinhaUnidadeView: React.FC<{
               </div>
             </div>
           </div>
+          {vencidas.length > 0 && (
+            <div className="unit-alert">
+              <div>
+                <strong>Você tem {vencidas.length} cobrança(s) vencida(s).</strong>
+                <p className="unit-muted">
+                  Total em atraso: {formatarMoeda(totalAberto)}
+                </p>
+              </div>
+              <button type="button" className="action-primary" onClick={abrirInadimplencia}>
+                Ir para inadimplência
+              </button>
+            </div>
+          )}
         </section>
 
       <section className="finance-table-card unit-card">
@@ -1936,6 +1970,8 @@ const InnerApp: React.FC = () => {
   const [view, setView] = useState<AppView>("dashboard");
   const [financeiroAba, setFinanceiroAba] =
     useState<FinanceiroTab>("mapaFinanceiro");
+  const [financeiroFiltro, setFinanceiroFiltro] =
+    useState<MinhaUnidadeFinanceiroFiltro | null>(null);
   const [sidebarFinanceiroOpen, setSidebarFinanceiroOpen] = useState(false);
   const [configuracoesAba, setConfiguracoesAba] =
     useState<ConfiguracoesTab>("cadastros-base");
@@ -2904,6 +2940,17 @@ const InnerApp: React.FC = () => {
               onAbaChange={setFinanceiroAba}
               readOnly={!podeFinanceiroEscrita}
               exibirMenuAbas={false}
+              filtroInadimplenciaInicial={
+                financeiroFiltro?.tipo === "inadimplencia"
+                  ? financeiroFiltro.termo
+                  : undefined
+              }
+              filtroFaturasInicial={
+                financeiroFiltro?.tipo === "faturas"
+                  ? financeiroFiltro.termo
+                  : undefined
+              }
+              onFiltroAplicado={() => setFinanceiroFiltro(null)}
             />
           )}
 
@@ -2912,8 +2959,9 @@ const InnerApp: React.FC = () => {
               organizacao={organizacaoSelecionada}
               unidadeId={membershipAtual?.unidadeOrganizacionalId ?? null}
               onAbrirChamados={() => setViewIfAllowed("chamados")}
-              onAbrirFinanceiro={(aba) => {
+              onAbrirFinanceiro={(aba, filtro) => {
                 setFinanceiroAba(aba);
+                setFinanceiroFiltro(filtro ?? null);
                 setViewIfAllowed("financeiro");
               }}
             />

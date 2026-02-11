@@ -45,6 +45,9 @@ type FinanceiroViewProps = {
   onAbaChange?: (aba: FinanceiroTab) => void;
   exibirMenuAbas?: boolean;
   readOnly?: boolean;
+  filtroInadimplenciaInicial?: string;
+  filtroFaturasInicial?: string;
+  onFiltroAplicado?: () => void;
 };
 
 export type FinanceiroTab =
@@ -114,10 +117,14 @@ export default function FinanceiroView({
   abaSelecionada,
   onAbaChange,
   exibirMenuAbas = true,
-  readOnly = false
+  readOnly = false,
+  filtroInadimplenciaInicial,
+  filtroFaturasInicial,
+  onFiltroAplicado
 }: FinanceiroViewProps) {
   const topoRef = useRef<HTMLDivElement | null>(null);
   const inadimplenciaRef = useRef<HTMLDivElement | null>(null);
+  const faturasRef = useRef<HTMLDivElement | null>(null);
   const cobrancasRef = useRef<HTMLDivElement | null>(null);
   const acordosRef = useRef<HTMLDivElement | null>(null);
   const { token, session } = useAuth();
@@ -277,6 +284,7 @@ export default function FinanceiroView({
     useState(true);
   const [livroIncluirDetalhes, setLivroIncluirDetalhes] = useState(true);
   const [inadimplenciaBusca, setInadimplenciaBusca] = useState("");
+  const [faturasBusca, setFaturasBusca] = useState("");
   const [cobrancaBusca, setCobrancaBusca] = useState("");
   const [acordoBusca, setAcordoBusca] = useState("");
 
@@ -2898,6 +2906,32 @@ export default function FinanceiroView({
   }, [token, organizacaoId]);
 
   useEffect(() => {
+    if (!filtroInadimplenciaInicial) return;
+    setInadimplenciaBusca(filtroInadimplenciaInicial);
+    setAba("inadimplentes");
+    setTimeout(() => {
+      inadimplenciaRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start"
+      });
+      onFiltroAplicado?.();
+    }, 100);
+  }, [filtroInadimplenciaInicial, onFiltroAplicado, setAba]);
+
+  useEffect(() => {
+    if (!filtroFaturasInicial) return;
+    setFaturasBusca(filtroFaturasInicial);
+    setAba("faturas");
+    setTimeout(() => {
+      faturasRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start"
+      });
+      onFiltroAplicado?.();
+    }, 100);
+  }, [filtroFaturasInicial, onFiltroAplicado, setAba]);
+
+  useEffect(() => {
     if (aba !== "contabilidade") return;
     if (!token) return;
     void carregarContasContabeis();
@@ -3821,10 +3855,17 @@ export default function FinanceiroView({
   const inadimplentesFiltrados = !filtroInadimplencia
     ? inadimplentes
     : inadimplentes.filter((lanc) => {
-        const pessoa = pessoasPorId[lanc.pessoaId] ?? "";
+        const pessoa = pessoasPorIdMap[lanc.pessoaId];
+        const pessoaNome = pessoa?.nome ?? "";
+        const unidadeLabel = pessoa?.unidadeOrganizacionalId
+          ? unidadesCobrancaMap[pessoa.unidadeOrganizacionalId] ??
+            pessoa?.unidadeCodigo ??
+            ""
+          : pessoa?.unidadeCodigo ?? "";
         return (
           lanc.descricao.toLowerCase().includes(filtroInadimplencia) ||
-          pessoa.toLowerCase().includes(filtroInadimplencia)
+          pessoaNome.toLowerCase().includes(filtroInadimplencia) ||
+          unidadeLabel.toLowerCase().includes(filtroInadimplencia)
         );
       });
   const faturasImprimiveisPorLancamento = useMemo(() => {
@@ -3844,6 +3885,32 @@ export default function FinanceiroView({
   const exibeAcoesFaturas =
     canWrite ||
     faturas.some((fat) => fat.tipo === "boleto" || fat.tipo === "pix");
+  const faturasFiltradas = useMemo(() => {
+    const termo = faturasBusca.trim().toLowerCase();
+    if (!termo) return faturas;
+    return faturas.filter((fat) => {
+      const lanc = receitasPorIdMap[fat.lancamentoFinanceiroId];
+      const pessoa = lanc ? pessoasPorIdMap[lanc.pessoaId] : null;
+      const unidadeLabel = pessoa?.unidadeOrganizacionalId
+        ? unidadesCobrancaMap[pessoa.unidadeOrganizacionalId] ??
+          pessoa?.unidadeCodigo ??
+          ""
+        : pessoa?.unidadeCodigo ?? "";
+      const base = [
+        fat.tipo,
+        fat.status,
+        fat.identificadorExterno,
+        fat.linhaDigitavel,
+        lanc?.descricao,
+        pessoa?.nome,
+        unidadeLabel
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return base.includes(termo);
+    });
+  }, [faturas, faturasBusca, pessoasPorIdMap, receitasPorIdMap, unidadesCobrancaMap]);
   const normalizarDataIso = (data?: string) => (data ? data.slice(0, 10) : "");
   const dentroPeriodoLivro = (data?: string) => {
     const iso = normalizarDataIso(data);
@@ -7849,7 +7916,7 @@ export default function FinanceiroView({
                   <th>Motivo</th>
                   <th>Status</th>
                   <th>Solicitado</th>
-                  {canWrite && <th>Acoes</th>}
+                  {exibeAcoesInadimplencia && <th>Acoes</th>}
                 </tr>
               </thead>
               <tbody>
@@ -9114,12 +9181,20 @@ export default function FinanceiroView({
             )}
           </section>
 
-          <section className="finance-table-card">
+          <section className="finance-table-card" ref={faturasRef}>
             <div className="finance-table-header">
               <div>
                 <h3>Faturas emitidas</h3>
               </div>
               <div className="finance-card-actions">
+                <label>
+                  Buscar
+                  <input
+                    value={faturasBusca}
+                    onChange={(e) => setFaturasBusca(e.target.value)}
+                    placeholder="Unidade, morador ou descricao"
+                  />
+                </label>
                 <button type="button" onClick={carregarFaturas} disabled={loading}>
                   {loading ? "Carregando..." : "Atualizar lista"}
                 </button>
@@ -9140,7 +9215,7 @@ export default function FinanceiroView({
                 </tr>
               </thead>
               <tbody>
-                {faturas.map((fat) => {
+                {faturasFiltradas.map((fat) => {
                   const vencida =
                     fat.status === "vencida" ||
                     (fat.status !== "paga" &&
@@ -9219,10 +9294,10 @@ export default function FinanceiroView({
                     </tr>
                   );
                 })}
-                {faturas.length === 0 && (
+                {faturasFiltradas.length === 0 && (
                   <tr>
                     <td colSpan={exibeAcoesFaturas ? 6 : 5} style={{ textAlign: "center" }}>
-                      Nenhuma fatura emitida ainda.
+                      Nenhuma fatura encontrada.
                     </td>
                   </tr>
                 )}
