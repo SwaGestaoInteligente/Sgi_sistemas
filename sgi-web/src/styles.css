@@ -1060,6 +1060,7 @@ button:focus-visible {
 
 .documentos-table {
   min-width: 1200px;
+  table-layout: fixed;
 }
 
 .documentos-tags {
@@ -1087,6 +1088,46 @@ button:focus-visible {
   white-space: normal;
   word-break: normal;
   overflow-wrap: break-word;
+}
+
+.documentos-table th:nth-child(1),
+.documentos-table td:nth-child(1) {
+  width: 34%;
+}
+
+.documentos-table th:nth-child(2),
+.documentos-table td:nth-child(2) {
+  width: 10%;
+}
+
+.documentos-table th:nth-child(3),
+.documentos-table td:nth-child(3) {
+  width: 14%;
+}
+
+.documentos-table th:nth-child(4),
+.documentos-table td:nth-child(4) {
+  width: 10%;
+}
+
+.documentos-table th:nth-child(5),
+.documentos-table td:nth-child(5) {
+  width: 9%;
+}
+
+.documentos-table th:nth-child(6),
+.documentos-table td:nth-child(6) {
+  width: 10%;
+}
+
+.documentos-table th:nth-child(7),
+.documentos-table td:nth-child(7) {
+  width: 7%;
+}
+
+.documentos-table th:nth-child(8),
+.documentos-table td:nth-child(8) {
+  width: 140px;
 }
 
 .finance-table th,
