@@ -3840,6 +3840,7 @@ export default function FinanceiroView({
   const pessoasPorIdMap = Object.fromEntries(
     pessoasFinanceiro.map((p) => [p.id, p])
   );
+  const receitasPorIdMap = Object.fromEntries(receitas.map((r) => [r.id, r]));
   const hojeIso = new Date().toISOString().slice(0, 10);
   const inadimplentes = receitas
     .filter(
@@ -4015,7 +4016,6 @@ export default function FinanceiroView({
   }, 0);
   const totalDesvioPrevisao = totalRealizadoPrevisao - totalPrevistoPrevisao;
   const contasPorId = Object.fromEntries(contas.map((c) => [c.id, c.nome]));
-  const receitasPorIdMap = Object.fromEntries(receitas.map((r) => [r.id, r]));
   const receitasLabelPorId = Object.fromEntries(
     receitas.map((r) => [
       r.id,
