@@ -117,6 +117,7 @@ export default function FinanceiroView({
   readOnly = false
 }: FinanceiroViewProps) {
   const topoRef = useRef<HTMLDivElement | null>(null);
+  const inadimplenciaRef = useRef<HTMLDivElement | null>(null);
   const { token, session } = useAuth();
   const ignorarPerfis = true;
   const [abaLocal, setAbaLocal] = useState<FinanceiroTab>("mapaFinanceiro");
@@ -273,6 +274,7 @@ export default function FinanceiroView({
   const [livroIncluirInadimplencia, setLivroIncluirInadimplencia] =
     useState(true);
   const [livroIncluirDetalhes, setLivroIncluirDetalhes] = useState(true);
+  const [inadimplenciaBusca, setInadimplenciaBusca] = useState("");
 
   // Previsao orcamentaria
   const [previsaoAno, setPrevisaoAno] = useState(() => new Date().getFullYear());
@@ -2239,6 +2241,20 @@ export default function FinanceiroView({
     }
   };
 
+  const irParaInadimplencia = (fatura: DocumentoCobranca) => {
+    const lanc = receitasPorIdMap[fatura.lancamentoFinanceiroId];
+    const nome = lanc ? pessoasPorId[lanc.pessoaId] : "";
+    const termo = nome || lanc?.descricao || "";
+    setInadimplenciaBusca(termo);
+    setAba("inadimplentes");
+    setTimeout(() => {
+      inadimplenciaRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start"
+      });
+    }, 100);
+  };
+
   const normalizarDataAcordo = (raw: string) => {
     const texto = raw.trim();
     if (/^\d{4}-\d{2}-\d{2}$/.test(texto)) {
@@ -3631,6 +3647,9 @@ export default function FinanceiroView({
     0
   );
   const saldoPeriodo = totalReceitas - totalDespesas;
+  const pessoasPorId = Object.fromEntries(
+    pessoasFinanceiro.map((p) => [p.id, p.nome])
+  );
   const hojeIso = new Date().toISOString().slice(0, 10);
   const inadimplentes = receitas
     .filter(
@@ -3642,7 +3661,17 @@ export default function FinanceiroView({
     .sort((a, b) =>
       (a.dataVencimento ?? "").localeCompare(b.dataVencimento ?? "")
     );
-  const totalInadimplencia = inadimplentes.reduce(
+  const filtroInadimplencia = inadimplenciaBusca.trim().toLowerCase();
+  const inadimplentesFiltrados = !filtroInadimplencia
+    ? inadimplentes
+    : inadimplentes.filter((lanc) => {
+        const pessoa = pessoasPorId[lanc.pessoaId] ?? "";
+        return (
+          lanc.descricao.toLowerCase().includes(filtroInadimplencia) ||
+          pessoa.toLowerCase().includes(filtroInadimplencia)
+        );
+      });
+  const totalInadimplencia = inadimplentesFiltrados.reduce(
     (sum, item) => sum + item.valor,
     0
   );
@@ -3749,10 +3778,8 @@ export default function FinanceiroView({
     return sum + (realizadosPorCategoriaMes[key] ?? 0);
   }, 0);
   const totalDesvioPrevisao = totalRealizadoPrevisao - totalPrevistoPrevisao;
-  const pessoasPorId = Object.fromEntries(
-    pessoasFinanceiro.map((p) => [p.id, p.nome])
-  );
   const contasPorId = Object.fromEntries(contas.map((c) => [c.id, c.nome]));
+  const receitasPorIdMap = Object.fromEntries(receitas.map((r) => [r.id, r]));
   const receitasLabelPorId = Object.fromEntries(
     receitas.map((r) => [
       r.id,
@@ -8905,65 +8932,81 @@ export default function FinanceiroView({
                 </tr>
               </thead>
               <tbody>
-                {faturas.map((fat) => (
-                  <tr key={fat.id}>
-                    <td>{fat.tipo}</td>
-                    <td>
-                      {receitasPorId[fat.lancamentoFinanceiroId]?.descricao ??
-                        fat.lancamentoFinanceiroId}
-                    </td>
-                    <td>{new Date(fat.dataEmissao).toLocaleDateString("pt-BR")}</td>
-                    <td>{new Date(fat.dataVencimento).toLocaleDateString("pt-BR")}</td>
-                    <td>{fat.status}</td>
-                    {canWrite && (
+                {faturas.map((fat) => {
+                  const vencida =
+                    fat.status === "vencida" ||
+                    (fat.status !== "paga" &&
+                      new Date(fat.dataVencimento).getTime() < Date.now());
+                  return (
+                    <tr key={fat.id}>
+                      <td>{fat.tipo}</td>
                       <td>
-                        <div className="table-actions">
-                          <button
-                            type="button"
-                            className="action-primary"
-                            disabled={loading || fat.status === "paga"}
-                            onClick={() => void atualizarStatusFatura(fat, "paga")}
-                          >
-                            Dar baixa
-                          </button>
-                      <details className="action-menu">
-                        <summary title="Mais acoes" aria-label="Mais acoes">
-                          ⋮
-                        </summary>
-                        <div className="action-menu-panel">
-                          {(fat.tipo === "boleto" || fat.tipo === "pix") && (
+                        {receitasPorId[fat.lancamentoFinanceiroId]?.descricao ??
+                          fat.lancamentoFinanceiroId}
+                      </td>
+                      <td>{new Date(fat.dataEmissao).toLocaleDateString("pt-BR")}</td>
+                      <td>{new Date(fat.dataVencimento).toLocaleDateString("pt-BR")}</td>
+                      <td>{fat.status}</td>
+                      {canWrite && (
+                        <td>
+                          <div className="table-actions">
                             <button
                               type="button"
-                              className="action-secondary"
-                              disabled={loading}
-                              onClick={() => void gerarBoletoPdf(fat)}
+                              className="action-primary"
+                              disabled={loading || fat.status === "paga"}
+                              onClick={() => void atualizarStatusFatura(fat, "paga")}
                             >
-                              Baixar boleto
+                              Dar baixa
                             </button>
-                          )}
-                          <button
-                            type="button"
-                            className="action-secondary"
-                            disabled={loading || fat.status === "cancelada"}
-                            onClick={() => void atualizarStatusFatura(fat, "cancelada")}
-                          >
-                                Cancelar
-                              </button>
-                              <button
-                                type="button"
-                                className="action-secondary"
-                                disabled={loading || fat.status === "emitida"}
-                                onClick={() => void atualizarStatusFatura(fat, "emitida")}
-                              >
-                                Reabrir
-                              </button>
-                            </div>
-                          </details>
-                        </div>
-                      </td>
-                    )}
-                  </tr>
-                ))}
+                            <details className="action-menu">
+                              <summary title="Mais acoes" aria-label="Mais acoes">
+                                ⋮
+                              </summary>
+                              <div className="action-menu-panel">
+                                {vencida && (
+                                  <button
+                                    type="button"
+                                    className="action-secondary"
+                                    disabled={loading}
+                                    onClick={() => irParaInadimplencia(fat)}
+                                  >
+                                    Ir para inadimplencia
+                                  </button>
+                                )}
+                                {(fat.tipo === "boleto" || fat.tipo === "pix") && (
+                                  <button
+                                    type="button"
+                                    className="action-secondary"
+                                    disabled={loading}
+                                    onClick={() => void gerarBoletoPdf(fat)}
+                                  >
+                                    Baixar boleto
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  className="action-secondary"
+                                  disabled={loading || fat.status === "cancelada"}
+                                  onClick={() => void atualizarStatusFatura(fat, "cancelada")}
+                                >
+                                  Cancelar
+                                </button>
+                                <button
+                                  type="button"
+                                  className="action-secondary"
+                                  disabled={loading || fat.status === "emitida"}
+                                  onClick={() => void atualizarStatusFatura(fat, "emitida")}
+                                >
+                                  Reabrir
+                                </button>
+                              </div>
+                            </details>
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
                 {faturas.length === 0 && (
                   <tr>
                     <td colSpan={canWrite ? 6 : 5} style={{ textAlign: "center" }}>
@@ -9099,7 +9142,7 @@ export default function FinanceiroView({
             )}
           </section>
 
-          <section className="finance-table-card">
+          <section className="finance-table-card" ref={inadimplenciaRef}>
             <div className="finance-table-header">
               <div>
                 <h3>Inadimplentes (lancamentos)</h3>
@@ -9108,6 +9151,14 @@ export default function FinanceiroView({
                 </p>
               </div>
               <div className="finance-card-actions">
+                <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  Buscar
+                  <input
+                    value={inadimplenciaBusca}
+                    onChange={(e) => setInadimplenciaBusca(e.target.value)}
+                    placeholder="Nome ou descricao"
+                  />
+                </label>
                 <span className="badge-status badge-status--aberto">
                   Total:{" "}
                   {totalInadimplencia.toLocaleString("pt-BR", {
@@ -9121,6 +9172,7 @@ export default function FinanceiroView({
             <table className="table finance-table">
               <thead>
                 <tr>
+                  <th>Morador</th>
                   <th>Descricao</th>
                   <th>Vencimento</th>
                   <th>Dias atraso</th>
@@ -9129,7 +9181,7 @@ export default function FinanceiroView({
                 </tr>
               </thead>
               <tbody>
-                {inadimplentes.map((lanc) => {
+                {inadimplentesFiltrados.map((lanc) => {
                   const venc = lanc.dataVencimento
                     ? new Date(lanc.dataVencimento)
                     : null;
@@ -9141,6 +9193,7 @@ export default function FinanceiroView({
                     : 0;
                   return (
                     <tr key={lanc.id}>
+                      <td>{pessoasPorId[lanc.pessoaId] ?? "-"}</td>
                       <td>{lanc.descricao}</td>
                       <td>
                         {lanc.dataVencimento
@@ -9158,9 +9211,9 @@ export default function FinanceiroView({
                     </tr>
                   );
                 })}
-                {inadimplentes.length === 0 && (
+                {inadimplentesFiltrados.length === 0 && (
                   <tr>
-                    <td colSpan={5} style={{ textAlign: "center" }}>
+                    <td colSpan={6} style={{ textAlign: "center" }}>
                       Nenhum inadimplente encontrado.
                     </td>
                   </tr>
