@@ -1058,6 +1058,22 @@ button:focus-visible {
   overflow-wrap: normal;
 }
 
+.documentos-table {
+  min-width: 980px;
+}
+
+.documentos-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.documentos-tags .badge {
+  font-size: 11px;
+  padding: 3px 8px;
+}
+
 .finance-table th,
 .finance-table td {
   padding: 8px 10px;
