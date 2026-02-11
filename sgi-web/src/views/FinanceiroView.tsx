@@ -3853,6 +3853,29 @@ export default function FinanceiroView({
     0
   );
   const saldoPeriodo = totalReceitas - totalDespesas;
+  const totalReceitasMes = receitasValidas
+    .filter((r) =>
+      dentroMesAtual(r.dataCompetencia ?? r.dataVencimento ?? r.dataPagamento)
+    )
+    .reduce((sum, r) => sum + r.valor, 0);
+  const totalDespesasMes = despesasValidas
+    .filter((d) =>
+      dentroMesAtual(d.dataCompetencia ?? d.dataVencimento ?? d.dataPagamento)
+    )
+    .reduce((sum, d) => sum + d.valor, 0);
+  const saldoMes = totalReceitasMes - totalDespesasMes;
+  const receitasPagasMes = receitas
+    .filter((r) => isSituacaoPaga(r.situacao))
+    .filter((r) =>
+      dentroMesAtual(r.dataPagamento ?? r.dataCompetencia ?? r.dataVencimento)
+    )
+    .reduce((sum, r) => sum + r.valor, 0);
+  const despesasPagasMes = despesas
+    .filter((d) => isSituacaoPaga(d.situacao))
+    .filter((d) =>
+      dentroMesAtual(d.dataPagamento ?? d.dataCompetencia ?? d.dataVencimento)
+    )
+    .reduce((sum, d) => sum + d.valor, 0);
   const resumoMeses = useMemo(() => {
     const mesesBase = Array.from({ length: 6 }, (_, index) => {
       const data = new Date(anoAtual, mesAtual - (5 - index), 1);
@@ -5042,7 +5065,7 @@ export default function FinanceiroView({
                   <span className="dashboard-card-icon">R</span>
                   Receitas do periodo
                 </div>
-                <div className="dashboard-card-value">{formatarValor(totalReceitas)}</div>
+                <div className="dashboard-card-value">{formatarValor(totalReceitasMes)}</div>
                 <div className="dashboard-card-sub">
                   Lancadas no periodo atual
                 </div>
@@ -5052,7 +5075,7 @@ export default function FinanceiroView({
                   <span className="dashboard-card-icon">D</span>
                   Despesas do periodo
                 </div>
-                <div className="dashboard-card-value">{formatarValor(totalDespesas)}</div>
+                <div className="dashboard-card-value">{formatarValor(totalDespesasMes)}</div>
                 <div className="dashboard-card-sub">A pagar no mes {formatarValor(totalAPagarMes)}</div>
               </div>
               <div className="dashboard-card">
@@ -5060,7 +5083,7 @@ export default function FinanceiroView({
                   <span className="dashboard-card-icon">S</span>
                   Saldo do periodo
                 </div>
-                <div className="dashboard-card-value">{formatarValor(saldoPeriodo)}</div>
+                <div className="dashboard-card-value">{formatarValor(saldoMes)}</div>
                 <div className="dashboard-card-sub">
                   Pago no mes {formatarValor(totalPagoMes)}
                 </div>
@@ -5158,7 +5181,7 @@ export default function FinanceiroView({
                 <ul className="dashboard-insights">
                   <li>
                     <span className="insight-label">Saldo do periodo</span>
-                    <strong>{formatarValor(saldoPeriodo)}</strong>
+                    <strong>{formatarValor(saldoMes)}</strong>
                   </li>
                   <li>
                     <span className="insight-label">Pago no mes</span>
@@ -5166,11 +5189,11 @@ export default function FinanceiroView({
                   </li>
                   <li>
                     <span className="insight-label">Receitas pagas</span>
-                    <strong>{formatarValor(receitasPagas)}</strong>
+                    <strong>{formatarValor(receitasPagasMes)}</strong>
                   </li>
                   <li>
                     <span className="insight-label">Despesas pagas</span>
-                    <strong>{formatarValor(despesasPagas)}</strong>
+                    <strong>{formatarValor(despesasPagasMes)}</strong>
                   </li>
                   <li>
                     <span className="insight-label">Inadimplencia</span>
