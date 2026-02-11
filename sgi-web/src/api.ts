@@ -539,6 +539,18 @@ export interface IndiceEconomico {
   atualizadoEm: string;
 }
 
+export interface RemessaCobrancaItem {
+  id: string;
+  identificador?: string | null;
+  tipo: string;
+  valor: number;
+  vencimento: string;
+  status: string;
+  linhaDigitavel?: string | null;
+  qrCode?: string | null;
+  urlPagamento?: string | null;
+}
+
 export interface AcordoCobranca {
   id: string;
   organizacaoId: string;
@@ -2688,6 +2700,20 @@ export const api = {
     payload: { organizacaoId: string; tipo?: string }
   ): Promise<Blob> {
     return requestBlobPost("/financeiro/faturas/remessa", payload, token);
+  },
+
+  async listarRemessaCobranca(
+    token: string,
+    payload: { organizacaoId: string; tipo?: string }
+  ): Promise<RemessaCobrancaItem[]> {
+    return request<RemessaCobrancaItem[]>(
+      "/financeiro/faturas/remessa/dados",
+      {
+        method: "POST",
+        body: JSON.stringify(payload)
+      },
+      token
+    );
   },
 
   async importarRetornoCobranca(

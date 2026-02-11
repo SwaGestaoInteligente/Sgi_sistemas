@@ -32,6 +32,7 @@ import {
   AcordoCobranca,
   IndiceEconomico,
   PoliticaCobranca,
+  RemessaCobrancaItem,
   UnidadeOrganizacional
 } from "../api";
 import { can } from "../authz";
@@ -2133,6 +2134,83 @@ export default function FinanceiroView({
       baixarArquivo(blob, `remessa-${remessaTipo || "todas"}.csv`);
     } catch (e: any) {
       setErro(e.message || "Erro ao gerar remessa.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const gerarRemessaPdf = async () => {
+    if (!token) return;
+    try {
+      setErro(null);
+      setLoading(true);
+      const itens = await api.listarRemessaCobranca(token, {
+        organizacaoId,
+        tipo: remessaTipo || undefined
+      });
+
+      const doc = new jsPDF({ orientation: "landscape" });
+      const titulo = `Remessa ${remessaTipo || "todas"}`.toUpperCase();
+      doc.setFontSize(14);
+      doc.text(titulo, 14, 16);
+
+      const dataHoje = new Date().toLocaleString("pt-BR");
+      doc.setFontSize(9);
+      doc.text(`Gerado em: ${dataHoje}`, 14, 22);
+
+      const head = [
+        [
+          "Id",
+          "Identificador",
+          "Tipo",
+          "Valor",
+          "Vencimento",
+          "Status",
+          "Linha digitavel",
+          "PIX/URL"
+        ]
+      ];
+
+      const body = itens.map((item: RemessaCobrancaItem) => [
+        item.id,
+        item.identificador ?? "-",
+        item.tipo,
+        formatarValor(item.valor),
+        formatarData(item.vencimento),
+        item.status,
+        item.linhaDigitavel ?? "-",
+        item.qrCode ?? item.urlPagamento ?? "-"
+      ]);
+
+      if (body.length === 0) {
+        body.push(["-", "-", "-", "-", "-", "Sem itens", "-", "-"]);
+      }
+
+      autoTable(doc, {
+        startY: 28,
+        head,
+        body,
+        styles: { fontSize: 7, cellPadding: 2 },
+        headStyles: { fillColor: [230, 238, 255], textColor: 20 },
+        columnStyles: {
+          0: { cellWidth: 32 },
+          1: { cellWidth: 28 },
+          2: { cellWidth: 16 },
+          3: { cellWidth: 18 },
+          4: { cellWidth: 20 },
+          5: { cellWidth: 20 },
+          6: { cellWidth: 45 },
+          7: { cellWidth: 80 }
+        }
+      });
+
+      const stamp = new Date()
+        .toISOString()
+        .replace(/[-:]/g, "")
+        .slice(0, 14);
+      doc.save(`remessa-${remessaTipo || "todas"}-${stamp}.pdf`);
+    } catch (e: any) {
+      setErro(e.message || "Erro ao gerar PDF.");
     } finally {
       setLoading(false);
     }
@@ -9073,13 +9151,21 @@ export default function FinanceiroView({
                       <option value="link">Link</option>
                     </select>
                   </label>
-                  <div style={{ display: "flex", alignItems: "flex-end" }}>
+                  <div style={{ display: "flex", alignItems: "flex-end", gap: 8 }}>
                     <button
                       type="button"
+                      onClick={gerarRemessaPdf}
+                      disabled={loading}
+                    >
+                      {loading ? "Gerando..." : "Gerar remessa (PDF)"}
+                    </button>
+                    <button
+                      type="button"
+                      className="action-secondary"
                       onClick={gerarRemessaCobranca}
                       disabled={loading}
                     >
-                      {loading ? "Gerando..." : "Gerar remessa"}
+                      {loading ? "Gerando..." : "Baixar CSV"}
                     </button>
                   </div>
                 </div>

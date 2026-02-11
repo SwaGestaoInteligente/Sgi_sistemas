@@ -1947,6 +1947,16 @@ public class FinanceiroController : ControllerBase
     }
 
     public record RetornoCobrancaResumo(int TotalLinhas, int Atualizadas, int Ignoradas);
+    public record RemessaCobrancaItemDto(
+        Guid Id,
+        string? Identificador,
+        string Tipo,
+        decimal Valor,
+        DateTime Vencimento,
+        string Status,
+        string? LinhaDigitavel,
+        string? QrCode,
+        string? UrlPagamento);
 
     [HttpPost("faturas/remessa")]
     public async Task<IActionResult> GerarRemessaCobranca(GerarRemessaCobrancaRequest request)
@@ -1996,6 +2006,58 @@ public class FinanceiroController : ControllerBase
         var bytes = Encoding.UTF8.GetBytes(sb.ToString());
         var nome = $"remessa-{DateTime.UtcNow:yyyyMMddHHmmss}.csv";
         return File(bytes, "text/csv", nome);
+    }
+
+    [HttpPost("faturas/remessa/dados")]
+    public async Task<ActionResult<IEnumerable<RemessaCobrancaItemDto>>> ListarRemessaCobranca(
+        GerarRemessaCobrancaRequest request)
+    {
+        if (request.OrganizacaoId == Guid.Empty)
+        {
+            return BadRequest("Organizacao e obrigatoria.");
+        }
+
+        var auth = await EnsureRoleAsync(request.OrganizacaoId, UserRole.CONDO_ADMIN);
+        if (auth.Error is not null)
+        {
+            return auth.Error;
+        }
+
+        var query = _db.DocumentosCobranca.AsNoTracking()
+            .Where(f => f.OrganizacaoId == request.OrganizacaoId);
+
+        if (!string.IsNullOrWhiteSpace(request.Tipo))
+        {
+            var tipo = request.Tipo.Trim().ToLowerInvariant();
+            query = query.Where(f => f.Tipo == tipo);
+        }
+
+        var faturas = await query
+            .Where(f => f.Status == "emitida" || f.Status == "vencida")
+            .OrderBy(f => f.DataVencimento)
+            .ToListAsync();
+
+        var lancamentosIds = faturas.Select(f => f.LancamentoFinanceiroId).Distinct().ToList();
+        var lancamentos = await _db.LancamentosFinanceiros.AsNoTracking()
+            .Where(l => lancamentosIds.Contains(l.Id))
+            .ToDictionaryAsync(l => l.Id, l => l);
+
+        var itens = faturas.Select(f =>
+        {
+            lancamentos.TryGetValue(f.LancamentoFinanceiroId, out var lancamento);
+            return new RemessaCobrancaItemDto(
+                f.Id,
+                f.IdentificadorExterno,
+                f.Tipo,
+                lancamento?.Valor ?? 0m,
+                f.DataVencimento,
+                f.Status,
+                f.LinhaDigitavel,
+                f.QrCode,
+                f.UrlPagamento);
+        }).ToList();
+
+        return Ok(itens);
     }
 
     [HttpPost("faturas/retorno")]
