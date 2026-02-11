@@ -1059,7 +1059,7 @@ button:focus-visible {
 }
 
 .documentos-table {
-  min-width: 980px;
+  min-width: 1200px;
 }
 
 .documentos-tags {
@@ -1072,6 +1072,21 @@ button:focus-visible {
 .documentos-tags .badge {
   font-size: 11px;
   padding: 3px 8px;
+}
+
+.documentos-table th,
+.documentos-table td {
+  white-space: nowrap;
+  word-break: keep-all;
+  overflow-wrap: normal;
+}
+
+.documentos-table th:first-child,
+.documentos-table td:first-child {
+  min-width: 280px;
+  white-space: normal;
+  word-break: normal;
+  overflow-wrap: break-word;
 }
 
 .finance-table th,
