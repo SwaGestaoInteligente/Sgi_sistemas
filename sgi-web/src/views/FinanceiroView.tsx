@@ -2027,6 +2027,20 @@ export default function FinanceiroView({
     }
   };
 
+  const normalizarDataAcordo = (raw: string) => {
+    const texto = raw.trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(texto)) {
+      return texto;
+    }
+    const match = texto.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (!match) return null;
+    const [, dia, mes, ano] = match;
+    const iso = `${ano}-${mes}-${dia}`;
+    const data = new Date(`${iso}T00:00:00`);
+    if (Number.isNaN(data.getTime())) return null;
+    return data.toISOString().slice(0, 10) === iso ? iso : null;
+  };
+
   const criarAcordoRapido = async (cobranca: CobrancaOrganizacaoResumo) => {
     if (!token) return;
     const parcelasRaw = window.prompt("Numero de parcelas do acordo:", "3");
@@ -2043,8 +2057,13 @@ export default function FinanceiroView({
       setAcordosErro("Desconto invalido.");
       return;
     }
-    const dataRaw = window.prompt("Data da primeira parcela (AAAA-MM-DD):");
+    const dataRaw = window.prompt("Data da primeira parcela (DD/MM/AAAA):");
     if (!dataRaw) return;
+    const dataNormalizada = normalizarDataAcordo(dataRaw);
+    if (!dataNormalizada) {
+      setAcordosErro("Data invalida. Use DD/MM/AAAA.");
+      return;
+    }
 
     try {
       setAcordosErro(null);
@@ -2054,7 +2073,7 @@ export default function FinanceiroView({
         unidadeId: cobranca.unidadeOrganizacionalId,
         cobrancaIds: [cobranca.id],
         numeroParcelas: parcelas,
-        dataPrimeiraParcela: dataRaw,
+        dataPrimeiraParcela: dataNormalizada,
         desconto
       });
       await Promise.all([carregarCobrancasUnidadeOrg(), carregarAcordosCobranca()]);
