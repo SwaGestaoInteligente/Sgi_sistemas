@@ -15,4 +15,7 @@ public class UnidadeCobranca
     public DateTime? PagoEm { get; set; }
     public string? FormaPagamento { get; set; }
     public Guid? ContaBancariaId { get; set; }
+    public Guid? AcordoId { get; set; }
+    public int? ParcelaNumero { get; set; }
+    public int? ParcelaTotal { get; set; }
 }

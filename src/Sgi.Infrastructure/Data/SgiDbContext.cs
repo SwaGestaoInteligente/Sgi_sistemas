@@ -46,6 +46,11 @@ public class SgiDbContext : DbContext
     public DbSet<FinanceAudit> FinanceAudits => Set<FinanceAudit>();
     public DbSet<UnidadeCobranca> UnidadesCobrancas => Set<UnidadeCobranca>();
     public DbSet<UnidadePagamento> UnidadesPagamentos => Set<UnidadePagamento>();
+    public DbSet<UnidadeCreditoMovimento> UnidadesCreditos => Set<UnidadeCreditoMovimento>();
+    public DbSet<PoliticaCobranca> PoliticasCobranca => Set<PoliticaCobranca>();
+    public DbSet<AcordoCobranca> AcordosCobranca => Set<AcordoCobranca>();
+    public DbSet<AcordoParcela> AcordosParcelas => Set<AcordoParcela>();
+    public DbSet<LancamentoPagamento> LancamentosPagamentos => Set<LancamentoPagamento>();
     public DbSet<MovimentoBancario> MovimentosBancarios => Set<MovimentoBancario>();
 
     public DbSet<ContaContabil> ContasContabeis => Set<ContaContabil>();
@@ -102,6 +107,11 @@ public class SgiDbContext : DbContext
         modelBuilder.Entity<FinanceAudit>().ToTable("FinanceAudits");
         modelBuilder.Entity<UnidadeCobranca>().ToTable("UnidadesCobrancas");
         modelBuilder.Entity<UnidadePagamento>().ToTable("UnidadesPagamentos");
+        modelBuilder.Entity<UnidadeCreditoMovimento>().ToTable("UnidadesCreditos");
+        modelBuilder.Entity<PoliticaCobranca>().ToTable("PoliticasCobranca");
+        modelBuilder.Entity<AcordoCobranca>().ToTable("AcordosCobranca");
+        modelBuilder.Entity<AcordoParcela>().ToTable("AcordosParcelas");
+        modelBuilder.Entity<LancamentoPagamento>().ToTable("LancamentosPagamentos");
         modelBuilder.Entity<MovimentoBancario>().ToTable("MovimentosBancarios");
 
         modelBuilder.Entity<ContaContabil>().ToTable("ContasContabeis");
@@ -148,6 +158,11 @@ public class SgiDbContext : DbContext
         AddSource<FinanceAudit>(modelBuilder);
         AddSource<UnidadeCobranca>(modelBuilder);
         AddSource<UnidadePagamento>(modelBuilder);
+        AddSource<UnidadeCreditoMovimento>(modelBuilder);
+        AddSource<PoliticaCobranca>(modelBuilder);
+        AddSource<AcordoCobranca>(modelBuilder);
+        AddSource<AcordoParcela>(modelBuilder);
+        AddSource<LancamentoPagamento>(modelBuilder);
         AddSource<MovimentoBancario>(modelBuilder);
 
         AddSource<ContaContabil>(modelBuilder);

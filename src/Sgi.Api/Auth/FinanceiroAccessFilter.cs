@@ -28,6 +28,7 @@ public class FinanceiroAccessFilter : IAsyncActionFilter
         var residentActions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             nameof(Controllers.FinanceiroController.ListarCobrancasUnidade),
+            nameof(Controllers.FinanceiroController.ListarCreditosUnidade),
             nameof(Controllers.FinanceiroController.ListarPagamentosCobranca),
             nameof(Controllers.FinanceiroController.PagarCobrancaUnidade)
         };
@@ -35,7 +36,8 @@ public class FinanceiroAccessFilter : IAsyncActionFilter
         AuthzContext auth;
         if (residentActions.Contains(action))
         {
-            if (action == nameof(Controllers.FinanceiroController.ListarCobrancasUnidade))
+            if (action == nameof(Controllers.FinanceiroController.ListarCobrancasUnidade) ||
+                action == nameof(Controllers.FinanceiroController.ListarCreditosUnidade))
             {
                 if (context.ActionArguments.TryGetValue("unidadeId", out var unidadeValue) &&
                     unidadeValue is Guid unidadeId &&
@@ -162,7 +164,8 @@ public class FinanceiroAccessFilter : IAsyncActionFilter
             unidadeId != Guid.Empty)
         {
             if (action is nameof(Controllers.FinanceiroController.ListarCobrancasUnidade) ||
-                action is nameof(Controllers.FinanceiroController.CriarCobrancaUnidade))
+                action is nameof(Controllers.FinanceiroController.CriarCobrancaUnidade) ||
+                action is nameof(Controllers.FinanceiroController.ListarCreditosUnidade))
             {
                 return await _db.UnidadesOrganizacionais.AsNoTracking()
                     .Where(u => u.Id == unidadeId)

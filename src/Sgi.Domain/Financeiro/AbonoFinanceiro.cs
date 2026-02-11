@@ -10,7 +10,7 @@ public class AbonoFinanceiro
     public decimal? Percentual { get; set; }
     public string Motivo { get; set; } = string.Empty;
     public string? Observacao { get; set; }
-    public string Status { get; set; } = "pendente"; // pendente | aprovado | cancelado
+    public string Status { get; set; } = "pendente"; // pendente | em_analise | aprovado | cancelado
     public DateTime DataSolicitacao { get; set; }
     public DateTime? DataAprovacao { get; set; }
 }

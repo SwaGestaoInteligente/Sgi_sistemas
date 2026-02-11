@@ -14,12 +14,31 @@ function handleUnauthorizedResponse() {
   window.dispatchEvent(new Event(AUTH_UNAUTHORIZED_EVENT));
 }
 
+function sanitizeHttpError(status: number, text: string): string {
+  if (!text) {
+    return `Erro HTTP ${status}`;
+  }
+  const lower = text.toLowerCase();
+  const pareceStack =
+    lower.includes("microsoft.") ||
+    lower.includes("system.") ||
+    lower.includes("stack trace") ||
+    lower.includes("sqlite") ||
+    lower.includes(" at ");
+  if (pareceStack) {
+    // Mantem o detalhe tecnico no console, mas mostra mensagem amigavel.
+    console.error(text);
+    return "Erro ao processar a solicitacao. Tente novamente ou contate o suporte.";
+  }
+  return text;
+}
+
 function throwHttpError(status: number, text: string): never {
   if (status === 401) {
     handleUnauthorizedResponse();
     throw new Error("Sessao expirada. Faca login novamente.");
   }
-  throw new Error(text || `Erro HTTP ${status}`);
+  throw new Error(sanitizeHttpError(status, text));
 }
 
 export interface LoginResponse {
@@ -362,6 +381,19 @@ export interface LancamentoFinanceiro {
   referencia?: string;
 }
 
+export interface LancamentoPagamento {
+  id: string;
+  organizacaoId: string;
+  lancamentoFinanceiroId: string;
+  valorPago: number;
+  dataPagamento: string;
+  contaFinanceiraId?: string | null;
+  formaPagamento?: string | null;
+  referencia?: string | null;
+  estornadoEm?: string | null;
+  estornoMotivo?: string | null;
+}
+
 export interface RegraRateio {
   id: string;
   organizacaoId: string;
@@ -455,6 +487,75 @@ export interface UnidadeCobranca {
   pagoEm?: string | null;
   formaPagamento?: string | null;
   contaBancariaId?: string | null;
+  acordoId?: string | null;
+  parcelaNumero?: number | null;
+  parcelaTotal?: number | null;
+  valorAtualizado?: number | null;
+  multa?: number | null;
+  juros?: number | null;
+  correcao?: number | null;
+  diasAtraso?: number | null;
+  creditoDisponivel?: number | null;
+}
+
+export interface UnidadeCreditoMovimento {
+  id: string;
+  organizacaoId: string;
+  unidadeOrganizacionalId: string;
+  cobrancaId?: string | null;
+  pagamentoId?: string | null;
+  tipo: string;
+  valor: number;
+  dataMovimento: string;
+  observacao?: string | null;
+  estornadoEm?: string | null;
+  estornoMotivo?: string | null;
+}
+
+export interface CreditoUnidadeResponse {
+  saldo: number;
+  movimentos: UnidadeCreditoMovimento[];
+}
+
+export interface PoliticaCobranca {
+  id: string;
+  organizacaoId: string;
+  multaPercentual: number;
+  jurosMensalPercentual: number;
+  correcaoMensalPercentual: number;
+  diasCarencia: number;
+  ativo: boolean;
+  atualizadoEm: string;
+}
+
+export interface AcordoCobranca {
+  id: string;
+  organizacaoId: string;
+  unidadeOrganizacionalId: string;
+  totalOriginal: number;
+  desconto: number;
+  totalAcordo: number;
+  numeroParcelas: number;
+  dataPrimeiraParcela: string;
+  status: string;
+  observacao?: string | null;
+  criadoEm: string;
+}
+
+export interface AcordoParcela {
+  id: string;
+  acordoId: string;
+  cobrancaId?: string | null;
+  numero: number;
+  valor: number;
+  vencimento: string;
+  status: string;
+  pagoEm?: string | null;
+}
+
+export interface CobrancaOrganizacaoResumo extends UnidadeCobranca {
+  unidadeCodigo: string;
+  unidadeNome: string;
 }
 
 export interface UnidadePagamento {
@@ -569,6 +670,34 @@ async function requestBlob(path: string, token?: string): Promise<Blob> {
       `Nao foi possivel conectar com a API (${API_BASE_URL}). Verifique se o backend esta ativo e se o CORS permite ${origemAtual}.${detalhe}`
     );
   }
+
+  if (!res.ok) {
+    const text = await res.text();
+    throwHttpError(res.status, text);
+  }
+
+  return await res.blob();
+}
+
+async function requestBlobPost(
+  path: string,
+  body: any,
+  token?: string
+): Promise<Blob> {
+  const headers: HeadersInit = {
+    "Content-Type": "application/json",
+    "ngrok-skip-browser-warning": "true"
+  };
+
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  const res = await fetch(`${API_BASE_URL}${path}`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body)
+  });
 
   if (!res.ok) {
     const text = await res.text();
@@ -1947,6 +2076,7 @@ export const api = {
     id: string,
     payload: {
       organizacaoId: string;
+      valorPago?: number;
       dataPagamento?: string;
       contaFinanceiraId?: string;
       formaPagamento?: string;
@@ -1955,6 +2085,38 @@ export const api = {
   ): Promise<void> {
     await request<void>(
       `/financeiro/lancamentos/${encodeURIComponent(id)}/baixa-manual`,
+      {
+        method: "POST",
+        body: JSON.stringify(payload)
+      },
+      token
+    );
+  },
+
+  async listarPagamentosLancamento(
+    token: string,
+    lancamentoId: string,
+    organizacaoId: string
+  ): Promise<LancamentoPagamento[]> {
+    const search = new URLSearchParams({ organizacaoId });
+    return request<LancamentoPagamento[]>(
+      `/financeiro/lancamentos/${encodeURIComponent(lancamentoId)}/pagamentos?${search.toString()}`,
+      {},
+      token
+    );
+  },
+
+  async estornarPagamentoLancamento(
+    token: string,
+    pagamentoId: string,
+    payload: {
+      organizacaoId: string;
+      motivo?: string;
+      dataEstorno?: string;
+    }
+  ): Promise<void> {
+    await request<void>(
+      `/financeiro/lancamentos/pagamentos/${encodeURIComponent(pagamentoId)}/estornar`,
       {
         method: "POST",
         body: JSON.stringify(payload)
@@ -2380,6 +2542,160 @@ export const api = {
       {},
       token
     );
+  },
+
+  async listarCreditosUnidade(
+    token: string,
+    unidadeId: string
+  ): Promise<CreditoUnidadeResponse> {
+    return request<CreditoUnidadeResponse>(
+      `/financeiro/unidades/${encodeURIComponent(unidadeId)}/creditos`,
+      {},
+      token
+    );
+  },
+
+  async listarCobrancasOrganizacao(
+    token: string,
+    organizacaoId: string,
+    options?: { status?: string; competencia?: string }
+  ): Promise<CobrancaOrganizacaoResumo[]> {
+    const search = new URLSearchParams({ organizacaoId });
+    if (options?.status) {
+      search.set("status", options.status);
+    }
+    if (options?.competencia) {
+      search.set("competencia", options.competencia);
+    }
+    return request<CobrancaOrganizacaoResumo[]>(
+      `/financeiro/cobrancas?${search.toString()}`,
+      {},
+      token
+    );
+  },
+
+  async listarAcordosCobranca(
+    token: string,
+    organizacaoId: string,
+    unidadeId?: string
+  ): Promise<AcordoCobranca[]> {
+    const search = new URLSearchParams({ organizacaoId });
+    if (unidadeId) {
+      search.set("unidadeId", unidadeId);
+    }
+    return request<AcordoCobranca[]>(
+      `/financeiro/cobrancas/acordos?${search.toString()}`,
+      {},
+      token
+    );
+  },
+
+  async listarParcelasAcordo(
+    token: string,
+    acordoId: string
+  ): Promise<AcordoParcela[]> {
+    return request<AcordoParcela[]>(
+      `/financeiro/cobrancas/acordos/${encodeURIComponent(acordoId)}/parcelas`,
+      {},
+      token
+    );
+  },
+
+  async criarAcordoCobranca(
+    token: string,
+    payload: {
+      organizacaoId: string;
+      unidadeId: string;
+      cobrancaIds: string[];
+      numeroParcelas: number;
+      dataPrimeiraParcela: string;
+      desconto?: number;
+      observacao?: string;
+    }
+  ): Promise<AcordoCobranca> {
+    return request<AcordoCobranca>(
+      "/financeiro/cobrancas/acordos",
+      {
+        method: "POST",
+        body: JSON.stringify(payload)
+      },
+      token
+    );
+  },
+
+  async obterPoliticaCobranca(
+    token: string,
+    organizacaoId: string
+  ): Promise<PoliticaCobranca> {
+    const search = new URLSearchParams({ organizacaoId });
+    return request<PoliticaCobranca>(
+      `/financeiro/cobrancas/politica?${search.toString()}`,
+      {},
+      token
+    );
+  },
+
+  async atualizarPoliticaCobranca(
+    token: string,
+    payload: {
+      organizacaoId: string;
+      multaPercentual: number;
+      jurosMensalPercentual: number;
+      correcaoMensalPercentual: number;
+      diasCarencia: number;
+      ativo: boolean;
+    }
+  ): Promise<PoliticaCobranca> {
+    return request<PoliticaCobranca>(
+      "/financeiro/cobrancas/politica",
+      {
+        method: "PUT",
+        body: JSON.stringify(payload)
+      },
+      token
+    );
+  },
+
+  async gerarRemessaCobranca(
+    token: string,
+    payload: { organizacaoId: string; tipo?: string }
+  ): Promise<Blob> {
+    return requestBlobPost("/financeiro/faturas/remessa", payload, token);
+  },
+
+  async importarRetornoCobranca(
+    token: string,
+    organizacaoId: string,
+    arquivo: File
+  ): Promise<{ totalLinhas: number; atualizadas: number; ignoradas: number }> {
+    const formData = new FormData();
+    formData.append("organizacaoId", organizacaoId);
+    formData.append("arquivo", arquivo);
+
+    const headers: HeadersInit = {
+      "ngrok-skip-browser-warning": "true"
+    };
+
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+
+    const res = await fetch(`${API_BASE_URL}/financeiro/faturas/retorno`, {
+      method: "POST",
+      headers,
+      body: formData
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      throwHttpError(res.status, text);
+    }
+
+    return (await res.json()) as {
+      totalLinhas: number;
+      atualizadas: number;
+      ignoradas: number;
+    };
   },
 
   async listarNotificacoesConfig(

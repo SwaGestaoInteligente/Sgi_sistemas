@@ -7,6 +7,7 @@ import {
   Chamado,
   ChamadoHistorico,
   ContaFinanceira,
+  CreditoUnidadeResponse,
   LancamentoFinanceiro,
   Membership,
   NotificacaoEvento,
@@ -552,6 +553,9 @@ const MinhaUnidadeView: React.FC<{
   const [veiculos, setVeiculos] = useState<Veiculo[]>([]);
   const [pets, setPets] = useState<Pet[]>([]);
   const [cobrancas, setCobrancas] = useState<UnidadeCobranca[]>([]);
+  const [creditoUnidade, setCreditoUnidade] = useState<CreditoUnidadeResponse | null>(
+    null
+  );
   const [anexosCobrancas, setAnexosCobrancas] = useState<
     Record<string, Anexo[]>
   >({});
@@ -570,7 +574,8 @@ const MinhaUnidadeView: React.FC<{
           listaVeiculos,
           listaPets,
           listaCobrancas,
-          listaAnexos
+          listaAnexos,
+          creditos
         ] = await Promise.all([
           api.listarUnidades(token, organizacao.id),
           api.listarPessoas(token, organizacao.id),
@@ -581,7 +586,8 @@ const MinhaUnidadeView: React.FC<{
             unidadeId,
             competenciaFiltro || undefined
           ),
-          api.listarAnexos(token, organizacao.id, "cobranca_unidade")
+          api.listarAnexos(token, organizacao.id, "cobranca_unidade"),
+          api.listarCreditosUnidade(token, unidadeId)
         ]);
 
         setUnidade(listaUnidades.find((u) => u.id === unidadeId) ?? null);
@@ -593,6 +599,7 @@ const MinhaUnidadeView: React.FC<{
         setVeiculos(listaVeiculos);
         setPets(listaPets);
         setCobrancas(listaCobrancas);
+        setCreditoUnidade(creditos);
 
         const anexosPorCobranca: Record<string, Anexo[]> = {};
         listaAnexos.forEach((anexo) => {
@@ -658,6 +665,17 @@ const MinhaUnidadeView: React.FC<{
             </div>
             <p>{unidade.status}</p>
           </div>
+          <div className="finance-card">
+            <div className="finance-card-header-row">
+              <strong>Credito disponivel</strong>
+            </div>
+            <p>
+              {(creditoUnidade?.saldo ?? 0).toLocaleString("pt-BR", {
+                style: "currency",
+                currency: "BRL"
+              })}
+            </p>
+          </div>
         </div>
       </section>
 
@@ -680,7 +698,7 @@ const MinhaUnidadeView: React.FC<{
         <div className="finance-table-header">
           <h3>Veiculos</h3>
         </div>
-        <table className="table finance-table">
+        <table className="table finance-table table--fixed table--chamados">
           <thead>
             <tr>
               <th>Placa</th>
@@ -776,12 +794,14 @@ const MinhaUnidadeView: React.FC<{
               <th>Vencimento</th>
               <th>Status</th>
               <th className="finance-value-header">Valor</th>
+              <th className="finance-value-header">Atualizado</th>
               <th>Comprovante</th>
             </tr>
           </thead>
           <tbody>
             {ultimasCobrancas.map((c) => {
               const anexos = anexosCobrancas[c.id] ?? [];
+              const valorAtualizado = c.valorAtualizado ?? c.valor;
               return (
                 <tr key={c.id}>
                   <td>{c.descricao}</td>
@@ -789,6 +809,12 @@ const MinhaUnidadeView: React.FC<{
                   <td>{c.status}</td>
                   <td className="finance-value-cell">
                     {c.valor.toLocaleString("pt-BR", {
+                      style: "currency",
+                      currency: "BRL"
+                    })}
+                  </td>
+                  <td className="finance-value-cell">
+                    {valorAtualizado.toLocaleString("pt-BR", {
                       style: "currency",
                       currency: "BRL"
                     })}
@@ -815,7 +841,7 @@ const MinhaUnidadeView: React.FC<{
             })}
             {ultimasCobrancas.length === 0 && (
               <tr>
-                <td colSpan={5} style={{ textAlign: "center" }}>
+                <td colSpan={6} style={{ textAlign: "center" }}>
                   Nenhuma cobranca encontrada.
                 </td>
               </tr>

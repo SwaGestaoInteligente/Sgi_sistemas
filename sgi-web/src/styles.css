@@ -784,7 +784,11 @@ button:focus-visible {
 }
 
 .finance-table-card .table {
-  min-width: 760px;
+  min-width: 100%;
+}
+
+.finance-table-card .table--fixed {
+  min-width: 100%;
 }
 
 .table {
@@ -792,6 +796,33 @@ button:focus-visible {
   border-collapse: collapse;
   margin-top: 12px;
   font-size: 14px;
+  table-layout: fixed;
+}
+
+.table--fixed {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.table--fixed th,
+.table--fixed td {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.table--chamados th:nth-child(1),
+.table--chamados td:nth-child(1) {
+  width: 60%;
+}
+
+.table--chamados th:nth-child(2),
+.table--chamados td:nth-child(2) {
+  width: 20%;
+}
+
+.table--chamados th:nth-child(3),
+.table--chamados td:nth-child(3) {
+  width: 20%;
 }
 
 .table thead {
@@ -804,6 +835,8 @@ button:focus-visible {
   border-bottom: 1px solid var(--divider-strong);
   border-right: 1px solid var(--divider);
   text-align: left;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .table th:last-child,
@@ -850,7 +883,7 @@ button:focus-visible {
 }
 
 .finance-actions-cell {
-  white-space: nowrap;
+  white-space: normal;
 }
 
 .table-actions {
@@ -1775,6 +1808,7 @@ button:focus-visible {
   width: 100%;
   border-collapse: collapse;
   font-size: 12px;
+  table-layout: fixed;
 }
 
 .accounting-table th,
@@ -1782,6 +1816,8 @@ button:focus-visible {
   padding: 8px 10px;
   border-bottom: 1px solid var(--divider-strong);
   text-align: left;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .accounting-table th {
@@ -2891,6 +2927,8 @@ button:focus-visible {
 .config-table th,
 .config-table td {
   vertical-align: middle;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .config-table tr.table-row--inactive {
@@ -3185,6 +3223,7 @@ button:focus-visible {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  flex-wrap: wrap;
 }
 
 /* ============================================================

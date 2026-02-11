@@ -13,10 +13,12 @@ import {
   ConciliacaoImportResponse,
   ContaFinanceira,
   ContaContabil,
+  CobrancaOrganizacaoResumo,
   DreResumo,
   DocumentoCobranca,
   LancamentoContabil,
   LancamentoFinanceiro,
+  LancamentoPagamento,
   LancamentoRateado,
   LeituraConsumo,
   MedidorConsumo,
@@ -27,6 +29,8 @@ import {
   PrevisaoOrcamentaria,
   RegraRateio,
   RecursoReservavel,
+  AcordoCobranca,
+  PoliticaCobranca,
   UnidadeOrganizacional
 } from "../api";
 import { can } from "../authz";
@@ -294,6 +298,12 @@ export default function FinanceiroView({
   const [abonoObservacao, setAbonoObservacao] = useState("");
   const [abonoLoading, setAbonoLoading] = useState(false);
   const [abonoErro, setAbonoErro] = useState<string | null>(null);
+  const [abonoSelecionadoId, setAbonoSelecionadoId] = useState<string | null>(
+    null
+  );
+  const [autoOpenAbonoAnexoId, setAutoOpenAbonoAnexoId] = useState<
+    string | null
+  >(null);
 
   // Baixas manuais
   const [baixaLancamentoId, setBaixaLancamentoId] = useState("");
@@ -309,8 +319,45 @@ export default function FinanceiroView({
   const [baixaContaId, setBaixaContaId] = useState("");
   const [baixaFormaPagamento, setBaixaFormaPagamento] = useState("dinheiro");
   const [baixaReferencia, setBaixaReferencia] = useState("");
+  const [baixaValorPago, setBaixaValorPago] = useState("");
+  const [baixaPagamentos, setBaixaPagamentos] = useState<LancamentoPagamento[]>(
+    []
+  );
+  const [baixaPagamentosLoading, setBaixaPagamentosLoading] = useState(false);
+  const [baixaPagamentosErro, setBaixaPagamentosErro] = useState<string | null>(
+    null
+  );
+  const [baixaEstornoId, setBaixaEstornoId] = useState<string | null>(null);
   const [baixaLoading, setBaixaLoading] = useState(false);
   const [baixaErro, setBaixaErro] = useState<string | null>(null);
+
+  // Politica de cobranca e acordos
+  const [politicaCobranca, setPoliticaCobranca] = useState<PoliticaCobranca | null>(
+    null
+  );
+  const [politicaMulta, setPoliticaMulta] = useState("");
+  const [politicaJuros, setPoliticaJuros] = useState("");
+  const [politicaCorrecao, setPoliticaCorrecao] = useState("");
+  const [politicaCarencia, setPoliticaCarencia] = useState("");
+  const [politicaAtiva, setPoliticaAtiva] = useState(true);
+  const [politicaLoading, setPoliticaLoading] = useState(false);
+  const [politicaErro, setPoliticaErro] = useState<string | null>(null);
+
+  const [cobrancasUnidadeOrg, setCobrancasUnidadeOrg] = useState<
+    CobrancaOrganizacaoResumo[]
+  >([]);
+  const [cobrancasUnidadeLoading, setCobrancasUnidadeLoading] = useState(false);
+  const [cobrancasUnidadeErro, setCobrancasUnidadeErro] = useState<string | null>(
+    null
+  );
+
+  const [acordosCobranca, setAcordosCobranca] = useState<AcordoCobranca[]>([]);
+  const [acordosLoading, setAcordosLoading] = useState(false);
+  const [acordosErro, setAcordosErro] = useState<string | null>(null);
+
+  const [remessaTipo, setRemessaTipo] = useState("boleto");
+  const [retornoArquivo, setRetornoArquivo] = useState<File | null>(null);
+  const [retornoStatus, setRetornoStatus] = useState<string | null>(null);
 
   // Consumos
   const [medidoresConsumo, setMedidoresConsumo] = useState<MedidorConsumo[]>([]);
@@ -1765,6 +1812,28 @@ export default function FinanceiroView({
     }
   };
 
+  const carregarPagamentosBaixa = async (lancamentoId: string) => {
+    if (!token) return;
+    if (!lancamentoId) {
+      setBaixaPagamentos([]);
+      return;
+    }
+    try {
+      setBaixaPagamentosErro(null);
+      setBaixaPagamentosLoading(true);
+      const data = await api.listarPagamentosLancamento(
+        token,
+        lancamentoId,
+        organizacaoId
+      );
+      setBaixaPagamentos(data);
+    } catch (e: any) {
+      setBaixaPagamentosErro(e.message || "Erro ao carregar pagamentos.");
+    } finally {
+      setBaixaPagamentosLoading(false);
+    }
+  };
+
   const baixarLancamentoManual = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!token) return;
@@ -1772,22 +1841,249 @@ export default function FinanceiroView({
       setBaixaErro("Selecione um lancamento para baixar.");
       return;
     }
+    const lancamentoSelecionado = baixaLancamentoSelecionado;
+    if (!lancamentoSelecionado) {
+      setBaixaErro("Lancamento selecionado invalido.");
+      return;
+    }
+    const valorDigitado = baixaValorPago.trim();
+    let valorPago: number | undefined;
+    if (valorDigitado) {
+      const parsed = Number(valorDigitado.replace(/\./g, "").replace(",", "."));
+      if (!Number.isFinite(parsed) || parsed <= 0) {
+        setBaixaErro("Valor pago invalido.");
+        return;
+      }
+      const totalPagoAtual = baixaPagamentos.reduce(
+        (sum, pagamento) => sum + (pagamento.estornadoEm ? 0 : pagamento.valorPago),
+        0
+      );
+      const saldoAtual = Number(
+        (lancamentoSelecionado.valor - totalPagoAtual).toFixed(2)
+      );
+      if (parsed > saldoAtual) {
+        const excedente = Number((parsed - saldoAtual).toFixed(2));
+        const confirmar = window.confirm(
+          `Valor acima do saldo. O excedente (${formatarValor(
+            excedente
+          )}) sera registrado como credito. Deseja continuar?`
+        );
+        if (!confirmar) {
+          return;
+        }
+      }
+      valorPago = parsed;
+    }
     try {
       setBaixaErro(null);
       setBaixaLoading(true);
       await api.baixarLancamentoManual(token, baixaLancamentoId, {
         organizacaoId,
+        valorPago,
         dataPagamento: baixaData || undefined,
         contaFinanceiraId: baixaContaId || undefined,
         formaPagamento: baixaFormaPagamento || undefined,
         referencia: baixaReferencia.trim() || undefined
       });
       setBaixaReferencia("");
-      await Promise.all([carregarDespesas(), carregarReceitas(), carregarFaturas()]);
+      setBaixaValorPago("");
+      await Promise.all([
+        carregarDespesas(),
+        carregarReceitas(),
+        carregarFaturas(),
+        carregarPagamentosBaixa(baixaLancamentoId)
+      ]);
     } catch (e: any) {
       setBaixaErro(e.message || "Erro ao realizar baixa manual.");
     } finally {
       setBaixaLoading(false);
+    }
+  };
+
+  const estornarPagamentoLancamento = async (pagamento: LancamentoPagamento) => {
+    if (!token) return;
+    if (pagamento.estornadoEm) return;
+    const motivo = window.prompt("Motivo do estorno (opcional)");
+    if (motivo === null) return;
+    try {
+      setBaixaPagamentosErro(null);
+      setBaixaEstornoId(pagamento.id);
+      await api.estornarPagamentoLancamento(token, pagamento.id, {
+        organizacaoId,
+        motivo: motivo.trim() || undefined
+      });
+      await Promise.all([
+        carregarDespesas(),
+        carregarReceitas(),
+        carregarFaturas(),
+        carregarPagamentosBaixa(baixaLancamentoId)
+      ]);
+    } catch (e: any) {
+      setBaixaPagamentosErro(e.message || "Erro ao estornar pagamento.");
+    } finally {
+      setBaixaEstornoId(null);
+    }
+  };
+
+  const carregarPoliticaCobranca = async () => {
+    if (!token) return;
+    try {
+      setPoliticaErro(null);
+      setPoliticaLoading(true);
+      const politica = await api.obterPoliticaCobranca(token, organizacaoId);
+      setPoliticaCobranca(politica);
+      setPoliticaMulta(politica.multaPercentual.toString().replace(".", ","));
+      setPoliticaJuros(politica.jurosMensalPercentual.toString().replace(".", ","));
+      setPoliticaCorrecao(
+        politica.correcaoMensalPercentual.toString().replace(".", ",")
+      );
+      setPoliticaCarencia(politica.diasCarencia.toString());
+      setPoliticaAtiva(politica.ativo);
+    } catch (e: any) {
+      setPoliticaErro(e.message || "Erro ao carregar politica de cobranca.");
+    } finally {
+      setPoliticaLoading(false);
+    }
+  };
+
+  const salvarPoliticaCobranca = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!token) return;
+    const multa = Number(politicaMulta.replace(/\./g, "").replace(",", "."));
+    const juros = Number(politicaJuros.replace(/\./g, "").replace(",", "."));
+    const correcao = Number(politicaCorrecao.replace(/\./g, "").replace(",", "."));
+    const carencia = Number(politicaCarencia);
+    if (
+      !Number.isFinite(multa) ||
+      !Number.isFinite(juros) ||
+      !Number.isFinite(correcao) ||
+      !Number.isFinite(carencia)
+    ) {
+      setPoliticaErro("Informe valores validos para a politica.");
+      return;
+    }
+    try {
+      setPoliticaErro(null);
+      setPoliticaLoading(true);
+      const politica = await api.atualizarPoliticaCobranca(token, {
+        organizacaoId,
+        multaPercentual: multa,
+        jurosMensalPercentual: juros,
+        correcaoMensalPercentual: correcao,
+        diasCarencia: Math.max(0, Math.floor(carencia)),
+        ativo: politicaAtiva
+      });
+      setPoliticaCobranca(politica);
+    } catch (e: any) {
+      setPoliticaErro(e.message || "Erro ao salvar politica.");
+    } finally {
+      setPoliticaLoading(false);
+    }
+  };
+
+  const carregarCobrancasUnidadeOrg = async () => {
+    if (!token) return;
+    try {
+      setCobrancasUnidadeErro(null);
+      setCobrancasUnidadeLoading(true);
+      const lista = await api.listarCobrancasOrganizacao(token, organizacaoId);
+      setCobrancasUnidadeOrg(lista);
+    } catch (e: any) {
+      setCobrancasUnidadeErro(e.message || "Erro ao carregar cobrancas.");
+    } finally {
+      setCobrancasUnidadeLoading(false);
+    }
+  };
+
+  const carregarAcordosCobranca = async () => {
+    if (!token) return;
+    try {
+      setAcordosErro(null);
+      setAcordosLoading(true);
+      const lista = await api.listarAcordosCobranca(token, organizacaoId);
+      setAcordosCobranca(lista);
+    } catch (e: any) {
+      setAcordosErro(e.message || "Erro ao carregar acordos.");
+    } finally {
+      setAcordosLoading(false);
+    }
+  };
+
+  const criarAcordoRapido = async (cobranca: CobrancaOrganizacaoResumo) => {
+    if (!token) return;
+    const parcelasRaw = window.prompt("Numero de parcelas do acordo:", "3");
+    if (!parcelasRaw) return;
+    const parcelas = Number(parcelasRaw);
+    if (!Number.isFinite(parcelas) || parcelas <= 0) {
+      setAcordosErro("Numero de parcelas invalido.");
+      return;
+    }
+    const descontoRaw = window.prompt("Desconto (valor em R$):", "0");
+    if (descontoRaw === null) return;
+    const desconto = Number(descontoRaw.replace(/\./g, "").replace(",", "."));
+    if (!Number.isFinite(desconto) || desconto < 0) {
+      setAcordosErro("Desconto invalido.");
+      return;
+    }
+    const dataRaw = window.prompt("Data da primeira parcela (AAAA-MM-DD):");
+    if (!dataRaw) return;
+
+    try {
+      setAcordosErro(null);
+      setAcordosLoading(true);
+      await api.criarAcordoCobranca(token, {
+        organizacaoId,
+        unidadeId: cobranca.unidadeOrganizacionalId,
+        cobrancaIds: [cobranca.id],
+        numeroParcelas: parcelas,
+        dataPrimeiraParcela: dataRaw,
+        desconto
+      });
+      await Promise.all([carregarCobrancasUnidadeOrg(), carregarAcordosCobranca()]);
+    } catch (e: any) {
+      setAcordosErro(e.message || "Erro ao criar acordo.");
+    } finally {
+      setAcordosLoading(false);
+    }
+  };
+
+  const gerarRemessaCobranca = async () => {
+    if (!token) return;
+    try {
+      setErro(null);
+      setLoading(true);
+      const blob = await api.gerarRemessaCobranca(token, {
+        organizacaoId,
+        tipo: remessaTipo || undefined
+      });
+      baixarArquivo(blob, `remessa-${remessaTipo || "todas"}.csv`);
+    } catch (e: any) {
+      setErro(e.message || "Erro ao gerar remessa.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const importarRetornoCobranca = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!token || !retornoArquivo) return;
+    try {
+      setRetornoStatus(null);
+      setLoading(true);
+      const resumo = await api.importarRetornoCobranca(
+        token,
+        organizacaoId,
+        retornoArquivo
+      );
+      setRetornoStatus(
+        `Processado: ${resumo.totalLinhas} • Atualizadas: ${resumo.atualizadas} • Ignoradas: ${resumo.ignoradas}`
+      );
+      setRetornoArquivo(null);
+      await carregarFaturas();
+    } catch (e: any) {
+      setRetornoStatus(e.message || "Erro ao importar retorno.");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -2206,6 +2502,18 @@ export default function FinanceiroView({
 
   useEffect(() => {
     if (aba !== "baixasManuais") return;
+    if (!token) return;
+    if (!baixaLancamentoId) {
+      setBaixaPagamentos([]);
+      return;
+    }
+    setBaixaValorPago("");
+    void carregarPagamentosBaixa(baixaLancamentoId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aba, token, organizacaoId, baixaLancamentoId]);
+
+  useEffect(() => {
+    if (aba !== "baixasManuais") return;
     if (baixaContaId) return;
     const contasAtivas = contas.filter(
       (conta) => (conta.status ?? "ativo").toLowerCase() === "ativo"
@@ -2265,6 +2573,15 @@ export default function FinanceiroView({
       setPrevisaoCategoriaId(lista[0].id);
     }
   }, [aba, previsaoTipo, categoriasReceita, categoriasDespesa, previsaoCategoriaId]);
+
+  useEffect(() => {
+    if (aba !== "inadimplentes") return;
+    if (!token) return;
+    void carregarPoliticaCobranca();
+    void carregarCobrancasUnidadeOrg();
+    void carregarAcordosCobranca();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aba, token, organizacaoId]);
 
   const handleAbaChange = (novaAba: FinanceiroTab) => {
     setAba(novaAba);
@@ -2890,6 +3207,8 @@ export default function FinanceiroView({
   const statusAbonoMeta = (status?: string) => {
     const normalizada = (status ?? "").toLowerCase();
     switch (normalizada) {
+      case "em_analise":
+        return { label: "Em analise", className: "badge-status--alerta" };
       case "aprovado":
         return { label: "Aprovado", className: "badge-status--aprovado" };
       case "cancelado":
@@ -3137,6 +3456,9 @@ export default function FinanceiroView({
   const abonosPendentes = abonos.filter(
     (a) => (a.status ?? "").toLowerCase() === "pendente"
   ).length;
+  const abonosEmAnalise = abonos.filter(
+    (a) => (a.status ?? "").toLowerCase() === "em_analise"
+  ).length;
   const abonosAprovados = abonos.filter(
     (a) => (a.status ?? "").toLowerCase() === "aprovado"
   ).length;
@@ -3170,6 +3492,20 @@ export default function FinanceiroView({
   const pendentesParaBaixa = [...despesas, ...receitas].filter(
     (l) => isSituacaoAberta(l.situacao)
   );
+  const cobrancasUnidadePendentes = cobrancasUnidadeOrg.filter((c) => {
+    const status = (c.status ?? "").toUpperCase();
+    return !["PAGA", "NEGOCIADA", "CANCELADA", "FECHADA"].includes(status);
+  });
+  const totalCobrancasUnidadePendentes = cobrancasUnidadePendentes.reduce(
+    (sum, item) => sum + (item.valorAtualizado ?? item.valor ?? 0),
+    0
+  );
+  const unidadesCobrancaMap = Object.fromEntries(
+    cobrancasUnidadeOrg.map((c) => [
+      c.unidadeOrganizacionalId,
+      `${c.unidadeCodigo} - ${c.unidadeNome}`
+    ])
+  );
   const pendentesParaBaixaOrdenados = [...pendentesParaBaixa].sort((a, b) =>
     (a.dataVencimento ?? a.dataCompetencia ?? "").localeCompare(
       b.dataVencimento ?? b.dataCompetencia ?? ""
@@ -3191,6 +3527,19 @@ export default function FinanceiroView({
   const baixaLancamentoSelecionado = pendentesParaBaixa.find(
     (l) => l.id === baixaLancamentoId
   );
+  const pagamentosLancamentoOrdenados = [...baixaPagamentos].sort((a, b) =>
+    (b.dataPagamento ?? "").localeCompare(a.dataPagamento ?? "")
+  );
+  const totalPagoLancamento = pagamentosLancamentoOrdenados.reduce(
+    (sum, pagamento) => sum + (pagamento.estornadoEm ? 0 : pagamento.valorPago),
+    0
+  );
+  const saldoLancamento = baixaLancamentoSelecionado
+    ? Number(
+        (baixaLancamentoSelecionado.valor - totalPagoLancamento).toFixed(2)
+      )
+    : 0;
+  const saldoLancamentoAbs = Math.abs(saldoLancamento);
   const totalPendentesValor = pendentesParaBaixaFiltrados.reduce(
     (sum, item) => sum + item.valor,
     0
@@ -6772,6 +7121,33 @@ export default function FinanceiroView({
                 )}
               </tbody>
             </table>
+
+            {abonoSelecionadoId && (
+              <section className="finance-form-card" style={{ marginTop: 12 }}>
+                <div className="finance-table-header">
+                  <h4>Anexos do abono</h4>
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    onClick={() => {
+                      setAbonoSelecionadoId(null);
+                      setAutoOpenAbonoAnexoId(null);
+                    }}
+                  >
+                    Fechar
+                  </button>
+                </div>
+                <AnexosPanel
+                  organizacaoId={organizacao.id}
+                  tipoEntidade="abono_financeiro"
+                  entidadeId={abonoSelecionadoId}
+                  titulo="Comprovantes e anexos"
+                  readOnly={!canAnexos}
+                  autoOpenSelector={autoOpenAbonoAnexoId === abonoSelecionadoId}
+                  onAutoOpenHandled={() => setAutoOpenAbonoAnexoId(null)}
+                />
+              </section>
+            )}
           </section>
         </div>
       )}
@@ -6890,8 +7266,8 @@ export default function FinanceiroView({
               <div>
                 <h3>Abonos cadastrados</h3>
                 <p className="finance-form-sub">
-                  {abonosPendentes} pendentes • {abonosAprovados} aprovados •{" "}
-                  {abonosCancelados} cancelados
+                  {abonosPendentes} pendentes • {abonosEmAnalise} em analise •{" "}
+                  {abonosAprovados} aprovados • {abonosCancelados} cancelados
                 </p>
               </div>
               <button
@@ -6948,6 +7324,30 @@ export default function FinanceiroView({
                                   type="button"
                                   className="action-secondary"
                                   onClick={() =>
+                                    void atualizarStatusAbono(abono, "em_analise")
+                                  }
+                                  disabled={abonoLoading}
+                                >
+                                  Enviar para analise
+                                </button>
+                                <button
+                                  type="button"
+                                  className="action-secondary"
+                                  onClick={() =>
+                                    void atualizarStatusAbono(abono, "cancelado")
+                                  }
+                                  disabled={abonoLoading}
+                                >
+                                  Cancelar
+                                </button>
+                              </>
+                            )}
+                            {abono.status === "em_analise" && (
+                              <>
+                                <button
+                                  type="button"
+                                  className="action-secondary"
+                                  onClick={() =>
                                     void atualizarStatusAbono(abono, "aprovado")
                                   }
                                   disabled={abonoLoading}
@@ -6974,6 +7374,16 @@ export default function FinanceiroView({
                             >
                               Remover
                             </button>
+                            <button
+                              type="button"
+                              className="button-secondary"
+                              onClick={() => {
+                                setAbonoSelecionadoId(abono.id);
+                                setAutoOpenAbonoAnexoId(abono.id);
+                              }}
+                            >
+                              Anexos
+                            </button>
                           </div>
                         </td>
                       )}
@@ -6995,7 +7405,8 @@ export default function FinanceiroView({
 
       {aba === "baixasManuais" && (
         <div className="finance-layout">
-          <section className="finance-form-card">
+          <div className="finance-side-column">
+            <section className="finance-form-card">
             <h3>Baixa manual</h3>
             <p className="finance-form-sub">
               Registre pagamentos/recebimentos feitos fora do fluxo automatico.
@@ -7053,6 +7464,36 @@ export default function FinanceiroView({
                     />
                   </label>
                   <label>
+                    Valor pago
+                    <input
+                      value={baixaValorPago}
+                      onChange={(e) => setBaixaValorPago(e.target.value)}
+                      placeholder={
+                        baixaLancamentoSelecionado
+                          ? saldoLancamento > 0
+                            ? formatarValor(saldoLancamento)
+                            : "Saldo quitado"
+                          : "Ex.: 1.500,00"
+                      }
+                    />
+                  </label>
+                </div>
+
+                {baixaLancamentoSelecionado && (
+                  <div className="finance-card-grid" style={{ marginTop: 8 }}>
+                    <div className="finance-card">
+                      <strong>Total pago</strong>
+                      <p>{formatarValor(totalPagoLancamento)}</p>
+                    </div>
+                    <div className="finance-card">
+                      <strong>{saldoLancamento < 0 ? "Credito" : "Saldo"}</strong>
+                      <p>{formatarValor(saldoLancamentoAbs)}</p>
+                    </div>
+                  </div>
+                )}
+
+                <div className="finance-form-grid">
+                  <label>
                     Conta financeira
                     <select
                       value={baixaContaId}
@@ -7066,9 +7507,6 @@ export default function FinanceiroView({
                       ))}
                     </select>
                   </label>
-                </div>
-
-                <div className="finance-form-grid">
                   <label>
                     Forma de pagamento
                     <select
@@ -7083,15 +7521,22 @@ export default function FinanceiroView({
                       <option value="indefinido">Indefinido</option>
                     </select>
                   </label>
-                  <label>
-                    Referencia
-                    <input
-                      value={baixaReferencia}
-                      onChange={(e) => setBaixaReferencia(e.target.value)}
-                      placeholder="Ex.: comprovante / recibo"
-                    />
-                  </label>
                 </div>
+
+                <label>
+                  Referencia
+                  <input
+                    value={baixaReferencia}
+                    onChange={(e) => setBaixaReferencia(e.target.value)}
+                    placeholder="Ex.: comprovante / recibo"
+                  />
+                </label>
+
+                {baixaLancamentoSelecionado && (
+                  <p className="finance-form-sub" style={{ marginTop: 6 }}>
+                    Deixe em branco para quitar o saldo atual.
+                  </p>
+                )}
 
                 <button type="submit" disabled={!token || baixaLoading}>
                   {baixaLoading ? "Processando..." : "Dar baixa manual"}
@@ -7108,100 +7553,213 @@ export default function FinanceiroView({
                 Nenhum lancamento em aberto para baixa manual.
               </p>
             )}
-          </section>
+            </section>
+          </div>
 
-          <section className="finance-table-card">
-            <div className="finance-table-header">
-              <div>
-                <h3>Lancamentos pendentes</h3>
-                <p className="finance-form-sub">
-                  {pendentesParaBaixaFiltrados.length} pendentes • Total{" "}
-                  {formatarValor(totalPendentesValor)}
-                </p>
-              </div>
-            </div>
-
-            <div className="finance-form-grid" style={{ marginTop: 8 }}>
-              <label>
-                Tipo
-                <select
-                  value={baixaFiltroTipo}
-                  onChange={(e) =>
-                    setBaixaFiltroTipo(
-                      e.target.value === "pagar"
-                        ? "pagar"
-                        : e.target.value === "receber"
-                          ? "receber"
-                          : "todos"
-                    )
+          <div className="finance-side-column">
+            <section className="finance-table-card">
+              <div className="finance-table-header">
+                <div>
+                  <h3>Pagamentos registrados</h3>
+                  {baixaLancamentoSelecionado ? (
+                    <p className="finance-form-sub">
+                      {pagamentosLancamentoOrdenados.length} pagamento(s) • Total{" "}
+                      {formatarValor(totalPagoLancamento)} •{" "}
+                      {saldoLancamento < 0 ? "Credito" : "Saldo"}{" "}
+                      {formatarValor(saldoLancamentoAbs)}
+                    </p>
+                  ) : (
+                    <p className="finance-form-sub">
+                      Selecione um lancamento para ver os pagamentos.
+                    </p>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void carregarPagamentosBaixa(baixaLancamentoId)}
+                  disabled={
+                    baixaPagamentosLoading || !token || !baixaLancamentoSelecionado
                   }
                 >
-                  <option value="todos">Todos</option>
-                  <option value="pagar">A pagar</option>
-                  <option value="receber">A receber</option>
-                </select>
-              </label>
-              <label>
-                Buscar
-                <input
-                  value={baixaFiltroTexto}
-                  onChange={(e) => setBaixaFiltroTexto(e.target.value)}
-                  placeholder="Descricao, pessoa, referencia"
-                />
-              </label>
-            </div>
+                  {baixaPagamentosLoading ? "Carregando..." : "Atualizar lista"}
+                </button>
+              </div>
 
-            <table className="table finance-table" style={{ marginTop: 12 }}>
-              <thead>
-                <tr>
-                  <th>Tipo</th>
-                  <th>Descricao</th>
-                  <th>Pessoa</th>
-                  <th>Vencimento</th>
-                  <th className="finance-value-header">Valor</th>
-                  <th>Status</th>
-                  {canWrite && <th>Acoes</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {pendentesParaBaixaFiltrados.map((lanc) => (
-                  <tr key={lanc.id}>
-                    <td>{lanc.tipo === "pagar" ? "Pagar" : "Receber"}</td>
-                    <td>{lanc.descricao}</td>
-                    <td>{pessoasPorId[lanc.pessoaId] ?? "-"}</td>
-                    <td>{formatarData(lanc.dataVencimento)}</td>
-                    <td className="finance-value-cell">
-                      {formatarValor(lanc.valor)}
-                    </td>
-                    <td>{statusMeta(lanc.situacao).label}</td>
-                    {canWrite && (
-                      <td>
-                        <div className="finance-table-actions">
-                          <button
-                            type="button"
-                            className="action-secondary"
-                            onClick={() => setBaixaLancamentoId(lanc.id)}
-                            disabled={baixaLancamentoId === lanc.id}
-                          >
-                            {baixaLancamentoId === lanc.id
-                              ? "Selecionado"
-                              : "Selecionar"}
-                          </button>
-                        </div>
-                      </td>
+              {baixaPagamentosErro && <p className="error">{baixaPagamentosErro}</p>}
+
+              {baixaLancamentoSelecionado ? (
+                <table className="table finance-table" style={{ marginTop: 12 }}>
+                  <thead>
+                    <tr>
+                      <th>Data</th>
+                      <th className="finance-value-header">Valor</th>
+                      <th>Forma</th>
+                      <th>Conta</th>
+                      <th>Referencia</th>
+                      <th>Status</th>
+                      {canWrite && <th>Acoes</th>}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pagamentosLancamentoOrdenados.map((pagamento) => {
+                      const estornado = Boolean(pagamento.estornadoEm);
+                      return (
+                        <tr key={pagamento.id}>
+                          <td>{formatarData(pagamento.dataPagamento)}</td>
+                          <td className="finance-value-cell">
+                            {formatarValor(pagamento.valorPago)}
+                          </td>
+                          <td>{pagamento.formaPagamento ?? "indefinido"}</td>
+                          <td>
+                            {contasPorId[pagamento.contaFinanceiraId ?? ""] ?? "-"}
+                          </td>
+                          <td>{pagamento.referencia ?? "-"}</td>
+                          <td>
+                            <span
+                              className={`badge-status ${
+                                estornado
+                                  ? "badge-status--cancelado"
+                                  : "badge-status--pago"
+                              }`}
+                            >
+                              {estornado ? "Estornado" : "Pago"}
+                            </span>
+                            {estornado && pagamento.estornadoEm && (
+                              <div className="finance-item-sub">
+                                {formatarData(pagamento.estornadoEm)}
+                              </div>
+                            )}
+                          </td>
+                          {canWrite && (
+                            <td>
+                              <div className="finance-table-actions">
+                                <button
+                                  type="button"
+                                  className="action-secondary"
+                                  onClick={() =>
+                                    void estornarPagamentoLancamento(pagamento)
+                                  }
+                                  disabled={estornado || baixaEstornoId === pagamento.id}
+                                >
+                                  {baixaEstornoId === pagamento.id
+                                    ? "Estornando..."
+                                    : "Estornar"}
+                                </button>
+                              </div>
+                            </td>
+                          )}
+                        </tr>
+                      );
+                    })}
+                    {pagamentosLancamentoOrdenados.length === 0 && (
+                      <tr>
+                        <td colSpan={canWrite ? 7 : 6} style={{ textAlign: "center" }}>
+                          Nenhum pagamento registrado.
+                        </td>
+                      </tr>
                     )}
-                  </tr>
-                ))}
-                {pendentesParaBaixaFiltrados.length === 0 && (
+                  </tbody>
+                </table>
+              ) : (
+                <p className="finance-form-sub">
+                  Nenhum lancamento selecionado para exibir pagamentos.
+                </p>
+              )}
+            </section>
+
+            <section className="finance-table-card">
+              <div className="finance-table-header">
+                <div>
+                  <h3>Lancamentos pendentes</h3>
+                  <p className="finance-form-sub">
+                    {pendentesParaBaixaFiltrados.length} pendentes • Total{" "}
+                    {formatarValor(totalPendentesValor)}
+                  </p>
+                </div>
+              </div>
+
+              <div className="finance-form-grid" style={{ marginTop: 8 }}>
+                <label>
+                  Tipo
+                  <select
+                    value={baixaFiltroTipo}
+                    onChange={(e) =>
+                      setBaixaFiltroTipo(
+                        e.target.value === "pagar"
+                          ? "pagar"
+                          : e.target.value === "receber"
+                            ? "receber"
+                            : "todos"
+                      )
+                    }
+                  >
+                    <option value="todos">Todos</option>
+                    <option value="pagar">A pagar</option>
+                    <option value="receber">A receber</option>
+                  </select>
+                </label>
+                <label>
+                  Buscar
+                  <input
+                    value={baixaFiltroTexto}
+                    onChange={(e) => setBaixaFiltroTexto(e.target.value)}
+                    placeholder="Descricao, pessoa, referencia"
+                  />
+                </label>
+              </div>
+
+              <table className="table finance-table" style={{ marginTop: 12 }}>
+                <thead>
                   <tr>
-                    <td colSpan={canWrite ? 7 : 6} style={{ textAlign: "center" }}>
-                      Nenhum lancamento pendente encontrado.
-                    </td>
+                    <th>Tipo</th>
+                    <th>Descricao</th>
+                    <th>Pessoa</th>
+                    <th>Vencimento</th>
+                    <th className="finance-value-header">Valor</th>
+                    <th>Status</th>
+                    {canWrite && <th>Acoes</th>}
                   </tr>
-                )}
-              </tbody>
-            </table>
-          </section>
+                </thead>
+                <tbody>
+                  {pendentesParaBaixaFiltrados.map((lanc) => (
+                    <tr key={lanc.id}>
+                      <td>{lanc.tipo === "pagar" ? "Pagar" : "Receber"}</td>
+                      <td>{lanc.descricao}</td>
+                      <td>{pessoasPorId[lanc.pessoaId] ?? "-"}</td>
+                      <td>{formatarData(lanc.dataVencimento)}</td>
+                      <td className="finance-value-cell">
+                        {formatarValor(lanc.valor)}
+                      </td>
+                      <td>{statusMeta(lanc.situacao).label}</td>
+                      {canWrite && (
+                        <td>
+                          <div className="finance-table-actions">
+                            <button
+                              type="button"
+                              className="action-secondary"
+                              onClick={() => setBaixaLancamentoId(lanc.id)}
+                              disabled={baixaLancamentoId === lanc.id}
+                            >
+                              {baixaLancamentoId === lanc.id
+                                ? "Selecionado"
+                                : "Selecionar"}
+                            </button>
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                  {pendentesParaBaixaFiltrados.length === 0 && (
+                    <tr>
+                      <td colSpan={canWrite ? 7 : 6} style={{ textAlign: "center" }}>
+                        Nenhum lancamento pendente encontrado.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </section>
+          </div>
         </div>
       )}
 
@@ -8084,74 +8642,348 @@ export default function FinanceiroView({
       )}
 
       {aba === "inadimplentes" && (
-        <div className="finance-table-card" style={{ marginTop: 12 }}>
-          <div className="finance-table-header">
-            <div>
-              <h3>Inadimplentes</h3>
-              <p className="finance-form-sub">
-                Receitas vencidas e nao pagas com apoio para acao de cobranca.
-              </p>
-            </div>
-            <div className="finance-card-actions">
-              <span className="badge-status badge-status--aberto">
-                Total:{" "}
-                {totalInadimplencia.toLocaleString("pt-BR", {
-                  style: "currency",
-                  currency: "BRL"
-                })}
-              </span>
-            </div>
-          </div>
+        <div className="finance-layout finance-layout--single">
+          <section className="finance-form-card">
+            <h3>Politica de cobranca</h3>
+            <p className="finance-form-sub">
+              Configure multa, juros e correcao para cobrancas em atraso.
+            </p>
 
-          <table className="table finance-table">
-            <thead>
-              <tr>
-                <th>Descricao</th>
-                <th>Vencimento</th>
-                <th>Dias atraso</th>
-                <th className="finance-value-header">Valor</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {inadimplentes.map((lanc) => {
-                const venc = lanc.dataVencimento
-                  ? new Date(lanc.dataVencimento)
-                  : null;
-                const diasAtraso = venc
-                  ? Math.max(
-                      0,
-                      Math.floor((Date.now() - venc.getTime()) / 86400000)
-                    )
-                  : 0;
-                return (
-                  <tr key={lanc.id}>
-                    <td>{lanc.descricao}</td>
-                    <td>
-                      {lanc.dataVencimento
-                        ? new Date(lanc.dataVencimento).toLocaleDateString("pt-BR")
-                        : "-"}
-                    </td>
-                    <td>{diasAtraso}</td>
-                    <td className="finance-value-cell">
-                      {lanc.valor.toLocaleString("pt-BR", {
-                        style: "currency",
-                        currency: "BRL"
-                      })}
-                    </td>
-                    <td>{statusMeta(lanc.situacao).label}</td>
-                  </tr>
-                );
-              })}
-              {inadimplentes.length === 0 && (
+            {politicaErro && <p className="error">{politicaErro}</p>}
+
+            {canWrite ? (
+              <form className="form" onSubmit={salvarPoliticaCobranca}>
+                <div className="finance-form-grid">
+                  <label>
+                    Multa (%)
+                    <input
+                      value={politicaMulta}
+                      onChange={(e) => setPoliticaMulta(e.target.value)}
+                      placeholder="Ex.: 2"
+                    />
+                  </label>
+                  <label>
+                    Juros ao mes (%)
+                    <input
+                      value={politicaJuros}
+                      onChange={(e) => setPoliticaJuros(e.target.value)}
+                      placeholder="Ex.: 1"
+                    />
+                  </label>
+                </div>
+                <div className="finance-form-grid">
+                  <label>
+                    Correcao ao mes (%)
+                    <input
+                      value={politicaCorrecao}
+                      onChange={(e) => setPoliticaCorrecao(e.target.value)}
+                      placeholder="Ex.: 0,5"
+                    />
+                  </label>
+                  <label>
+                    Carencia (dias)
+                    <input
+                      type="number"
+                      min="0"
+                      value={politicaCarencia}
+                      onChange={(e) => setPoliticaCarencia(e.target.value)}
+                    />
+                  </label>
+                </div>
+                <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <input
+                    type="checkbox"
+                    checked={politicaAtiva}
+                    onChange={(e) => setPoliticaAtiva(e.target.checked)}
+                  />
+                  Politica ativa
+                </label>
+                <button type="submit" disabled={politicaLoading || !token}>
+                  {politicaLoading ? "Salvando..." : "Salvar politica"}
+                </button>
+              </form>
+            ) : (
+              <p className="finance-form-sub">
+                Sem acesso para editar politica de cobranca.
+              </p>
+            )}
+          </section>
+
+          <section className="finance-table-card">
+            <div className="finance-table-header">
+              <div>
+                <h3>Inadimplentes (lancamentos)</h3>
+                <p className="finance-form-sub">
+                  Receitas vencidas e nao pagas com apoio para acao de cobranca.
+                </p>
+              </div>
+              <div className="finance-card-actions">
+                <span className="badge-status badge-status--aberto">
+                  Total:{" "}
+                  {totalInadimplencia.toLocaleString("pt-BR", {
+                    style: "currency",
+                    currency: "BRL"
+                  })}
+                </span>
+              </div>
+            </div>
+
+            <table className="table finance-table">
+              <thead>
                 <tr>
-                  <td colSpan={5} style={{ textAlign: "center" }}>
-                    Nenhum inadimplente encontrado.
-                  </td>
+                  <th>Descricao</th>
+                  <th>Vencimento</th>
+                  <th>Dias atraso</th>
+                  <th className="finance-value-header">Valor</th>
+                  <th>Status</th>
                 </tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {inadimplentes.map((lanc) => {
+                  const venc = lanc.dataVencimento
+                    ? new Date(lanc.dataVencimento)
+                    : null;
+                  const diasAtraso = venc
+                    ? Math.max(
+                        0,
+                        Math.floor((Date.now() - venc.getTime()) / 86400000)
+                      )
+                    : 0;
+                  return (
+                    <tr key={lanc.id}>
+                      <td>{lanc.descricao}</td>
+                      <td>
+                        {lanc.dataVencimento
+                          ? new Date(lanc.dataVencimento).toLocaleDateString("pt-BR")
+                          : "-"}
+                      </td>
+                      <td>{diasAtraso}</td>
+                      <td className="finance-value-cell">
+                        {lanc.valor.toLocaleString("pt-BR", {
+                          style: "currency",
+                          currency: "BRL"
+                        })}
+                      </td>
+                      <td>{statusMeta(lanc.situacao).label}</td>
+                    </tr>
+                  );
+                })}
+                {inadimplentes.length === 0 && (
+                  <tr>
+                    <td colSpan={5} style={{ textAlign: "center" }}>
+                      Nenhum inadimplente encontrado.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </section>
+
+          <section className="finance-table-card">
+            <div className="finance-table-header">
+              <div>
+                <h3>Cobrancas por unidade</h3>
+                <p className="finance-form-sub">
+                  {cobrancasUnidadePendentes.length} pendente(s) • Total{" "}
+                  {formatarValor(totalCobrancasUnidadePendentes)}
+                </p>
+              </div>
+              <div className="finance-card-actions">
+                <button
+                  type="button"
+                  onClick={carregarCobrancasUnidadeOrg}
+                  disabled={cobrancasUnidadeLoading || !token}
+                >
+                  {cobrancasUnidadeLoading ? "Carregando..." : "Atualizar lista"}
+                </button>
+              </div>
+            </div>
+
+            {cobrancasUnidadeErro && (
+              <p className="error">{cobrancasUnidadeErro}</p>
+            )}
+
+            <table className="table finance-table">
+              <thead>
+                <tr>
+                  <th>Unidade</th>
+                  <th>Descricao</th>
+                  <th>Vencimento</th>
+                  <th>Dias atraso</th>
+                  <th className="finance-value-header">Valor</th>
+                  <th className="finance-value-header">Atualizado</th>
+                  <th>Status</th>
+                  {canWrite && <th>Acoes</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {cobrancasUnidadePendentes.map((cobranca) => (
+                  <tr key={cobranca.id}>
+                    <td>
+                      {cobranca.unidadeCodigo} - {cobranca.unidadeNome}
+                    </td>
+                    <td>{cobranca.descricao}</td>
+                    <td>{formatarData(cobranca.vencimento)}</td>
+                    <td>{cobranca.diasAtraso ?? 0}</td>
+                    <td className="finance-value-cell">
+                      {formatarValor(cobranca.valor)}
+                    </td>
+                    <td className="finance-value-cell">
+                      {formatarValor(
+                        cobranca.valorAtualizado ?? cobranca.valor
+                      )}
+                    </td>
+                    <td>{cobranca.status}</td>
+                    {canWrite && (
+                      <td>
+                        <div className="finance-table-actions">
+                          <button
+                            type="button"
+                            className="action-secondary"
+                            onClick={() => void criarAcordoRapido(cobranca)}
+                            disabled={acordosLoading}
+                          >
+                            Criar acordo
+                          </button>
+                        </div>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+                {cobrancasUnidadePendentes.length === 0 && (
+                  <tr>
+                    <td colSpan={canWrite ? 8 : 7} style={{ textAlign: "center" }}>
+                      Nenhuma cobranca pendente encontrada.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </section>
+
+          <section className="finance-table-card">
+            <div className="finance-table-header">
+              <div>
+                <h3>Acordos gerados</h3>
+                <p className="finance-form-sub">
+                  {acordosCobranca.length} acordo(s) cadastrados.
+                </p>
+              </div>
+              <div className="finance-card-actions">
+                <button
+                  type="button"
+                  onClick={carregarAcordosCobranca}
+                  disabled={acordosLoading || !token}
+                >
+                  {acordosLoading ? "Carregando..." : "Atualizar lista"}
+                </button>
+              </div>
+            </div>
+
+            {acordosErro && <p className="error">{acordosErro}</p>}
+
+            <table className="table finance-table">
+              <thead>
+                <tr>
+                  <th>Unidade</th>
+                  <th>Parcelas</th>
+                  <th className="finance-value-header">Total</th>
+                  <th className="finance-value-header">Desconto</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {acordosCobranca.map((acordo) => (
+                  <tr key={acordo.id}>
+                    <td>
+                      {unidadesCobrancaMap[acordo.unidadeOrganizacionalId] ??
+                        acordo.unidadeOrganizacionalId}
+                    </td>
+                    <td>{acordo.numeroParcelas}</td>
+                    <td className="finance-value-cell">
+                      {formatarValor(acordo.totalAcordo)}
+                    </td>
+                    <td className="finance-value-cell">
+                      {formatarValor(acordo.desconto)}
+                    </td>
+                    <td>{acordo.status}</td>
+                  </tr>
+                ))}
+                {acordosCobranca.length === 0 && (
+                  <tr>
+                    <td colSpan={5} style={{ textAlign: "center" }}>
+                      Nenhum acordo cadastrado.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </section>
+
+          <section className="finance-table-card">
+            <div className="finance-table-header">
+              <div>
+                <h3>Cobranca bancaria</h3>
+                <p className="finance-form-sub">
+                  Gere remessa e importe retorno (CSV simplificado).
+                </p>
+              </div>
+            </div>
+
+            {canWrite ? (
+              <>
+                <div className="finance-form-grid">
+                  <label>
+                    Tipo de cobranca
+                    <select
+                      value={remessaTipo}
+                      onChange={(e) => setRemessaTipo(e.target.value)}
+                    >
+                      <option value="boleto">Boleto</option>
+                      <option value="pix">Pix</option>
+                      <option value="cartao">Cartao</option>
+                      <option value="link">Link</option>
+                    </select>
+                  </label>
+                  <div style={{ display: "flex", alignItems: "flex-end" }}>
+                    <button
+                      type="button"
+                      onClick={gerarRemessaCobranca}
+                      disabled={loading}
+                    >
+                      {loading ? "Gerando..." : "Gerar remessa"}
+                    </button>
+                  </div>
+                </div>
+
+                <form className="finance-upload-form" onSubmit={importarRetornoCobranca}>
+                  <label>
+                    Retorno bancario
+                    <input
+                      type="file"
+                      accept=".csv"
+                      onChange={(e) =>
+                        setRetornoArquivo(e.target.files ? e.target.files[0] : null)
+                      }
+                    />
+                  </label>
+                  <button type="submit" disabled={loading || !retornoArquivo}>
+                    {loading ? "Importando..." : "Importar retorno"}
+                  </button>
+                </form>
+
+                {retornoStatus && (
+                  <p className="finance-form-sub" style={{ marginTop: 8 }}>
+                    {retornoStatus}
+                  </p>
+                )}
+              </>
+            ) : (
+              <p className="finance-form-sub">
+                Sem acesso para remessa/retorno.
+              </p>
+            )}
+          </section>
         </div>
       )}
 
