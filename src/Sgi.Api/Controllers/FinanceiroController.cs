@@ -4217,7 +4217,7 @@ public class FinanceiroController : ControllerBase
         var planoContasId = cobrancas.Values
             .Select(c => c.CategoriaId)
             .FirstOrDefault(c => c.HasValue)
-            ?.Value ?? Guid.Empty;
+            .GetValueOrDefault();
 
         if (planoContasId == Guid.Empty)
         {
