@@ -1,6 +1,9 @@
 @echo off
 cd /d %~dp0
 
+set ASPNETCORE_ENVIRONMENT=Development
+set DOTNET_ENVIRONMENT=Development
+
 echo [1/4] Liberando portas 7000 e 5173...
 for %%P in (7000 5173) do (
   for /f "tokens=5" %%A in ('netstat -aon ^| findstr :%%P ^| findstr LISTENING') do (

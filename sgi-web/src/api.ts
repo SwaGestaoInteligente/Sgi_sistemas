@@ -172,6 +172,55 @@ export interface CotaCondominial {
   competenciaFim?: string | null; // yyyy-MM
   ativo: boolean;
 }
+
+export interface PrevisaoOrcamentaria {
+  id: string;
+  organizacaoId: string;
+  planoContasId: string;
+  tipo: string;
+  ano: number;
+  mes: number;
+  valorPrevisto: number;
+  observacao?: string | null;
+}
+
+export interface AbonoFinanceiro {
+  id: string;
+  organizacaoId: string;
+  lancamentoFinanceiroId: string;
+  tipo: string;
+  valor: number;
+  percentual?: number | null;
+  motivo: string;
+  observacao?: string | null;
+  status: string;
+  dataSolicitacao: string;
+  dataAprovacao?: string | null;
+}
+
+export interface MedidorConsumo {
+  id: string;
+  organizacaoId: string;
+  unidadeOrganizacionalId: string;
+  nome: string;
+  tipo: string;
+  unidadeMedida: string;
+  numeroSerie?: string | null;
+  ativo: boolean;
+  observacao?: string | null;
+}
+
+export interface LeituraConsumo {
+  id: string;
+  organizacaoId: string;
+  medidorId: string;
+  competencia: string;
+  dataLeitura: string;
+  leituraAtual: number;
+  leituraAnterior: number;
+  consumo: number;
+  observacao?: string | null;
+}
 export interface UnidadeOrganizacional {
   id: string;
   organizacaoId: string;
@@ -311,6 +360,22 @@ export interface LancamentoFinanceiro {
   parcelaNumero?: number;
   parcelaTotal?: number;
   referencia?: string;
+}
+
+export interface RegraRateio {
+  id: string;
+  organizacaoId: string;
+  nome: string;
+  tipoBase: string;
+  configuracaoJson?: string;
+}
+
+export interface LancamentoRateado {
+  id: string;
+  lancamentoOriginalId: string;
+  unidadeOrganizacionalId?: string | null;
+  centroCustoId?: string | null;
+  valorRateado: number;
 }
 
 export interface TransferenciaResponse {
@@ -1431,6 +1496,384 @@ export const api = {
     );
   },
 
+  async listarPrevisoesOrcamentarias(
+    token: string,
+    organizacaoId: string,
+    params?: { ano?: number; tipo?: string }
+  ): Promise<PrevisaoOrcamentaria[]> {
+    const search = new URLSearchParams({ organizacaoId });
+    if (params?.ano) {
+      search.set("ano", String(params.ano));
+    }
+    if (params?.tipo) {
+      search.set("tipo", params.tipo);
+    }
+    return request<PrevisaoOrcamentaria[]>(
+      `/financeiro/previsao-orcamentaria?${search.toString()}`,
+      {},
+      token
+    );
+  },
+
+  async criarPrevisaoOrcamentaria(
+    token: string,
+    payload: {
+      organizacaoId: string;
+      planoContasId: string;
+      tipo: string;
+      ano: number;
+      mes: number;
+      valorPrevisto: number;
+      observacao?: string | null;
+    }
+  ): Promise<PrevisaoOrcamentaria> {
+    return request<PrevisaoOrcamentaria>(
+      "/financeiro/previsao-orcamentaria",
+      {
+        method: "POST",
+        body: JSON.stringify(payload)
+      },
+      token
+    );
+  },
+
+  async atualizarPrevisaoOrcamentaria(
+    token: string,
+    id: string,
+    payload: {
+      planoContasId: string;
+      tipo: string;
+      ano: number;
+      mes: number;
+      valorPrevisto: number;
+      observacao?: string | null;
+    }
+  ): Promise<void> {
+    await request<void>(
+      `/financeiro/previsao-orcamentaria/${encodeURIComponent(id)}`,
+      {
+        method: "PUT",
+        body: JSON.stringify(payload)
+      },
+      token
+    );
+  },
+
+  async removerPrevisaoOrcamentaria(
+    token: string,
+    id: string
+  ): Promise<void> {
+    await request<void>(
+      `/financeiro/previsao-orcamentaria/${encodeURIComponent(id)}`,
+      { method: "DELETE" },
+      token
+    );
+  },
+
+  async listarAbonos(
+    token: string,
+    organizacaoId: string,
+    params?: { status?: string; lancamentoId?: string }
+  ): Promise<AbonoFinanceiro[]> {
+    const search = new URLSearchParams({ organizacaoId });
+    if (params?.status) {
+      search.set("status", params.status);
+    }
+    if (params?.lancamentoId) {
+      search.set("lancamentoId", params.lancamentoId);
+    }
+    return request<AbonoFinanceiro[]>(
+      `/financeiro/abonos?${search.toString()}`,
+      {},
+      token
+    );
+  },
+
+  async criarAbono(
+    token: string,
+    payload: {
+      organizacaoId: string;
+      lancamentoFinanceiroId: string;
+      tipo: string;
+      valor?: number | null;
+      percentual?: number | null;
+      motivo: string;
+      observacao?: string | null;
+    }
+  ): Promise<AbonoFinanceiro> {
+    return request<AbonoFinanceiro>(
+      "/financeiro/abonos",
+      {
+        method: "POST",
+        body: JSON.stringify(payload)
+      },
+      token
+    );
+  },
+
+  async atualizarStatusAbono(
+    token: string,
+    id: string,
+    status: string
+  ): Promise<void> {
+    await request<void>(
+      `/financeiro/abonos/${encodeURIComponent(id)}/status`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ status })
+      },
+      token
+    );
+  },
+
+  async removerAbono(token: string, id: string): Promise<void> {
+    await request<void>(
+      `/financeiro/abonos/${encodeURIComponent(id)}`,
+      { method: "DELETE" },
+      token
+    );
+  },
+
+  async listarMedidoresConsumo(
+    token: string,
+    organizacaoId: string,
+    params?: { unidadeId?: string; tipo?: string; ativo?: boolean }
+  ): Promise<MedidorConsumo[]> {
+    const search = new URLSearchParams({ organizacaoId });
+    if (params?.unidadeId) {
+      search.set("unidadeId", params.unidadeId);
+    }
+    if (params?.tipo) {
+      search.set("tipo", params.tipo);
+    }
+    if (params?.ativo !== undefined) {
+      search.set("ativo", String(params.ativo));
+    }
+    return request<MedidorConsumo[]>(
+      `/financeiro/consumos/medidores?${search.toString()}`,
+      {},
+      token
+    );
+  },
+
+  async criarMedidorConsumo(
+    token: string,
+    payload: {
+      organizacaoId: string;
+      unidadeOrganizacionalId: string;
+      nome: string;
+      tipo: string;
+      unidadeMedida: string;
+      numeroSerie?: string | null;
+      ativo?: boolean;
+      observacao?: string | null;
+    }
+  ): Promise<MedidorConsumo> {
+    return request<MedidorConsumo>(
+      "/financeiro/consumos/medidores",
+      {
+        method: "POST",
+        body: JSON.stringify(payload)
+      },
+      token
+    );
+  },
+
+  async atualizarMedidorConsumo(
+    token: string,
+    id: string,
+    payload: {
+      unidadeOrganizacionalId: string;
+      nome: string;
+      tipo: string;
+      unidadeMedida: string;
+      numeroSerie?: string | null;
+      ativo: boolean;
+      observacao?: string | null;
+    }
+  ): Promise<void> {
+    await request<void>(
+      `/financeiro/consumos/medidores/${encodeURIComponent(id)}`,
+      {
+        method: "PUT",
+        body: JSON.stringify(payload)
+      },
+      token
+    );
+  },
+
+  async removerMedidorConsumo(token: string, id: string): Promise<void> {
+    await request<void>(
+      `/financeiro/consumos/medidores/${encodeURIComponent(id)}`,
+      { method: "DELETE" },
+      token
+    );
+  },
+
+  async listarLeiturasConsumo(
+    token: string,
+    organizacaoId: string,
+    medidorId: string,
+    params?: { competencia?: string }
+  ): Promise<LeituraConsumo[]> {
+    const search = new URLSearchParams({ organizacaoId });
+    if (params?.competencia) {
+      search.set("competencia", params.competencia);
+    }
+    return request<LeituraConsumo[]>(
+      `/financeiro/consumos/medidores/${encodeURIComponent(medidorId)}/leituras?${search.toString()}`,
+      {},
+      token
+    );
+  },
+
+  async criarLeituraConsumo(
+    token: string,
+    payload: {
+      organizacaoId: string;
+      medidorId: string;
+      competencia: string;
+      dataLeitura: string;
+      leituraAtual: number;
+      observacao?: string | null;
+    }
+  ): Promise<LeituraConsumo> {
+    return request<LeituraConsumo>(
+      "/financeiro/consumos/leituras",
+      {
+        method: "POST",
+        body: JSON.stringify(payload)
+      },
+      token
+    );
+  },
+
+  async atualizarLeituraConsumo(
+    token: string,
+    id: string,
+    payload: {
+      competencia: string;
+      dataLeitura: string;
+      leituraAtual: number;
+      observacao?: string | null;
+    }
+  ): Promise<void> {
+    await request<void>(
+      `/financeiro/consumos/leituras/${encodeURIComponent(id)}`,
+      {
+        method: "PUT",
+        body: JSON.stringify(payload)
+      },
+      token
+    );
+  },
+
+  async removerLeituraConsumo(token: string, id: string): Promise<void> {
+    await request<void>(
+      `/financeiro/consumos/leituras/${encodeURIComponent(id)}`,
+      { method: "DELETE" },
+      token
+    );
+  },
+
+  async listarRegrasRateio(
+    token: string,
+    organizacaoId: string
+  ): Promise<RegraRateio[]> {
+    const path = `/financeiro/rateios?organizacaoId=${encodeURIComponent(
+      organizacaoId
+    )}`;
+    return request<RegraRateio[]>(path, {}, token);
+  },
+
+  async criarRegraRateio(
+    token: string,
+    payload: {
+      organizacaoId: string;
+      nome: string;
+      tipoBase: string;
+      unidades: Array<{ unidadeId: string; percentual?: number }>;
+    }
+  ): Promise<RegraRateio> {
+    return request<RegraRateio>(
+      "/financeiro/rateios",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          organizacaoId: payload.organizacaoId,
+          nome: payload.nome,
+          tipoBase: payload.tipoBase,
+          unidades: payload.unidades
+        })
+      },
+      token
+    );
+  },
+
+  async atualizarRegraRateio(
+    token: string,
+    id: string,
+    payload: {
+      nome: string;
+      tipoBase: string;
+      unidades: Array<{ unidadeId: string; percentual?: number }>;
+    }
+  ): Promise<void> {
+    await request<void>(
+      `/financeiro/rateios/${encodeURIComponent(id)}`,
+      {
+        method: "PUT",
+        body: JSON.stringify(payload)
+      },
+      token
+    );
+  },
+
+  async removerRegraRateio(token: string, id: string): Promise<void> {
+    await request<void>(
+      `/financeiro/rateios/${encodeURIComponent(id)}`,
+      { method: "DELETE" },
+      token
+    );
+  },
+
+  async listarRateiosLancamento(
+    token: string,
+    lancamentoId: string,
+    organizacaoId: string
+  ): Promise<LancamentoRateado[]> {
+    const path = `/financeiro/lancamentos/${encodeURIComponent(
+      lancamentoId
+    )}/rateios?organizacaoId=${encodeURIComponent(organizacaoId)}`;
+    return request<LancamentoRateado[]>(path, {}, token);
+  },
+
+  async removerRateiosLancamento(
+    token: string,
+    lancamentoId: string,
+    organizacaoId: string
+  ): Promise<void> {
+    const path = `/financeiro/lancamentos/${encodeURIComponent(
+      lancamentoId
+    )}/rateios?organizacaoId=${encodeURIComponent(organizacaoId)}`;
+    await request<void>(path, { method: "DELETE" }, token);
+  },
+
+  async aplicarRegraRateio(
+    token: string,
+    regraId: string,
+    payload: { organizacaoId: string; lancamentoId: string }
+  ): Promise<LancamentoRateado[]> {
+    return request<LancamentoRateado[]>(
+      `/financeiro/rateios/${encodeURIComponent(regraId)}/aplicar`,
+      {
+        method: "POST",
+        body: JSON.stringify(payload)
+      },
+      token
+    );
+  },
+
   async listarLancamentos(
     token: string,
     organizacaoId: string,
@@ -1494,6 +1937,27 @@ export const api = {
       `/financeiro/lancamentos/${encodeURIComponent(id)}/pagar`,
       {
         method: "POST"
+      },
+      token
+    );
+  },
+
+  async baixarLancamentoManual(
+    token: string,
+    id: string,
+    payload: {
+      organizacaoId: string;
+      dataPagamento?: string;
+      contaFinanceiraId?: string;
+      formaPagamento?: string;
+      referencia?: string;
+    }
+  ): Promise<void> {
+    await request<void>(
+      `/financeiro/lancamentos/${encodeURIComponent(id)}/baixa-manual`,
+      {
+        method: "POST",
+        body: JSON.stringify(payload)
       },
       token
     );

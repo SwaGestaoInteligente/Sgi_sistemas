@@ -6,6 +6,7 @@ import * as XLSX from "xlsx";
 import AnexosPanel from "../components/AnexosPanel";
 import {
   api,
+  AbonoFinanceiro,
   BalanceteItem,
   BalancoResumo,
   ChargeItem,
@@ -16,11 +17,17 @@ import {
   DocumentoCobranca,
   LancamentoContabil,
   LancamentoFinanceiro,
+  LancamentoRateado,
+  LeituraConsumo,
+  MedidorConsumo,
   Organizacao,
   Pessoa,
   PeriodoContabil,
   PlanoContas,
-  RecursoReservavel
+  PrevisaoOrcamentaria,
+  RegraRateio,
+  RecursoReservavel,
+  UnidadeOrganizacional
 } from "../api";
 import { can } from "../authz";
 import { useAuth } from "../hooks/useAuth";
@@ -59,22 +66,41 @@ export const menuFinanceiro: Array<{ id: FinanceiroTab; label: string; badge?: s
   { id: "contabilidade", label: "Contabilidade" },
   { id: "categorias", label: "Categorias" },
   { id: "contas", label: "Contas" },
-  { id: "consumos", label: "Consumos", badge: "Em breve" },
+  { id: "consumos", label: "Consumos" },
   { id: "receitasDespesas", label: "Receitas e despesas" },
   { id: "contasPagar", label: "Contas a pagar" },
   { id: "contasReceber", label: "Contas a receber" },
-  { id: "previsaoOrcamentaria", label: "Previsao orcamentaria", badge: "Em breve" },
+  { id: "previsaoOrcamentaria", label: "Previsao orcamentaria" },
   { id: "transferencias", label: "Transferencias" },
-  { id: "abonos", label: "Abonos", badge: "Em breve" },
+  { id: "abonos", label: "Abonos" },
   { id: "baixasManuais", label: "Baixas manuais" },
-  { id: "gruposRateio", label: "Grupos de rateio", badge: "Em breve" },
+  { id: "gruposRateio", label: "Grupos de rateio" },
   { id: "itensCobrados", label: "Cobrancas" },
   { id: "faturas", label: "Faturas" },
   { id: "inadimplentes", label: "Inadimplentes" },
   { id: "conciliacaoBancaria", label: "Conciliacao bancaria" },
-  { id: "livroPrestacaoContas", label: "Livro de prestacao de contas", badge: "Em breve" },
+  { id: "livroPrestacaoContas", label: "Livro de prestacao de contas" },
   { id: "relatorios", label: "Relatorios" }
 ];
+
+type ConsumoCsvRow = {
+  linha: number;
+  medidorId?: string;
+  numeroSerie?: string;
+  medidorNome?: string;
+  unidade?: string;
+  competencia?: string;
+  dataLeitura?: string;
+  leituraAtual?: string;
+  observacao?: string;
+};
+
+type ConsumoRateioItem = {
+  unidadeId: string;
+  unidadeLabel: string;
+  consumo: number;
+  valor: number;
+};
 
 export default function FinanceiroView({
   organizacao,
@@ -189,6 +215,27 @@ export default function FinanceiroView({
     useState(true);
   const [novoItemDescricao, setNovoItemDescricao] = useState("");
 
+  // Grupos de rateio
+  const [regrasRateio, setRegrasRateio] = useState<RegraRateio[]>([]);
+  const [unidadesRateio, setUnidadesRateio] = useState<
+    UnidadeOrganizacional[]
+  >([]);
+  const [novoRateioNome, setNovoRateioNome] = useState("");
+  const [novoRateioTipo, setNovoRateioTipo] = useState<
+    "igual" | "percentual"
+  >("igual");
+  const [novoRateioUnidades, setNovoRateioUnidades] = useState<
+    Record<string, string>
+  >({});
+  const [rateioRegraSelecionadaId, setRateioRegraSelecionadaId] =
+    useState("");
+  const [rateioLancamentoId, setRateioLancamentoId] = useState("");
+  const [rateiosLancamento, setRateiosLancamento] = useState<
+    LancamentoRateado[]
+  >([]);
+  const [rateioLoading, setRateioLoading] = useState(false);
+  const [rateioErro, setRateioErro] = useState<string | null>(null);
+
   // Uploads e conciliação
   const [mostrarEnvio, setMostrarEnvio] = useState(false);
   const [tipoEnvio, setTipoEnvio] = useState("boleto");
@@ -212,6 +259,110 @@ export default function FinanceiroView({
   const [recursosRelatorio, setRecursosRelatorio] = useState<
     RecursoReservavel[]
   >([]);
+
+  // Livro de prestacao de contas
+  const [livroInicio, setLivroInicio] = useState("");
+  const [livroFim, setLivroFim] = useState("");
+  const [livroIncluirInadimplencia, setLivroIncluirInadimplencia] =
+    useState(true);
+  const [livroIncluirDetalhes, setLivroIncluirDetalhes] = useState(true);
+
+  // Previsao orcamentaria
+  const [previsaoAno, setPrevisaoAno] = useState(() => new Date().getFullYear());
+  const [previsaoTipo, setPrevisaoTipo] = useState<"Receita" | "Despesa">(
+    "Receita"
+  );
+  const [previsoesOrcamentarias, setPrevisoesOrcamentarias] = useState<
+    PrevisaoOrcamentaria[]
+  >([]);
+  const [previsaoCategoriaId, setPrevisaoCategoriaId] = useState("");
+  const [previsaoMes, setPrevisaoMes] = useState(
+    () => new Date().getMonth() + 1
+  );
+  const [previsaoValor, setPrevisaoValor] = useState("");
+  const [previsaoObservacao, setPrevisaoObservacao] = useState("");
+  const [previsaoLoading, setPrevisaoLoading] = useState(false);
+  const [previsaoErro, setPrevisaoErro] = useState<string | null>(null);
+
+  // Abonos
+  const [abonos, setAbonos] = useState<AbonoFinanceiro[]>([]);
+  const [abonoLancamentoId, setAbonoLancamentoId] = useState("");
+  const [abonoTipo, setAbonoTipo] = useState<"valor" | "percentual">("valor");
+  const [abonoValor, setAbonoValor] = useState("");
+  const [abonoPercentual, setAbonoPercentual] = useState("");
+  const [abonoMotivo, setAbonoMotivo] = useState("");
+  const [abonoObservacao, setAbonoObservacao] = useState("");
+  const [abonoLoading, setAbonoLoading] = useState(false);
+  const [abonoErro, setAbonoErro] = useState<string | null>(null);
+
+  // Baixas manuais
+  const [baixaLancamentoId, setBaixaLancamentoId] = useState("");
+  const [baixaFiltroTipo, setBaixaFiltroTipo] = useState<"todos" | "pagar" | "receber">(
+    "todos"
+  );
+  const [baixaFiltroTexto, setBaixaFiltroTexto] = useState("");
+  const [baixaData, setBaixaData] = useState(() => {
+    const agora = new Date();
+    const local = new Date(agora.getTime() - agora.getTimezoneOffset() * 60000);
+    return local.toISOString().slice(0, 10);
+  });
+  const [baixaContaId, setBaixaContaId] = useState("");
+  const [baixaFormaPagamento, setBaixaFormaPagamento] = useState("dinheiro");
+  const [baixaReferencia, setBaixaReferencia] = useState("");
+  const [baixaLoading, setBaixaLoading] = useState(false);
+  const [baixaErro, setBaixaErro] = useState<string | null>(null);
+
+  // Consumos
+  const [medidoresConsumo, setMedidoresConsumo] = useState<MedidorConsumo[]>([]);
+  const [leiturasConsumo, setLeiturasConsumo] = useState<LeituraConsumo[]>([]);
+  const [medidorSelecionadoId, setMedidorSelecionadoId] = useState("");
+  const [novoMedidorNome, setNovoMedidorNome] = useState("");
+  const [novoMedidorTipo, setNovoMedidorTipo] = useState("Agua");
+  const [novoMedidorUnidadeId, setNovoMedidorUnidadeId] = useState("");
+  const [novoMedidorUnidadeMedida, setNovoMedidorUnidadeMedida] =
+    useState("m3");
+  const [novoMedidorNumeroSerie, setNovoMedidorNumeroSerie] = useState("");
+  const [novoMedidorObservacao, setNovoMedidorObservacao] = useState("");
+  const [leituraCompetencia, setLeituraCompetencia] = useState(() =>
+    new Date().toISOString().slice(0, 7)
+  );
+  const [leituraData, setLeituraData] = useState(() => {
+    const agora = new Date();
+    const local = new Date(agora.getTime() - agora.getTimezoneOffset() * 60000);
+    return local.toISOString().slice(0, 10);
+  });
+  const [leituraAtual, setLeituraAtual] = useState("");
+  const [leituraObservacao, setLeituraObservacao] = useState("");
+  const [consumoLoading, setConsumoLoading] = useState(false);
+  const [consumoErro, setConsumoErro] = useState<string | null>(null);
+  const [consumoArquivo, setConsumoArquivo] = useState<File | null>(null);
+  const [consumoImportStatus, setConsumoImportStatus] = useState<string | null>(
+    null
+  );
+  const [consumoImportErros, setConsumoImportErros] = useState<string[]>([]);
+  const [consumoImportando, setConsumoImportando] = useState(false);
+  const [rateioConsumoCompetencia, setRateioConsumoCompetencia] = useState(
+    () => new Date().toISOString().slice(0, 7)
+  );
+  const [rateioConsumoTipo, setRateioConsumoTipo] = useState("Agua");
+  const [rateioConsumoValorTotal, setRateioConsumoValorTotal] = useState("");
+  const [rateioConsumoVencimento, setRateioConsumoVencimento] = useState(() => {
+    const agora = new Date();
+    const local = new Date(agora.getTime() - agora.getTimezoneOffset() * 60000);
+    return local.toISOString().slice(0, 10);
+  });
+  const [rateioConsumoDescricao, setRateioConsumoDescricao] = useState("");
+  const [rateioConsumoCategoriaId, setRateioConsumoCategoriaId] = useState("");
+  const [rateioConsumoPreview, setRateioConsumoPreview] = useState<
+    ConsumoRateioItem[]
+  >([]);
+  const [rateioConsumoLoading, setRateioConsumoLoading] = useState(false);
+  const [rateioConsumoErro, setRateioConsumoErro] = useState<string | null>(
+    null
+  );
+  const [rateioConsumoStatus, setRateioConsumoStatus] = useState<string | null>(
+    null
+  );
 
   // Plano de contas (categorias financeiras)
   const [novaCategoriaCodigo, setNovaCategoriaCodigo] = useState("");
@@ -596,6 +747,1050 @@ export default function FinanceiroView({
     }
   };
 
+  const carregarRegrasRateio = async () => {
+    if (!token) return;
+    try {
+      setRateioErro(null);
+      setRateioLoading(true);
+      const lista = await api.listarRegrasRateio(token, organizacaoId);
+      setRegrasRateio(lista);
+    } catch (e: any) {
+      setRateioErro(e.message || "Erro ao carregar grupos de rateio");
+    } finally {
+      setRateioLoading(false);
+    }
+  };
+
+  const carregarUnidadesRateio = async () => {
+    if (!token) return;
+    try {
+      setRateioErro(null);
+      const lista = await api.listarUnidades(token, organizacaoId);
+      setUnidadesRateio(lista);
+    } catch (e: any) {
+      setRateioErro(e.message || "Erro ao carregar unidades para rateio");
+    }
+  };
+
+  const carregarRateiosLancamento = async (lancamentoId: string) => {
+    if (!token) return;
+    if (!lancamentoId) {
+      setRateiosLancamento([]);
+      return;
+    }
+    try {
+      setRateioErro(null);
+      setRateioLoading(true);
+      const lista = await api.listarRateiosLancamento(
+        token,
+        lancamentoId,
+        organizacaoId
+      );
+      setRateiosLancamento(lista);
+    } catch (e: any) {
+      setRateioErro(e.message || "Erro ao carregar rateios do lancamento");
+    } finally {
+      setRateioLoading(false);
+    }
+  };
+
+  const limparFormularioRateio = () => {
+    setNovoRateioNome("");
+    setNovoRateioTipo("igual");
+    setNovoRateioUnidades({});
+  };
+
+  const selecionarTodasUnidadesRateio = () => {
+    const selecionadas = unidadesRateioDisplay.reduce(
+      (acc, unidade) => {
+        acc[unidade.id] = novoRateioTipo === "percentual" ? "0" : "";
+        return acc;
+      },
+      {} as Record<string, string>
+    );
+    setNovoRateioUnidades(selecionadas);
+  };
+
+  const criarRegraRateio = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!token) return;
+    if (!novoRateioNome.trim()) {
+      setRateioErro("Informe o nome do grupo de rateio.");
+      return;
+    }
+
+    const unidadesSelecionadas = Object.entries(novoRateioUnidades).map(
+      ([unidadeId, percentualRaw]) => {
+        const percentual = percentualRaw
+          ? Number(percentualRaw.replace(",", "."))
+          : undefined;
+        return {
+          unidadeId,
+          percentual: Number.isFinite(percentual) ? percentual : undefined
+        };
+      }
+    );
+
+    if (unidadesSelecionadas.length === 0) {
+      setRateioErro("Selecione ao menos uma unidade para o rateio.");
+      return;
+    }
+
+    if (novoRateioTipo === "percentual") {
+      const percentuaisInvalidos = unidadesSelecionadas.some(
+        (u) => u.percentual === undefined
+      );
+      if (percentuaisInvalidos) {
+        setRateioErro("Informe o percentual para todas as unidades.");
+        return;
+      }
+      const soma = unidadesSelecionadas.reduce(
+        (acc, u) => acc + (u.percentual ?? 0),
+        0
+      );
+      if (Math.abs(soma - 100) > 0.01) {
+        setRateioErro("A soma dos percentuais deve ser 100%.");
+        return;
+      }
+    }
+
+    try {
+      setRateioErro(null);
+      setRateioLoading(true);
+      const regra = await api.criarRegraRateio(token, {
+        organizacaoId,
+        nome: novoRateioNome.trim(),
+        tipoBase: novoRateioTipo,
+        unidades: unidadesSelecionadas
+      });
+      setRegrasRateio((prev) => [...prev, regra]);
+      limparFormularioRateio();
+    } catch (e: any) {
+      setRateioErro(e.message || "Erro ao criar grupo de rateio");
+    } finally {
+      setRateioLoading(false);
+    }
+  };
+
+  const removerRegraRateio = async (regra: RegraRateio) => {
+    if (!token) return;
+    if (!window.confirm(`Remover o grupo "${regra.nome}"?`)) {
+      return;
+    }
+    try {
+      setRateioErro(null);
+      setRateioLoading(true);
+      await api.removerRegraRateio(token, regra.id);
+      setRegrasRateio((prev) => prev.filter((r) => r.id !== regra.id));
+      if (rateioRegraSelecionadaId === regra.id) {
+        setRateioRegraSelecionadaId("");
+      }
+    } catch (e: any) {
+      setRateioErro(e.message || "Erro ao remover grupo de rateio");
+    } finally {
+      setRateioLoading(false);
+    }
+  };
+
+  const aplicarRegraRateio = async () => {
+    if (!token) return;
+    if (!rateioLancamentoId) {
+      setRateioErro("Selecione um lancamento para aplicar o rateio.");
+      return;
+    }
+    if (!rateioRegraSelecionadaId) {
+      setRateioErro("Selecione um grupo de rateio.");
+      return;
+    }
+    try {
+      setRateioErro(null);
+      setRateioLoading(true);
+      const lista = await api.aplicarRegraRateio(
+        token,
+        rateioRegraSelecionadaId,
+        {
+          organizacaoId,
+          lancamentoId: rateioLancamentoId
+        }
+      );
+      setRateiosLancamento(lista);
+    } catch (e: any) {
+      setRateioErro(e.message || "Erro ao aplicar rateio");
+    } finally {
+      setRateioLoading(false);
+    }
+  };
+
+  const limparRateiosLancamento = async () => {
+    if (!token) return;
+    if (!rateioLancamentoId) return;
+    try {
+      setRateioErro(null);
+      setRateioLoading(true);
+      await api.removerRateiosLancamento(
+        token,
+        rateioLancamentoId,
+        organizacaoId
+      );
+      setRateiosLancamento([]);
+    } catch (e: any) {
+      setRateioErro(e.message || "Erro ao limpar rateio");
+    } finally {
+      setRateioLoading(false);
+    }
+  };
+
+  const carregarMedidoresConsumo = async () => {
+    if (!token) return;
+    try {
+      setConsumoErro(null);
+      setConsumoLoading(true);
+      const lista = await api.listarMedidoresConsumo(token, organizacaoId);
+      setMedidoresConsumo(lista);
+      setMedidorSelecionadoId((prev) => {
+        if (prev && lista.some((m) => m.id === prev)) {
+          return prev;
+        }
+        return lista[0]?.id ?? "";
+      });
+    } catch (e: any) {
+      setConsumoErro(e.message || "Erro ao carregar medidores de consumo");
+    } finally {
+      setConsumoLoading(false);
+    }
+  };
+
+  const carregarLeiturasConsumo = async (medidorId: string) => {
+    if (!token) return;
+    if (!medidorId) {
+      setLeiturasConsumo([]);
+      return;
+    }
+    try {
+      setConsumoErro(null);
+      setConsumoLoading(true);
+      const lista = await api.listarLeiturasConsumo(
+        token,
+        organizacaoId,
+        medidorId
+      );
+      setLeiturasConsumo(lista);
+    } catch (e: any) {
+      setConsumoErro(e.message || "Erro ao carregar leituras do medidor");
+    } finally {
+      setConsumoLoading(false);
+    }
+  };
+
+  const criarMedidorConsumo = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!token) return;
+    if (!novoMedidorUnidadeId) {
+      setConsumoErro("Selecione a unidade do medidor.");
+      return;
+    }
+    if (!novoMedidorNome.trim()) {
+      setConsumoErro("Informe o nome do medidor.");
+      return;
+    }
+    if (!novoMedidorUnidadeMedida.trim()) {
+      setConsumoErro("Informe a unidade de medida.");
+      return;
+    }
+
+    try {
+      setConsumoErro(null);
+      setConsumoLoading(true);
+      const criado = await api.criarMedidorConsumo(token, {
+        organizacaoId,
+        unidadeOrganizacionalId: novoMedidorUnidadeId,
+        nome: novoMedidorNome.trim(),
+        tipo: novoMedidorTipo,
+        unidadeMedida: novoMedidorUnidadeMedida.trim(),
+        numeroSerie: novoMedidorNumeroSerie.trim() || null,
+        ativo: true,
+        observacao: novoMedidorObservacao.trim() || null
+      });
+      setMedidoresConsumo((prev) => {
+        const novaLista = [...prev, criado];
+        novaLista.sort((a, b) => a.nome.localeCompare(b.nome));
+        return novaLista;
+      });
+      setMedidorSelecionadoId(criado.id);
+      setNovoMedidorNome("");
+      setNovoMedidorNumeroSerie("");
+      setNovoMedidorObservacao("");
+    } catch (e: any) {
+      setConsumoErro(e.message || "Erro ao salvar medidor de consumo");
+    } finally {
+      setConsumoLoading(false);
+    }
+  };
+
+  const editarMedidorConsumo = async (medidor: MedidorConsumo) => {
+    if (!token) return;
+    const nome = window.prompt("Nome do medidor:", medidor.nome);
+    if (!nome) return;
+    const tipo = window.prompt(
+      "Tipo (Agua, Gas, Energia, Outro):",
+      medidor.tipo
+    );
+    if (!tipo) return;
+    const unidadeMedida = window.prompt(
+      "Unidade de medida:",
+      medidor.unidadeMedida
+    );
+    if (!unidadeMedida) return;
+    if (!nome.trim()) {
+      setConsumoErro("Nome do medidor invalido.");
+      return;
+    }
+    if (!unidadeMedida.trim()) {
+      setConsumoErro("Unidade de medida invalida.");
+      return;
+    }
+    const tipoNormalizado = (() => {
+      const raw = tipo.trim().toLowerCase();
+      if (raw === "agua") return "Agua";
+      if (raw === "gas") return "Gas";
+      if (raw === "energia") return "Energia";
+      if (raw === "outro" || raw === "outros") return "Outro";
+      return "";
+    })();
+    if (!tipoNormalizado) {
+      setConsumoErro("Tipo do medidor invalido.");
+      return;
+    }
+    const numeroSerie = window.prompt(
+      "Numero de serie (opcional):",
+      medidor.numeroSerie ?? ""
+    );
+    const observacao = window.prompt(
+      "Observacao (opcional):",
+      medidor.observacao ?? ""
+    );
+
+    try {
+      setConsumoErro(null);
+      setConsumoLoading(true);
+      await api.atualizarMedidorConsumo(token, medidor.id, {
+        unidadeOrganizacionalId: medidor.unidadeOrganizacionalId,
+        nome: nome.trim(),
+        tipo: tipoNormalizado,
+        unidadeMedida: unidadeMedida.trim(),
+        numeroSerie: numeroSerie?.trim() || null,
+        ativo: medidor.ativo,
+        observacao: observacao?.trim() || null
+      });
+      setMedidoresConsumo((prev) =>
+        prev.map((item) =>
+          item.id === medidor.id
+            ? {
+                ...item,
+                nome: nome.trim(),
+                tipo: tipoNormalizado,
+                unidadeMedida: unidadeMedida.trim(),
+                numeroSerie: numeroSerie?.trim() || null,
+                observacao: observacao?.trim() || null
+              }
+            : item
+        )
+      );
+    } catch (e: any) {
+      setConsumoErro(e.message || "Erro ao atualizar medidor");
+    } finally {
+      setConsumoLoading(false);
+    }
+  };
+
+  const alternarStatusMedidorConsumo = async (medidor: MedidorConsumo) => {
+    if (!token) return;
+    try {
+      setConsumoErro(null);
+      setConsumoLoading(true);
+      await api.atualizarMedidorConsumo(token, medidor.id, {
+        unidadeOrganizacionalId: medidor.unidadeOrganizacionalId,
+        nome: medidor.nome,
+        tipo: medidor.tipo,
+        unidadeMedida: medidor.unidadeMedida,
+        numeroSerie: medidor.numeroSerie ?? null,
+        ativo: !medidor.ativo,
+        observacao: medidor.observacao ?? null
+      });
+      setMedidoresConsumo((prev) =>
+        prev.map((item) =>
+          item.id === medidor.id ? { ...item, ativo: !item.ativo } : item
+        )
+      );
+    } catch (e: any) {
+      setConsumoErro(e.message || "Erro ao atualizar status do medidor");
+    } finally {
+      setConsumoLoading(false);
+    }
+  };
+
+  const removerMedidorConsumo = async (medidor: MedidorConsumo) => {
+    if (!token) return;
+    if (!window.confirm("Remover este medidor e suas leituras?")) return;
+    try {
+      setConsumoErro(null);
+      setConsumoLoading(true);
+      await api.removerMedidorConsumo(token, medidor.id);
+      setMedidoresConsumo((prev) => prev.filter((item) => item.id !== medidor.id));
+      if (medidorSelecionadoId === medidor.id) {
+        setMedidorSelecionadoId("");
+        setLeiturasConsumo([]);
+      }
+    } catch (e: any) {
+      setConsumoErro(e.message || "Erro ao remover medidor");
+    } finally {
+      setConsumoLoading(false);
+    }
+  };
+
+  const criarLeituraConsumo = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!token) return;
+    if (!medidorSelecionadoId) {
+      setConsumoErro("Selecione um medidor para registrar a leitura.");
+      return;
+    }
+    if (!leituraCompetencia) {
+      setConsumoErro("Informe a competencia.");
+      return;
+    }
+    if (!leituraData) {
+      setConsumoErro("Informe a data da leitura.");
+      return;
+    }
+    const leituraValor = Number(
+      leituraAtual.replace(/\./g, "").replace(",", ".")
+    );
+    if (!Number.isFinite(leituraValor) || leituraValor < 0) {
+      setConsumoErro("Leitura atual invalida.");
+      return;
+    }
+
+    try {
+      setConsumoErro(null);
+      setConsumoLoading(true);
+      const criada = await api.criarLeituraConsumo(token, {
+        organizacaoId,
+        medidorId: medidorSelecionadoId,
+        competencia: leituraCompetencia,
+        dataLeitura: leituraData,
+        leituraAtual: leituraValor,
+        observacao: leituraObservacao.trim() || null
+      });
+      setLeiturasConsumo((prev) => {
+        const novaLista = [...prev, criada];
+        novaLista.sort((a, b) =>
+          (a.dataLeitura ?? "").localeCompare(b.dataLeitura ?? "")
+        );
+        return novaLista;
+      });
+      setLeituraAtual("");
+      setLeituraObservacao("");
+    } catch (e: any) {
+      setConsumoErro(e.message || "Erro ao salvar leitura");
+    } finally {
+      setConsumoLoading(false);
+    }
+  };
+
+  const editarLeituraConsumo = async (leitura: LeituraConsumo) => {
+    if (!token) return;
+    const novaLeituraRaw = window.prompt(
+      "Nova leitura atual:",
+      leitura.leituraAtual.toString()
+    );
+    if (!novaLeituraRaw) return;
+    const novoValor = Number(
+      novaLeituraRaw.replace(/\./g, "").replace(",", ".")
+    );
+    if (!Number.isFinite(novoValor) || novoValor < 0) {
+      setConsumoErro("Leitura invalida.");
+      return;
+    }
+    const novaObservacao = window.prompt(
+      "Observacao (opcional):",
+      leitura.observacao ?? ""
+    );
+
+    try {
+      setConsumoErro(null);
+      setConsumoLoading(true);
+      await api.atualizarLeituraConsumo(token, leitura.id, {
+        competencia: leitura.competencia,
+        dataLeitura: leitura.dataLeitura,
+        leituraAtual: novoValor,
+        observacao: novaObservacao?.trim() || null
+      });
+      setLeiturasConsumo((prev) =>
+        prev.map((item) =>
+          item.id === leitura.id
+            ? {
+                ...item,
+                leituraAtual: novoValor,
+                consumo: novoValor - item.leituraAnterior,
+                observacao: novaObservacao?.trim() || null
+              }
+            : item
+        )
+      );
+    } catch (e: any) {
+      setConsumoErro(e.message || "Erro ao atualizar leitura");
+    } finally {
+      setConsumoLoading(false);
+    }
+  };
+
+  const removerLeituraConsumo = async (leitura: LeituraConsumo) => {
+    if (!token) return;
+    if (!window.confirm("Remover esta leitura?")) return;
+    try {
+      setConsumoErro(null);
+      setConsumoLoading(true);
+      await api.removerLeituraConsumo(token, leitura.id);
+      setLeiturasConsumo((prev) => prev.filter((item) => item.id !== leitura.id));
+    } catch (e: any) {
+      setConsumoErro(e.message || "Erro ao remover leitura");
+    } finally {
+      setConsumoLoading(false);
+    }
+  };
+
+  const importarLeiturasCsv = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!token || !consumoArquivo) return;
+
+    try {
+      setConsumoImportStatus(null);
+      setConsumoImportErros([]);
+      setConsumoImportando(true);
+
+      const linhas = await parseConsumoCsv(consumoArquivo);
+      if (linhas.length === 0) {
+        setConsumoImportErros(["Arquivo vazio ou sem linhas validas."]);
+        return;
+      }
+
+      const medidoresBase =
+        medidoresConsumo.length > 0
+          ? medidoresConsumo
+          : await api.listarMedidoresConsumo(token, organizacaoId);
+
+      const medidoresPorId = new Map(
+        medidoresBase.map((m) => [m.id.toLowerCase(), m])
+      );
+      const medidoresPorSerie = new Map(
+        medidoresBase
+          .filter((m) => m.numeroSerie)
+          .map((m) => [String(m.numeroSerie).toLowerCase(), m])
+      );
+      const medidoresPorNome = new Map<string, MedidorConsumo[]>();
+      medidoresBase.forEach((m) => {
+        const chave = m.nome.trim().toLowerCase();
+        const lista = medidoresPorNome.get(chave) ?? [];
+        lista.push(m);
+        medidoresPorNome.set(chave, lista);
+      });
+
+      const unidadesPorCodigo = new Map<string, UnidadeOrganizacional>();
+      const unidadesPorNome = new Map<string, UnidadeOrganizacional>();
+      unidadesRateio.forEach((unidade) => {
+        if (unidade.codigoInterno) {
+          unidadesPorCodigo.set(unidade.codigoInterno.trim().toLowerCase(), unidade);
+        }
+        unidadesPorNome.set(unidade.nome.trim().toLowerCase(), unidade);
+      });
+
+      let sucesso = 0;
+      const erros: string[] = [];
+
+      for (const linha of linhas) {
+        const medidorId = linha.medidorId?.trim();
+        const numeroSerie = linha.numeroSerie?.trim();
+        const medidorNome = linha.medidorNome?.trim();
+        const unidadeInfo = linha.unidade?.trim();
+
+        let medidor: MedidorConsumo | undefined;
+        if (medidorId) {
+          medidor = medidoresPorId.get(medidorId.toLowerCase());
+        } else if (numeroSerie) {
+          medidor = medidoresPorSerie.get(numeroSerie.toLowerCase());
+        } else if (medidorNome) {
+          const candidatos = medidoresPorNome.get(medidorNome.toLowerCase()) ?? [];
+          if (candidatos.length === 1) {
+            medidor = candidatos[0];
+          } else if (candidatos.length > 1 && unidadeInfo) {
+            const unidadeKey = unidadeInfo.toLowerCase();
+            const unidadeMatch =
+              unidadesPorCodigo.get(unidadeKey) || unidadesPorNome.get(unidadeKey);
+            if (unidadeMatch) {
+              medidor = candidatos.find(
+                (item) => item.unidadeOrganizacionalId === unidadeMatch.id
+              );
+            }
+          }
+        }
+
+        if (!medidor) {
+          erros.push(`Linha ${linha.linha}: medidor nao encontrado.`);
+          continue;
+        }
+
+        const dataLeitura = parseCsvDate(linha.dataLeitura ?? "");
+        const competenciaRaw = linha.competencia?.trim();
+        const competenciaValida =
+          competenciaRaw && /^\d{4}-\d{2}$/.test(competenciaRaw)
+            ? competenciaRaw
+            : dataLeitura
+            ? dataLeitura.slice(0, 7)
+            : "";
+        if (!competenciaValida) {
+          erros.push(`Linha ${linha.linha}: competencia invalida.`);
+          continue;
+        }
+
+        const dataFinal = dataLeitura ?? `${competenciaValida}-01`;
+        const leituraValor = Number(
+          (linha.leituraAtual ?? "").replace(/\./g, "").replace(",", ".")
+        );
+        if (!Number.isFinite(leituraValor) || leituraValor < 0) {
+          erros.push(`Linha ${linha.linha}: leitura atual invalida.`);
+          continue;
+        }
+
+        try {
+          await api.criarLeituraConsumo(token, {
+            organizacaoId,
+            medidorId: medidor.id,
+            competencia: competenciaValida,
+            dataLeitura: dataFinal,
+            leituraAtual: leituraValor,
+            observacao: linha.observacao?.trim() || null
+          });
+          sucesso += 1;
+        } catch (err: any) {
+          erros.push(
+            `Linha ${linha.linha}: ${err?.message || "Erro ao importar leitura."}`
+          );
+        }
+      }
+
+      setConsumoImportStatus(
+        `Importadas ${sucesso} leitura(s). ${erros.length} erro(s).`
+      );
+      setConsumoImportErros(erros.slice(0, 6));
+      setConsumoArquivo(null);
+
+      if (medidorSelecionadoId) {
+        await carregarLeiturasConsumo(medidorSelecionadoId);
+      }
+    } catch (e: any) {
+      setConsumoImportErros([e.message || "Erro ao importar CSV."]);
+    } finally {
+      setConsumoImportando(false);
+    }
+  };
+
+  const calcularRateioConsumo = async (): Promise<ConsumoRateioItem[]> => {
+    if (!token) return [];
+
+    if (!rateioConsumoCompetencia) {
+      setRateioConsumoErro("Informe a competencia.");
+      return [];
+    }
+
+    const valorTotal = Number(
+      rateioConsumoValorTotal.replace(/\./g, "").replace(",", ".")
+    );
+    if (!Number.isFinite(valorTotal) || valorTotal <= 0) {
+      setRateioConsumoErro("Informe o valor total da conta.");
+      return [];
+    }
+
+    const medidoresFiltrados = medidoresConsumo.filter(
+      (m) =>
+        m.ativo &&
+        (rateioConsumoTipo === "Todos" || m.tipo === rateioConsumoTipo)
+    );
+    if (medidoresFiltrados.length === 0) {
+      setRateioConsumoErro("Nenhum medidor ativo encontrado para o tipo.");
+      return [];
+    }
+
+    const leiturasPorMedidor = await Promise.all(
+      medidoresFiltrados.map((medidor) =>
+        api.listarLeiturasConsumo(token, organizacaoId, medidor.id, {
+          competencia: rateioConsumoCompetencia
+        })
+      )
+    );
+
+    const consumoPorUnidade: Record<string, number> = {};
+    medidoresFiltrados.forEach((medidor, index) => {
+      const totalMedidor = (leiturasPorMedidor[index] ?? []).reduce(
+        (acc, leitura) => acc + (leitura.consumo ?? 0),
+        0
+      );
+      if (totalMedidor <= 0) return;
+      consumoPorUnidade[medidor.unidadeOrganizacionalId] =
+        (consumoPorUnidade[medidor.unidadeOrganizacionalId] ?? 0) + totalMedidor;
+    });
+
+    const itensBase = unidadesRateioDisplay
+      .map((unidade) => ({
+        unidadeId: unidade.id,
+        unidadeLabel: `${unidade.codigoInterno} - ${unidade.nome}`,
+        consumo: consumoPorUnidade[unidade.id] ?? 0
+      }))
+      .filter((item) => item.consumo > 0);
+
+    if (itensBase.length === 0) {
+      setRateioConsumoErro("Nenhum consumo encontrado para a competencia.");
+      return [];
+    }
+
+    const totalConsumo = itensBase.reduce((acc, item) => acc + item.consumo, 0);
+    const valores = itensBase.map((item) =>
+      Math.round((valorTotal * item.consumo * 100) / totalConsumo) / 100
+    );
+    const soma = valores.reduce((acc, valor) => acc + valor, 0);
+    const diferenca = valorTotal - soma;
+    if (valores.length > 0 && diferenca !== 0) {
+      valores[valores.length - 1] =
+        Math.round((valores[valores.length - 1] + diferenca) * 100) / 100;
+    }
+
+    return itensBase.map((item, index) => ({
+      ...item,
+      valor: valores[index]
+    }));
+  };
+
+  const simularRateioConsumo = async () => {
+    if (!token) return;
+    try {
+      setRateioConsumoErro(null);
+      setRateioConsumoStatus(null);
+      setRateioConsumoLoading(true);
+      const preview = await calcularRateioConsumo();
+      setRateioConsumoPreview(preview);
+      if (preview.length > 0) {
+        setRateioConsumoStatus(
+          `Simulacao gerada para ${preview.length} unidade(s).`
+        );
+      }
+    } catch (e: any) {
+      setRateioConsumoErro(e.message || "Erro ao simular rateio.");
+    } finally {
+      setRateioConsumoLoading(false);
+    }
+  };
+
+  const gerarCobrancasConsumo = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!token) return;
+    if (!rateioConsumoVencimento) {
+      setRateioConsumoErro("Informe o vencimento.");
+      return;
+    }
+
+    try {
+      setRateioConsumoErro(null);
+      setRateioConsumoStatus(null);
+      setRateioConsumoLoading(true);
+
+      const preview = await calcularRateioConsumo();
+      if (preview.length === 0) {
+        return;
+      }
+      setRateioConsumoPreview(preview);
+
+      const descricaoFinal =
+        rateioConsumoDescricao.trim() ||
+        `Consumo ${rateioConsumoTipo} ${rateioConsumoCompetencia}`;
+
+      if (
+        !window.confirm(
+          `Gerar ${preview.length} cobranca(s) para ${rateioConsumoCompetencia}?`
+        )
+      ) {
+        return;
+      }
+
+      for (const item of preview) {
+        await api.criarCobrancaUnidade(token, item.unidadeId, {
+          organizacaoId,
+          competencia: rateioConsumoCompetencia,
+          descricao: descricaoFinal,
+          categoriaId: rateioConsumoCategoriaId || undefined,
+          valor: item.valor,
+          vencimento: rateioConsumoVencimento,
+          status: "ABERTA"
+        });
+      }
+
+      setRateioConsumoStatus(
+        `Cobrancas geradas: ${preview.length} unidade(s).`
+      );
+      setRateioConsumoPreview([]);
+    } catch (e: any) {
+      setRateioConsumoErro(e.message || "Erro ao gerar cobrancas.");
+    } finally {
+      setRateioConsumoLoading(false);
+    }
+  };
+
+  const carregarPrevisoesOrcamentarias = async () => {
+    if (!token) return;
+    try {
+      setPrevisaoErro(null);
+      setPrevisaoLoading(true);
+      const lista = await api.listarPrevisoesOrcamentarias(token, organizacaoId, {
+        ano: previsaoAno,
+        tipo: previsaoTipo
+      });
+      setPrevisoesOrcamentarias(lista);
+    } catch (e: any) {
+      setPrevisaoErro(e.message || "Erro ao carregar previsoes orcamentarias");
+    } finally {
+      setPrevisaoLoading(false);
+    }
+  };
+
+  const criarPrevisaoOrcamentaria = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!token) return;
+    if (!previsaoCategoriaId) {
+      setPrevisaoErro("Selecione uma categoria.");
+      return;
+    }
+    const valor = Number(previsaoValor.replace(/\./g, "").replace(",", "."));
+    if (!Number.isFinite(valor) || valor <= 0) {
+      setPrevisaoErro("Informe um valor valido.");
+      return;
+    }
+
+    try {
+      setPrevisaoErro(null);
+      setPrevisaoLoading(true);
+      const criada = await api.criarPrevisaoOrcamentaria(token, {
+        organizacaoId,
+        planoContasId: previsaoCategoriaId,
+        tipo: previsaoTipo,
+        ano: previsaoAno,
+        mes: previsaoMes,
+        valorPrevisto: valor,
+        observacao: previsaoObservacao.trim() || null
+      });
+      setPrevisoesOrcamentarias((prev) => {
+        const semDuplicado = prev.filter((p) => p.id !== criada.id);
+        return [...semDuplicado, criada];
+      });
+      setPrevisaoValor("");
+      setPrevisaoObservacao("");
+    } catch (e: any) {
+      setPrevisaoErro(e.message || "Erro ao salvar previsao orcamentaria");
+    } finally {
+      setPrevisaoLoading(false);
+    }
+  };
+
+  const atualizarPrevisaoOrcamentaria = async (
+    previsao: PrevisaoOrcamentaria
+  ) => {
+    if (!token) return;
+    const novoValorRaw = window.prompt(
+      "Novo valor previsto:",
+      previsao.valorPrevisto.toString()
+    );
+    if (!novoValorRaw) return;
+    const novoValor = Number(novoValorRaw.replace(/\./g, "").replace(",", "."));
+    if (!Number.isFinite(novoValor) || novoValor <= 0) {
+      setPrevisaoErro("Valor invalido.");
+      return;
+    }
+    const novaObservacao = window.prompt(
+      "Observacao (opcional):",
+      previsao.observacao ?? ""
+    );
+
+    try {
+      setPrevisaoErro(null);
+      setPrevisaoLoading(true);
+      await api.atualizarPrevisaoOrcamentaria(token, previsao.id, {
+        planoContasId: previsao.planoContasId,
+        tipo: previsao.tipo,
+        ano: previsao.ano,
+        mes: previsao.mes,
+        valorPrevisto: novoValor,
+        observacao: novaObservacao?.trim() || null
+      });
+      setPrevisoesOrcamentarias((prev) =>
+        prev.map((p) =>
+          p.id === previsao.id
+            ? {
+                ...p,
+                valorPrevisto: novoValor,
+                observacao: novaObservacao?.trim() || null
+              }
+            : p
+        )
+      );
+    } catch (e: any) {
+      setPrevisaoErro(e.message || "Erro ao atualizar previsao");
+    } finally {
+      setPrevisaoLoading(false);
+    }
+  };
+
+  const removerPrevisaoOrcamentaria = async (
+    previsao: PrevisaoOrcamentaria
+  ) => {
+    if (!token) return;
+    if (!window.confirm("Remover esta previsao?")) return;
+    try {
+      setPrevisaoErro(null);
+      setPrevisaoLoading(true);
+      await api.removerPrevisaoOrcamentaria(token, previsao.id);
+      setPrevisoesOrcamentarias((prev) =>
+        prev.filter((p) => p.id !== previsao.id)
+      );
+    } catch (e: any) {
+      setPrevisaoErro(e.message || "Erro ao remover previsao");
+    } finally {
+      setPrevisaoLoading(false);
+    }
+  };
+
+  const carregarAbonos = async () => {
+    if (!token) return;
+    try {
+      setAbonoErro(null);
+      setAbonoLoading(true);
+      const lista = await api.listarAbonos(token, organizacaoId);
+      setAbonos(lista);
+    } catch (e: any) {
+      setAbonoErro(e.message || "Erro ao carregar abonos.");
+    } finally {
+      setAbonoLoading(false);
+    }
+  };
+
+  const criarAbono = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!token) return;
+    if (!abonoLancamentoId) {
+      setAbonoErro("Selecione um lancamento para abonar.");
+      return;
+    }
+    if (!abonoMotivo.trim()) {
+      setAbonoErro("Informe o motivo do abono.");
+      return;
+    }
+
+    let valor: number | null = null;
+    let percentual: number | null = null;
+    if (abonoTipo === "percentual") {
+      const parsed = Number(
+        abonoPercentual.replace(/\./g, "").replace(",", ".")
+      );
+      if (!Number.isFinite(parsed) || parsed <= 0 || parsed > 100) {
+        setAbonoErro("Percentual invalido.");
+        return;
+      }
+      percentual = parsed;
+    } else {
+      const parsed = Number(abonoValor.replace(/\./g, "").replace(",", "."));
+      if (!Number.isFinite(parsed) || parsed <= 0) {
+        setAbonoErro("Valor do abono invalido.");
+        return;
+      }
+      valor = parsed;
+    }
+
+    try {
+      setAbonoErro(null);
+      setAbonoLoading(true);
+      const criado = await api.criarAbono(token, {
+        organizacaoId,
+        lancamentoFinanceiroId: abonoLancamentoId,
+        tipo: abonoTipo,
+        valor,
+        percentual,
+        motivo: abonoMotivo.trim(),
+        observacao: abonoObservacao.trim() || null
+      });
+      setAbonos((prev) => [criado, ...prev]);
+      setAbonoValor("");
+      setAbonoPercentual("");
+      setAbonoMotivo("");
+      setAbonoObservacao("");
+    } catch (e: any) {
+      setAbonoErro(e.message || "Erro ao salvar abono.");
+    } finally {
+      setAbonoLoading(false);
+    }
+  };
+
+  const atualizarStatusAbono = async (abono: AbonoFinanceiro, status: string) => {
+    if (!token) return;
+    try {
+      setAbonoErro(null);
+      setAbonoLoading(true);
+      await api.atualizarStatusAbono(token, abono.id, status);
+      await Promise.all([carregarAbonos(), carregarReceitas()]);
+    } catch (e: any) {
+      setAbonoErro(e.message || "Erro ao atualizar status do abono.");
+    } finally {
+      setAbonoLoading(false);
+    }
+  };
+
+  const removerAbono = async (abono: AbonoFinanceiro) => {
+    if (!token) return;
+    if (!window.confirm("Remover este abono?")) return;
+    try {
+      setAbonoErro(null);
+      setAbonoLoading(true);
+      await api.removerAbono(token, abono.id);
+      setAbonos((prev) => prev.filter((item) => item.id !== abono.id));
+    } catch (e: any) {
+      setAbonoErro(e.message || "Erro ao remover abono.");
+    } finally {
+      setAbonoLoading(false);
+    }
+  };
+
+  const baixarLancamentoManual = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!token) return;
+    if (!baixaLancamentoId) {
+      setBaixaErro("Selecione um lancamento para baixar.");
+      return;
+    }
+    try {
+      setBaixaErro(null);
+      setBaixaLoading(true);
+      await api.baixarLancamentoManual(token, baixaLancamentoId, {
+        organizacaoId,
+        dataPagamento: baixaData || undefined,
+        contaFinanceiraId: baixaContaId || undefined,
+        formaPagamento: baixaFormaPagamento || undefined,
+        referencia: baixaReferencia.trim() || undefined
+      });
+      setBaixaReferencia("");
+      await Promise.all([carregarDespesas(), carregarReceitas(), carregarFaturas()]);
+    } catch (e: any) {
+      setBaixaErro(e.message || "Erro ao realizar baixa manual.");
+    } finally {
+      setBaixaLoading(false);
+    }
+  };
+
   const carregarReceitas = async () => {
     if (!token) return;
     try {
@@ -949,11 +2144,297 @@ export default function FinanceiroView({
     void carregarRecursosRelatorio();
   }, [aba, token, organizacaoId, recursosRelatorio.length]);
 
+  useEffect(() => {
+    if (aba !== "gruposRateio") return;
+    if (!token) return;
+    void carregarRegrasRateio();
+    void carregarUnidadesRateio();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aba, token, organizacaoId]);
+
+  useEffect(() => {
+    if (aba !== "gruposRateio") return;
+    if (!rateioLancamentoId) {
+      setRateiosLancamento([]);
+      return;
+    }
+    void carregarRateiosLancamento(rateioLancamentoId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aba, rateioLancamentoId]);
+
+  useEffect(() => {
+    if (aba !== "abonos") return;
+    if (!token) return;
+    void carregarAbonos();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aba, token, organizacaoId]);
+
+  useEffect(() => {
+    if (aba !== "abonos") return;
+    const elegiveis = receitas.filter(
+      (r) => !isSituacaoPaga(r.situacao) && !isSituacaoCancelada(r.situacao)
+    );
+    if (elegiveis.length === 0) {
+      if (abonoLancamentoId) {
+        setAbonoLancamentoId("");
+      }
+      return;
+    }
+    if (!abonoLancamentoId || !elegiveis.some((r) => r.id === abonoLancamentoId)) {
+      setAbonoLancamentoId(elegiveis[0].id);
+    }
+  }, [aba, abonoLancamentoId, receitas]);
+
+  useEffect(() => {
+    if (aba !== "baixasManuais") return;
+    const pendentes = [...despesas, ...receitas].filter((l) =>
+      isSituacaoAberta(l.situacao)
+    );
+    if (!pendentes.length) {
+      if (baixaLancamentoId) {
+        setBaixaLancamentoId("");
+      }
+      return;
+    }
+    if (
+      !baixaLancamentoId ||
+      !pendentes.some((l) => l.id === baixaLancamentoId)
+    ) {
+      setBaixaLancamentoId(pendentes[0].id);
+    }
+  }, [aba, despesas, receitas, baixaLancamentoId]);
+
+  useEffect(() => {
+    if (aba !== "baixasManuais") return;
+    if (baixaContaId) return;
+    const contasAtivas = contas.filter(
+      (conta) => (conta.status ?? "ativo").toLowerCase() === "ativo"
+    );
+    const contaAtiva = contasAtivas[0];
+    if (contaAtiva) {
+      setBaixaContaId(contaAtiva.id);
+    }
+  }, [aba, baixaContaId, contas]);
+
+  useEffect(() => {
+    if (aba !== "consumos") return;
+    if (!token) return;
+    void carregarMedidoresConsumo();
+    void carregarUnidadesRateio();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aba, token, organizacaoId]);
+
+  useEffect(() => {
+    if (aba !== "consumos") return;
+    if (!token) return;
+    if (!medidorSelecionadoId) {
+      setLeiturasConsumo([]);
+      return;
+    }
+    void carregarLeiturasConsumo(medidorSelecionadoId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aba, token, organizacaoId, medidorSelecionadoId]);
+
+  useEffect(() => {
+    if (aba !== "consumos") return;
+    if (novoMedidorUnidadeId || unidadesRateio.length === 0) return;
+    setNovoMedidorUnidadeId(unidadesRateio[0].id);
+  }, [aba, novoMedidorUnidadeId, unidadesRateio]);
+
+  useEffect(() => {
+    if (aba !== "previsaoOrcamentaria") return;
+    if (!token) return;
+    void carregarPrevisoesOrcamentarias();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aba, token, organizacaoId, previsaoAno, previsaoTipo]);
+
+  useEffect(() => {
+    if (aba !== "previsaoOrcamentaria") return;
+    const lista =
+      previsaoTipo === "Receita" ? categoriasReceita : categoriasDespesa;
+    if (lista.length === 0) {
+      if (previsaoCategoriaId) {
+        setPrevisaoCategoriaId("");
+      }
+      return;
+    }
+    if (
+      !previsaoCategoriaId ||
+      !lista.some((cat) => cat.id === previsaoCategoriaId)
+    ) {
+      setPrevisaoCategoriaId(lista[0].id);
+    }
+  }, [aba, previsaoTipo, categoriasReceita, categoriasDespesa, previsaoCategoriaId]);
+
   const handleAbaChange = (novaAba: FinanceiroTab) => {
     setAba(novaAba);
     requestAnimationFrame(() => {
       topoRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
+  };
+
+  const formatarValor = (valor: number) =>
+    valor.toLocaleString("pt-BR", {
+      style: "currency",
+      currency: "BRL"
+    });
+
+  const formatarData = (data?: string) =>
+    data ? new Date(data).toLocaleDateString("pt-BR") : "-";
+
+  const formatarConsumo = (valor: number) =>
+    valor.toLocaleString("pt-BR", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    });
+
+  const normalizarCsvHeader = (valor: string) =>
+    valor.trim().toLowerCase().replace(/\s+/g, "");
+
+  const splitCsvLine = (line: string, delimiter: string) => {
+    const result: string[] = [];
+    let current = "";
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i += 1) {
+      const char = line[i];
+      if (char === "\"") {
+        if (inQuotes && line[i + 1] === "\"") {
+          current += "\"";
+          i += 1;
+        } else {
+          inQuotes = !inQuotes;
+        }
+      } else if (char === delimiter && !inQuotes) {
+        result.push(current.trim());
+        current = "";
+      } else {
+        current += char;
+      }
+    }
+    result.push(current.trim());
+    return result;
+  };
+
+  const parseCsvDate = (raw: string): string | null => {
+    if (!raw) return null;
+    const value = raw.trim();
+    if (!value) return null;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      return value;
+    }
+    if (/^\d{4}\/\d{2}\/\d{2}$/.test(value)) {
+      return value.replace(/\//g, "-");
+    }
+    const brMatch = value.match(/^(\d{2})[\/-](\d{2})[\/-](\d{4})$/);
+    if (brMatch) {
+      return `${brMatch[3]}-${brMatch[2]}-${brMatch[1]}`;
+    }
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed.toISOString().slice(0, 10);
+    }
+    return null;
+  };
+
+  const parseConsumoCsv = async (file: File): Promise<ConsumoCsvRow[]> => {
+    const content = await file.text();
+    const lines = content
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+
+    if (lines.length === 0) {
+      return [];
+    }
+
+    const delimiter =
+      lines[0].split(";").length >= lines[0].split(",").length ? ";" : ",";
+    const headerCells = splitCsvLine(lines[0], delimiter).map(normalizarCsvHeader);
+    const knownHeaders = new Set([
+      "medidorid",
+      "medidor_id",
+      "idmedidor",
+      "medidor",
+      "medidor_nome",
+      "nomemedidor",
+      "numeroserie",
+      "numero_serie",
+      "serie",
+      "serial",
+      "unidade",
+      "unidade_id",
+      "codigounidade",
+      "codigo_unidade",
+      "competencia",
+      "competencia_mes",
+      "mes",
+      "data",
+      "data_leitura",
+      "leitura",
+      "leitura_atual",
+      "observacao",
+      "obs"
+    ]);
+    const hasHeader = headerCells.some((cell) => knownHeaders.has(cell));
+    const headerMap = new Map<string, number>();
+    if (hasHeader) {
+      headerCells.forEach((cell, index) => {
+        if (!headerMap.has(cell)) {
+          headerMap.set(cell, index);
+        }
+      });
+    }
+
+    const getByHeader = (cols: string[], keys: string[]) => {
+      for (const key of keys) {
+        const idx = headerMap.get(key);
+        if (idx !== undefined) {
+          return cols[idx] ?? "";
+        }
+      }
+      return "";
+    };
+
+    const rows: ConsumoCsvRow[] = [];
+    const startIndex = hasHeader ? 1 : 0;
+    for (let i = startIndex; i < lines.length; i += 1) {
+      const cols = splitCsvLine(lines[i], delimiter);
+      if (cols.length === 0) continue;
+
+      if (!hasHeader) {
+        rows.push({
+          linha: i + 1,
+          medidorId: cols[0],
+          competencia: cols[1],
+          dataLeitura: cols[2],
+          leituraAtual: cols[3],
+          observacao: cols[4],
+          numeroSerie: cols[5],
+          medidorNome: cols[6],
+          unidade: cols[7]
+        });
+        continue;
+      }
+
+      rows.push({
+        linha: i + 1,
+        medidorId: getByHeader(cols, ["medidorid", "medidor_id", "idmedidor"]),
+        numeroSerie: getByHeader(cols, [
+          "numeroserie",
+          "numero_serie",
+          "serie",
+          "serial"
+        ]),
+        medidorNome: getByHeader(cols, ["medidor", "medidor_nome", "nomemedidor"]),
+        unidade: getByHeader(cols, ["unidade", "unidade_id", "codigounidade", "codigo_unidade"]),
+        competencia: getByHeader(cols, ["competencia", "competencia_mes", "mes"]),
+        dataLeitura: getByHeader(cols, ["data", "data_leitura"]),
+        leituraAtual: getByHeader(cols, ["leitura", "leitura_atual"]),
+        observacao: getByHeader(cols, ["observacao", "obs"])
+      });
+    }
+
+    return rows;
   };
 
   const enviarArquivoFinanceiro = async (e: React.FormEvent) => {
@@ -1406,6 +2887,18 @@ export default function FinanceiroView({
     }
   };
 
+  const statusAbonoMeta = (status?: string) => {
+    const normalizada = (status ?? "").toLowerCase();
+    switch (normalizada) {
+      case "aprovado":
+        return { label: "Aprovado", className: "badge-status--aprovado" };
+      case "cancelado":
+        return { label: "Cancelado", className: "badge-status--cancelado" };
+      default:
+        return { label: "Pendente", className: "badge-status--pendente" };
+    }
+  };
+
   const isSituacaoAberta = (situacao?: string) =>
     ["aberto", "aprovado"].includes(normalizarSituacao(situacao));
   const isSituacaoPaga = (situacao?: string) =>
@@ -1455,6 +2948,16 @@ export default function FinanceiroView({
     categoriasReceita.map((c) => [c.id, `${c.codigo} - ${c.nome}`])
   );
   const receitasPorId = Object.fromEntries(receitas.map((r) => [r.id, r]));
+  const unidadesRateioPorId = Object.fromEntries(
+    unidadesRateio.map((u) => [u.id, `${u.codigoInterno} - ${u.nome}`])
+  );
+  const unidadesRateioAtivas = unidadesRateio.filter(
+    (u) =>
+      (u.status ?? "ativo").toLowerCase() === "ativo" &&
+      u.tipo.toLowerCase() !== "bloco"
+  );
+  const unidadesRateioDisplay =
+    unidadesRateioAtivas.length > 0 ? unidadesRateioAtivas : unidadesRateio;
 
   const despesasValidas = despesas.filter((d) => !isSituacaoCancelada(d.situacao));
   const receitasValidas = receitas.filter((r) => !isSituacaoCancelada(r.situacao));
@@ -1498,8 +3001,199 @@ export default function FinanceiroView({
     (sum, item) => sum + item.valor,
     0
   );
+  const normalizarDataIso = (data?: string) => (data ? data.slice(0, 10) : "");
+  const dentroPeriodoLivro = (data?: string) => {
+    const iso = normalizarDataIso(data);
+    if (!iso) return false;
+    if (livroInicio && iso < livroInicio) return false;
+    if (livroFim && iso > livroFim) return false;
+    return true;
+  };
+  const receitasLivro = receitasValidas.filter((r) =>
+    dentroPeriodoLivro(r.dataCompetencia ?? r.dataVencimento)
+  );
+  const despesasLivro = despesasValidas.filter((d) =>
+    dentroPeriodoLivro(d.dataCompetencia ?? d.dataVencimento)
+  );
+  const totalReceitasLivro = receitasLivro.reduce((sum, r) => sum + r.valor, 0);
+  const totalDespesasLivro = despesasLivro.reduce((sum, d) => sum + d.valor, 0);
+  const saldoLivro = totalReceitasLivro - totalDespesasLivro;
+  const receitasLivroPorCategoria = receitasLivro.reduce(
+    (acc, r) => {
+      const key = r.planoContasId || "sem-categoria";
+      acc[key] = (acc[key] ?? 0) + r.valor;
+      return acc;
+    },
+    {} as Record<string, number>
+  );
+  const despesasLivroPorCategoria = despesasLivro.reduce(
+    (acc, d) => {
+      const key = d.planoContasId || "sem-categoria";
+      acc[key] = (acc[key] ?? 0) + d.valor;
+      return acc;
+    },
+    {} as Record<string, number>
+  );
+  const inadimplentesLivro = receitasLivro
+    .filter(
+      (r) =>
+        !isSituacaoPaga(r.situacao) &&
+        !!r.dataVencimento &&
+        r.dataVencimento.slice(0, 10) < hojeIso
+    )
+    .sort((a, b) =>
+      (a.dataVencimento ?? "").localeCompare(b.dataVencimento ?? "")
+    );
+  const totalInadimplenciaLivro = inadimplentesLivro.reduce(
+    (sum, item) => sum + item.valor,
+    0
+  );
+  const lancamentosLivro = [...receitasLivro, ...despesasLivro].sort((a, b) =>
+    (a.dataCompetencia ?? a.dataVencimento ?? "").localeCompare(
+      b.dataCompetencia ?? b.dataVencimento ?? ""
+    )
+  );
+  const livroPeriodoLabel = `${livroInicio || "Inicio"} ate ${
+    livroFim || "Hoje"
+  }`;
+  const mesesLabel = [
+    "Jan",
+    "Fev",
+    "Mar",
+    "Abr",
+    "Mai",
+    "Jun",
+    "Jul",
+    "Ago",
+    "Set",
+    "Out",
+    "Nov",
+    "Dez"
+  ];
+  const categoriasPrevisao =
+    previsaoTipo === "Receita" ? categoriasReceita : categoriasDespesa;
+  const categoriasPrevisaoPorId =
+    previsaoTipo === "Receita" ? categoriasReceitaPorId : categoriasDespesaPorId;
+  const lancamentosBasePrevisao = (
+    previsaoTipo === "Receita" ? receitasValidas : despesasValidas
+  ).filter((item) => isSituacaoPaga(item.situacao));
+  const realizadosPorCategoriaMes = lancamentosBasePrevisao.reduce(
+    (acc, item) => {
+      const dataRef = item.dataCompetencia ?? item.dataVencimento ?? item.dataPagamento;
+      const iso = normalizarDataIso(dataRef);
+      if (!iso) return acc;
+      const [anoRaw, mesRaw] = iso.split("-");
+      const ano = Number(anoRaw);
+      const mes = Number(mesRaw);
+      if (!ano || !mes || ano !== previsaoAno) return acc;
+      const key = `${item.planoContasId}-${mes}`;
+      acc[key] = (acc[key] ?? 0) + item.valor;
+      return acc;
+    },
+    {} as Record<string, number>
+  );
+  const previsoesOrdenadas = [...previsoesOrcamentarias].sort(
+    (a, b) => a.mes - b.mes || a.planoContasId.localeCompare(b.planoContasId)
+  );
+  const totalPrevistoPrevisao = previsoesOrdenadas.reduce(
+    (sum, item) => sum + item.valorPrevisto,
+    0
+  );
+  const totalRealizadoPrevisao = previsoesOrdenadas.reduce((sum, item) => {
+    const key = `${item.planoContasId}-${item.mes}`;
+    return sum + (realizadosPorCategoriaMes[key] ?? 0);
+  }, 0);
+  const totalDesvioPrevisao = totalRealizadoPrevisao - totalPrevistoPrevisao;
+  const pessoasPorId = Object.fromEntries(
+    pessoasFinanceiro.map((p) => [p.id, p.nome])
+  );
+  const contasPorId = Object.fromEntries(contas.map((c) => [c.id, c.nome]));
+  const receitasLabelPorId = Object.fromEntries(
+    receitas.map((r) => [
+      r.id,
+      `${r.descricao} (${formatarValor(r.valor)})`
+    ])
+  );
+  const receitasElegiveisAbono = receitasValidas.filter(
+    (r) => !isSituacaoPaga(r.situacao) && !isSituacaoCancelada(r.situacao)
+  );
+  const abonoLancamentoSelecionado = receitas.find(
+    (r) => r.id === abonoLancamentoId
+  );
+  const abonoPercentualNumero = Number(
+    abonoPercentual.replace(/\./g, "").replace(",", ".")
+  );
+  const abonoValorEstimado =
+    abonoTipo === "percentual" &&
+    abonoLancamentoSelecionado &&
+    Number.isFinite(abonoPercentualNumero)
+      ? (abonoLancamentoSelecionado.valor * abonoPercentualNumero) / 100
+      : 0;
+  const abonosOrdenados = [...abonos].sort(
+    (a, b) =>
+      (b.dataSolicitacao ?? "").localeCompare(a.dataSolicitacao ?? "") ||
+      a.motivo.localeCompare(b.motivo)
+  );
+  const abonosPendentes = abonos.filter(
+    (a) => (a.status ?? "").toLowerCase() === "pendente"
+  ).length;
+  const abonosAprovados = abonos.filter(
+    (a) => (a.status ?? "").toLowerCase() === "aprovado"
+  ).length;
+  const abonosCancelados = abonos.filter(
+    (a) => (a.status ?? "").toLowerCase() === "cancelado"
+  ).length;
+  const medidorSelecionado =
+    medidoresConsumo.find((m) => m.id === medidorSelecionadoId) ?? null;
+  const leiturasConsumoOrdenadas = [...leiturasConsumo].sort((a, b) =>
+    (a.dataLeitura ?? "").localeCompare(b.dataLeitura ?? "")
+  );
+  const totalConsumoMedidor = leiturasConsumoOrdenadas.reduce(
+    (sum, leitura) => sum + leitura.consumo,
+    0
+  );
+  const mediaConsumoMedidor =
+    leiturasConsumoOrdenadas.length > 0
+      ? totalConsumoMedidor / leiturasConsumoOrdenadas.length
+      : 0;
+  const ultimaLeituraConsumo =
+    leiturasConsumoOrdenadas[leiturasConsumoOrdenadas.length - 1];
+  const medidoresAtivos = medidoresConsumo.filter((m) => m.ativo).length;
+  const totalConsumoRateio = rateioConsumoPreview.reduce(
+    (sum, item) => sum + item.consumo,
+    0
+  );
+  const totalValorRateio = rateioConsumoPreview.reduce(
+    (sum, item) => sum + item.valor,
+    0
+  );
   const pendentesParaBaixa = [...despesas, ...receitas].filter(
     (l) => isSituacaoAberta(l.situacao)
+  );
+  const pendentesParaBaixaOrdenados = [...pendentesParaBaixa].sort((a, b) =>
+    (a.dataVencimento ?? a.dataCompetencia ?? "").localeCompare(
+      b.dataVencimento ?? b.dataCompetencia ?? ""
+    )
+  );
+  const filtroBaixaTexto = baixaFiltroTexto.trim().toLowerCase();
+  const pendentesParaBaixaFiltrados = pendentesParaBaixaOrdenados.filter(
+    (l) => {
+      if (baixaFiltroTipo !== "todos" && l.tipo !== baixaFiltroTipo) {
+        return false;
+      }
+      if (!filtroBaixaTexto) return true;
+      const base = `${l.descricao} ${l.referencia ?? ""} ${
+        pessoasPorId[l.pessoaId] ?? ""
+      }`.toLowerCase();
+      return base.includes(filtroBaixaTexto);
+    }
+  );
+  const baixaLancamentoSelecionado = pendentesParaBaixa.find(
+    (l) => l.id === baixaLancamentoId
+  );
+  const totalPendentesValor = pendentesParaBaixaFiltrados.reduce(
+    (sum, item) => sum + item.valor,
+    0
   );
   const ultimosLancamentos = [...despesasValidas, ...receitasValidas]
     .sort((a, b) =>
@@ -1511,6 +3205,54 @@ export default function FinanceiroView({
     .sort((a, b) =>
       (b.dataCompetencia ?? "").localeCompare(a.dataCompetencia ?? "")
     );
+  const transferenciasAgrupadas = Object.values(
+    transferenciasLancadas.reduce(
+      (acc, lanc) => {
+        const chave = lanc.referencia || lanc.id;
+        if (!acc[chave]) {
+          acc[chave] = {
+            chave,
+            referencia: lanc.referencia || "Sem referencia",
+            descricao: lanc.descricao,
+            data: lanc.dataCompetencia ?? lanc.dataPagamento ?? lanc.dataVencimento ?? "",
+            valor: lanc.valor,
+            origemId: undefined as string | undefined,
+            destinoId: undefined as string | undefined,
+            status: lanc.situacao
+          };
+        }
+        if (lanc.tipo === "pagar") {
+          acc[chave].origemId = lanc.contaFinanceiraId;
+        } else if (lanc.tipo === "receber") {
+          acc[chave].destinoId = lanc.contaFinanceiraId;
+        }
+        if (!acc[chave].descricao) {
+          acc[chave].descricao = lanc.descricao;
+        }
+        if (!acc[chave].data && (lanc.dataCompetencia || lanc.dataPagamento)) {
+          acc[chave].data = lanc.dataCompetencia ?? lanc.dataPagamento ?? "";
+        }
+        return acc;
+      },
+      {} as Record<
+        string,
+        {
+          chave: string;
+          referencia: string;
+          descricao: string;
+          data: string;
+          valor: number;
+          origemId?: string;
+          destinoId?: string;
+          status: string;
+        }
+      >
+    )
+  ).sort((a, b) => (b.data ?? "").localeCompare(a.data ?? ""));
+  const totalTransferido = transferenciasAgrupadas.reduce(
+    (sum, item) => sum + item.valor,
+    0
+  );
   const faturasAbertas = faturas.filter(
     (f) => f.status !== "paga" && f.status !== "cancelada"
   );
@@ -1524,6 +3266,25 @@ export default function FinanceiroView({
         b.dataVencimento ?? b.dataCompetencia
       )
     );
+  const totalUnidadesRateioSelecionadas = Object.keys(novoRateioUnidades).length;
+
+  const obterResumoRegraRateio = (regra: RegraRateio) => {
+    if (!regra.configuracaoJson) return 0;
+    try {
+      const parsed = JSON.parse(regra.configuracaoJson) as {
+        unidades?: number | Array<{ unidadeId?: string }>;
+      };
+      if (Array.isArray(parsed.unidades)) {
+        return parsed.unidades.length;
+      }
+      if (typeof parsed.unidades === "number") {
+        return parsed.unidades;
+      }
+    } catch {
+      return 0;
+    }
+    return 0;
+  };
 
   const renderModuloBase = (
     titulo: string,
@@ -1773,6 +3534,189 @@ export default function FinanceiroView({
     XLSX.writeFile(wb, arquivo);
   };
 
+  const gerarLivroPrestacaoPdf = async () => {
+    const doc = new jsPDF();
+    const logo = await carregarLogoBase64();
+    const titulo = `Livro de prestacao de contas - ${organizacao.nome}`;
+    doc.setFontSize(14);
+    if (logo) {
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const logoSize = 28;
+      const logoX = (pageWidth - logoSize) / 2;
+      doc.addImage(logo, "JPEG", logoX, 8, logoSize, logoSize);
+    }
+    const titleX = 14;
+    const startY = logo ? 44 : 16;
+    doc.text(titulo, titleX, startY);
+    doc.setFontSize(11);
+    doc.text(`Periodo: ${livroPeriodoLabel}`, titleX, startY + 8);
+
+    const resumoRows = [
+      ["Total receitas", formatarValor(totalReceitasLivro)],
+      ["Total despesas", formatarValor(totalDespesasLivro)],
+      ["Saldo do periodo", formatarValor(saldoLivro)]
+    ];
+    if (livroIncluirInadimplencia) {
+      resumoRows.push([
+        "Inadimplencia",
+        formatarValor(totalInadimplenciaLivro)
+      ]);
+    }
+
+    autoTable(doc, {
+      startY: startY + 14,
+      head: [["Resumo", "Valor"]],
+      body: resumoRows
+    });
+
+    const receitasRows = Object.entries(receitasLivroPorCategoria).map(
+      ([id, total]) => [
+        categoriasReceitaPorId[id] ?? "Sem categoria",
+        formatarValor(total)
+      ]
+    );
+    autoTable(doc, {
+      startY: (doc as any).lastAutoTable.finalY + 8,
+      head: [["Receitas por categoria", "Total"]],
+      body: receitasRows.length ? receitasRows : [["Nenhuma receita", "-"]]
+    });
+
+    const despesasRows = Object.entries(despesasLivroPorCategoria).map(
+      ([id, total]) => [
+        categoriasDespesaPorId[id] ?? "Sem categoria",
+        formatarValor(total)
+      ]
+    );
+    autoTable(doc, {
+      startY: (doc as any).lastAutoTable.finalY + 8,
+      head: [["Despesas por categoria", "Total"]],
+      body: despesasRows.length ? despesasRows : [["Nenhuma despesa", "-"]]
+    });
+
+    if (livroIncluirInadimplencia) {
+      const inadRows = inadimplentesLivro.map((item) => [
+        item.descricao,
+        formatarData(item.dataVencimento),
+        formatarValor(item.valor)
+      ]);
+      autoTable(doc, {
+        startY: (doc as any).lastAutoTable.finalY + 8,
+        head: [["Inadimplentes", "Vencimento", "Valor"]],
+        body: inadRows.length ? inadRows : [["Nenhum inadimplente", "-", "-"]]
+      });
+    }
+
+    if (livroIncluirDetalhes) {
+      const lancRows = lancamentosLivro.map((item) => {
+        const categoria =
+          item.tipo === "pagar"
+            ? categoriasDespesaPorId[item.planoContasId] ?? "Sem categoria"
+            : categoriasReceitaPorId[item.planoContasId] ?? "Sem categoria";
+        return [
+          item.tipo === "pagar" ? "Despesa" : "Receita",
+          item.descricao,
+          categoria,
+          formatarData(item.dataVencimento ?? item.dataCompetencia),
+          statusMeta(item.situacao).label,
+          formatarValor(item.valor)
+        ];
+      });
+      autoTable(doc, {
+        startY: (doc as any).lastAutoTable.finalY + 8,
+        head: [["Tipo", "Descricao", "Categoria", "Vencimento", "Situacao", "Valor"]],
+        body: lancRows.length ? lancRows : [["Sem lancamentos", "-", "-", "-", "-", "-"]]
+      });
+    }
+
+    const arquivo = `livro_prestacao_${organizacao.nome
+      .replace(/[^a-z0-9]+/gi, "_")
+      .toLowerCase()}.pdf`;
+    doc.save(arquivo);
+  };
+
+  const gerarLivroPrestacaoExcel = () => {
+    const wb = XLSX.utils.book_new();
+    const resumo = [
+      ["Livro de prestacao de contas", organizacao.nome],
+      ["Periodo", livroPeriodoLabel],
+      ["Total receitas", totalReceitasLivro],
+      ["Total despesas", totalDespesasLivro],
+      ["Saldo do periodo", saldoLivro]
+    ];
+    if (livroIncluirInadimplencia) {
+      resumo.push(["Inadimplencia", totalInadimplenciaLivro]);
+    }
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(resumo), "Resumo");
+
+    const receitasSheet = [
+      ["Categoria", "Total"],
+      ...Object.entries(receitasLivroPorCategoria).map(([id, total]) => [
+        categoriasReceitaPorId[id] ?? "Sem categoria",
+        total
+      ])
+    ];
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.aoa_to_sheet(receitasSheet),
+      "Receitas"
+    );
+
+    const despesasSheet = [
+      ["Categoria", "Total"],
+      ...Object.entries(despesasLivroPorCategoria).map(([id, total]) => [
+        categoriasDespesaPorId[id] ?? "Sem categoria",
+        total
+      ])
+    ];
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.aoa_to_sheet(despesasSheet),
+      "Despesas"
+    );
+
+    if (livroIncluirInadimplencia) {
+      const inadSheet = [
+        ["Descricao", "Vencimento", "Valor"],
+        ...inadimplentesLivro.map((item) => [
+          item.descricao,
+          item.dataVencimento ?? "",
+          item.valor
+        ])
+      ];
+      XLSX.utils.book_append_sheet(
+        wb,
+        XLSX.utils.aoa_to_sheet(inadSheet),
+        "Inadimplentes"
+      );
+    }
+
+    if (livroIncluirDetalhes) {
+      const lancSheet = [
+        ["Tipo", "Descricao", "Categoria", "Vencimento", "Situacao", "Valor"],
+        ...lancamentosLivro.map((item) => [
+          item.tipo === "pagar" ? "Despesa" : "Receita",
+          item.descricao,
+          item.tipo === "pagar"
+            ? categoriasDespesaPorId[item.planoContasId] ?? "Sem categoria"
+            : categoriasReceitaPorId[item.planoContasId] ?? "Sem categoria",
+          item.dataVencimento ?? item.dataCompetencia ?? "",
+          statusMeta(item.situacao).label,
+          item.valor
+        ])
+      ];
+      XLSX.utils.book_append_sheet(
+        wb,
+        XLSX.utils.aoa_to_sheet(lancSheet),
+        "Lancamentos"
+      );
+    }
+
+    const arquivo = `livro_prestacao_${organizacao.nome
+      .replace(/[^a-z0-9]+/gi, "_")
+      .toLowerCase()}.xlsx`;
+    XLSX.writeFile(wb, arquivo);
+  };
+
   const baixarArquivo = (blob: Blob, nome: string) => {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -1824,7 +3768,6 @@ export default function FinanceiroView({
     }
   };
 
-  // TODO: corpo completo do FinanceiroView (funções + render)
   return (
     <div ref={topoRef} className="finance-page">
       <div className="finance-header-row">
@@ -3331,16 +5274,587 @@ export default function FinanceiroView({
         </div>
       )}
 
-      {aba === "consumos" &&
-        renderModuloBase(
-          "Consumos",
-          "MVP inicial para agua, gas, energia e medicoes por unidade.",
-          [
-            "Cadastrar medidores, unidade vinculada e tipo de consumo.",
-            "Importar leitura mensal (manual/CSV) e calcular variacao.",
-            "Gerar rateio automatico por unidade com historico."
-          ]
-        )}
+      {aba === "consumos" && (
+        <div className="finance-layout">
+          <div className="finance-side-column">
+            <section className="finance-form-card">
+              <h3>Novo medidor</h3>
+              <p className="finance-form-sub">
+                Cadastre medidores por unidade e tipo de consumo.
+              </p>
+
+              {consumoErro && <p className="error">{consumoErro}</p>}
+
+              {canWrite ? (
+                <form className="form" onSubmit={criarMedidorConsumo}>
+                  <label>
+                    Unidade
+                    <select
+                      value={novoMedidorUnidadeId}
+                      onChange={(e) => setNovoMedidorUnidadeId(e.target.value)}
+                      required
+                    >
+                      <option value="">Selecionar</option>
+                      {unidadesRateioDisplay.map((unidade) => (
+                        <option key={unidade.id} value={unidade.id}>
+                          {unidade.codigoInterno} - {unidade.nome}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label>
+                    Nome do medidor
+                    <input
+                      value={novoMedidorNome}
+                      onChange={(e) => setNovoMedidorNome(e.target.value)}
+                      required
+                    />
+                  </label>
+
+                  <div className="finance-form-grid">
+                    <label>
+                      Tipo
+                      <select
+                        value={novoMedidorTipo}
+                        onChange={(e) => setNovoMedidorTipo(e.target.value)}
+                      >
+                        <option value="Agua">Agua</option>
+                        <option value="Gas">Gas</option>
+                        <option value="Energia">Energia</option>
+                        <option value="Outro">Outro</option>
+                      </select>
+                    </label>
+                    <label>
+                      Unidade de medida
+                      <input
+                        value={novoMedidorUnidadeMedida}
+                        onChange={(e) =>
+                          setNovoMedidorUnidadeMedida(e.target.value)
+                        }
+                        placeholder="m3, kWh"
+                        required
+                      />
+                    </label>
+                  </div>
+
+                  <div className="finance-form-grid">
+                    <label>
+                      Numero de serie
+                      <input
+                        value={novoMedidorNumeroSerie}
+                        onChange={(e) =>
+                          setNovoMedidorNumeroSerie(e.target.value)
+                        }
+                        placeholder="Opcional"
+                      />
+                    </label>
+                    <label>
+                      Observacao
+                      <input
+                        value={novoMedidorObservacao}
+                        onChange={(e) =>
+                          setNovoMedidorObservacao(e.target.value)
+                        }
+                        placeholder="Opcional"
+                      />
+                    </label>
+                  </div>
+
+                  <button type="submit" disabled={!token || consumoLoading}>
+                    {consumoLoading ? "Salvando..." : "Salvar medidor"}
+                  </button>
+                </form>
+              ) : (
+                <p className="finance-form-sub">
+                  Sem acesso para cadastrar medidores.
+                </p>
+              )}
+            </section>
+
+            <section className="finance-form-card">
+              <h3>Registrar leitura</h3>
+              <p className="finance-form-sub">
+                Informe a leitura atual para gerar o consumo mensal.
+              </p>
+
+              {canWrite ? (
+                <form className="form" onSubmit={criarLeituraConsumo}>
+                  <label>
+                    Medidor
+                    <select
+                      value={medidorSelecionadoId}
+                      onChange={(e) => setMedidorSelecionadoId(e.target.value)}
+                      required
+                    >
+                      <option value="">Selecionar</option>
+                      {medidoresConsumo.map((medidor) => (
+                        <option key={medidor.id} value={medidor.id}>
+                          {medidor.nome} -{" "}
+                          {unidadesRateioPorId[medidor.unidadeOrganizacionalId] ??
+                            "Unidade"}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <div className="finance-form-grid">
+                    <label>
+                      Competencia
+                      <input
+                        type="month"
+                        value={leituraCompetencia}
+                        onChange={(e) => setLeituraCompetencia(e.target.value)}
+                        required
+                      />
+                    </label>
+                    <label>
+                      Data da leitura
+                      <input
+                        type="date"
+                        value={leituraData}
+                        onChange={(e) => setLeituraData(e.target.value)}
+                        required
+                      />
+                    </label>
+                  </div>
+
+                  <label>
+                    Leitura atual
+                    <input
+                      value={leituraAtual}
+                      onChange={(e) => setLeituraAtual(e.target.value)}
+                      placeholder="Ex.: 1500,5"
+                      required
+                    />
+                  </label>
+
+                  <label>
+                    Observacao
+                    <input
+                      value={leituraObservacao}
+                      onChange={(e) => setLeituraObservacao(e.target.value)}
+                      placeholder="Opcional"
+                    />
+                  </label>
+
+                  <button type="submit" disabled={!token || consumoLoading}>
+                    {consumoLoading ? "Salvando..." : "Salvar leitura"}
+                  </button>
+                </form>
+              ) : (
+                <p className="finance-form-sub">
+                  Sem acesso para registrar leituras.
+                </p>
+              )}
+            </section>
+
+            <section className="finance-form-card">
+              <h3>Importar leituras (CSV)</h3>
+              <p className="finance-form-sub">
+                Importe leituras em lote usando CSV.
+              </p>
+
+              {consumoImportStatus && <p className="success">{consumoImportStatus}</p>}
+              {consumoImportErros.length > 0 && (
+                <div className="error">
+                  {consumoImportErros.map((item, index) => (
+                    <div key={`${item}-${index}`}>{item}</div>
+                  ))}
+                </div>
+              )}
+
+              {canWrite ? (
+                <form className="form" onSubmit={importarLeiturasCsv}>
+                  <label>
+                    Arquivo CSV
+                    <input
+                      type="file"
+                      accept=".csv"
+                      onChange={(e) => {
+                        setConsumoImportStatus(null);
+                        setConsumoImportErros([]);
+                        setConsumoArquivo(
+                          e.target.files ? e.target.files[0] : null
+                        );
+                      }}
+                    />
+                  </label>
+                  <p className="finance-form-sub">
+                    Colunas aceitas: medidorId/numeroSerie/medidor, competencia,
+                    dataLeitura, leituraAtual, observacao, unidade.
+                  </p>
+                  <button
+                    type="submit"
+                    disabled={!token || consumoImportando || !consumoArquivo}
+                  >
+                    {consumoImportando ? "Importando..." : "Importar CSV"}
+                  </button>
+                </form>
+              ) : (
+                <p className="finance-form-sub">
+                  Sem acesso para importar leituras.
+                </p>
+              )}
+            </section>
+
+            <section className="finance-form-card">
+              <h3>Rateio automatico</h3>
+              <p className="finance-form-sub">
+                Gere cobrancas por unidade com base no consumo do periodo.
+              </p>
+
+              {rateioConsumoErro && <p className="error">{rateioConsumoErro}</p>}
+              {rateioConsumoStatus && (
+                <p className="success">{rateioConsumoStatus}</p>
+              )}
+
+              {canWrite ? (
+                <form className="form" onSubmit={gerarCobrancasConsumo}>
+                  <div className="finance-form-grid">
+                    <label>
+                      Competencia
+                      <input
+                        type="month"
+                        value={rateioConsumoCompetencia}
+                        onChange={(e) => setRateioConsumoCompetencia(e.target.value)}
+                        required
+                      />
+                    </label>
+                    <label>
+                      Tipo
+                      <select
+                        value={rateioConsumoTipo}
+                        onChange={(e) => setRateioConsumoTipo(e.target.value)}
+                      >
+                        <option value="Agua">Agua</option>
+                        <option value="Gas">Gas</option>
+                        <option value="Energia">Energia</option>
+                        <option value="Outro">Outro</option>
+                        <option value="Todos">Todos</option>
+                      </select>
+                    </label>
+                  </div>
+
+                  <div className="finance-form-grid">
+                    <label>
+                      Valor total da conta
+                      <input
+                        value={rateioConsumoValorTotal}
+                        onChange={(e) => setRateioConsumoValorTotal(e.target.value)}
+                        placeholder="Ex.: 1200,50"
+                        required
+                      />
+                    </label>
+                    <label>
+                      Vencimento
+                      <input
+                        type="date"
+                        value={rateioConsumoVencimento}
+                        onChange={(e) => setRateioConsumoVencimento(e.target.value)}
+                        required
+                      />
+                    </label>
+                  </div>
+
+                  <label>
+                    Descricao
+                    <input
+                      value={rateioConsumoDescricao}
+                      onChange={(e) => setRateioConsumoDescricao(e.target.value)}
+                      placeholder={`Consumo ${rateioConsumoTipo} ${rateioConsumoCompetencia}`}
+                    />
+                  </label>
+
+                  <label>
+                    Categoria de receita
+                    <select
+                      value={rateioConsumoCategoriaId}
+                      onChange={(e) => setRateioConsumoCategoriaId(e.target.value)}
+                    >
+                      <option value="">Sem categoria</option>
+                      {categoriasReceita.map((cat) => (
+                        <option key={cat.id} value={cat.id}>
+                          {cat.nome}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <div className="finance-form-inline">
+                    <button
+                      type="button"
+                      onClick={() => void simularRateioConsumo()}
+                      disabled={!token || rateioConsumoLoading}
+                    >
+                      {rateioConsumoLoading ? "Simulando..." : "Simular rateio"}
+                    </button>
+                    <button type="submit" disabled={!token || rateioConsumoLoading}>
+                      {rateioConsumoLoading ? "Gerando..." : "Gerar cobrancas"}
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <p className="finance-form-sub">
+                  Sem acesso para gerar cobrancas por consumo.
+                </p>
+              )}
+
+              {rateioConsumoPreview.length > 0 && (
+                <div style={{ marginTop: 12 }}>
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th>Unidade</th>
+                        <th className="finance-value-header">Consumo</th>
+                        <th className="finance-value-header">Valor</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rateioConsumoPreview.map((item) => (
+                        <tr key={item.unidadeId}>
+                          <td>{item.unidadeLabel}</td>
+                          <td className="finance-value-cell">
+                            {formatarConsumo(item.consumo)}
+                          </td>
+                          <td className="finance-value-cell">
+                            {formatarValor(item.valor)}
+                          </td>
+                        </tr>
+                      ))}
+                      <tr>
+                        <td>
+                          <strong>Total</strong>
+                        </td>
+                        <td className="finance-value-cell">
+                          <strong>{formatarConsumo(totalConsumoRateio)}</strong>
+                        </td>
+                        <td className="finance-value-cell">
+                          <strong>{formatarValor(totalValorRateio)}</strong>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+          </div>
+
+          <div className="finance-side-column">
+            <section className="finance-table-card">
+              <div className="finance-table-header">
+                <div>
+                  <h3>Medidores cadastrados</h3>
+                  <p className="finance-form-sub">
+                    {medidoresConsumo.length} medidores • {medidoresAtivos} ativos
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={carregarMedidoresConsumo}
+                  disabled={consumoLoading || !token}
+                >
+                  {consumoLoading ? "Carregando..." : "Atualizar lista"}
+                </button>
+              </div>
+
+              <table className="table" style={{ marginTop: 12 }}>
+                <thead>
+                  <tr>
+                    <th>Nome</th>
+                    <th>Unidade</th>
+                    <th>Tipo</th>
+                    <th>Medida</th>
+                    <th>Status</th>
+                    {canWrite && <th>Acoes</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {medidoresConsumo.map((medidor) => (
+                    <tr key={medidor.id}>
+                      <td>{medidor.nome}</td>
+                      <td>
+                        {unidadesRateioPorId[medidor.unidadeOrganizacionalId] ??
+                          medidor.unidadeOrganizacionalId}
+                      </td>
+                      <td>{medidor.tipo}</td>
+                      <td>{medidor.unidadeMedida}</td>
+                      <td>
+                        <span
+                          className={
+                            "badge-status " +
+                            (medidor.ativo
+                              ? "badge-status--ativo"
+                              : "badge-status--inativo")
+                          }
+                        >
+                          {medidor.ativo ? "Ativo" : "Inativo"}
+                        </span>
+                      </td>
+                      {canWrite && (
+                        <td>
+                          <div className="finance-table-actions">
+                            <button
+                              type="button"
+                              className="action-secondary"
+                              onClick={() =>
+                                setMedidorSelecionadoId(medidor.id)
+                              }
+                              disabled={medidorSelecionadoId === medidor.id}
+                            >
+                              {medidorSelecionadoId === medidor.id
+                                ? "Selecionado"
+                                : "Selecionar"}
+                            </button>
+                            <button
+                              type="button"
+                              className="action-secondary"
+                              onClick={() => void editarMedidorConsumo(medidor)}
+                            >
+                              Editar
+                            </button>
+                            <button
+                              type="button"
+                              className="action-secondary"
+                              onClick={() =>
+                                void alternarStatusMedidorConsumo(medidor)
+                              }
+                            >
+                              {medidor.ativo ? "Desativar" : "Ativar"}
+                            </button>
+                            <button
+                              type="button"
+                              className="action-secondary"
+                              onClick={() => void removerMedidorConsumo(medidor)}
+                            >
+                              Remover
+                            </button>
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                  {medidoresConsumo.length === 0 && (
+                    <tr>
+                      <td colSpan={canWrite ? 6 : 5} style={{ textAlign: "center" }}>
+                        Nenhum medidor cadastrado ainda.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </section>
+
+            <section className="finance-table-card">
+              <div className="finance-table-header">
+                <div>
+                  <h3>Leituras do medidor</h3>
+                  <p className="finance-form-sub">
+                    {medidorSelecionado
+                      ? `${medidorSelecionado.nome} • ${medidorSelecionado.tipo}`
+                      : "Selecione um medidor para visualizar"}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    medidorSelecionadoId &&
+                    carregarLeiturasConsumo(medidorSelecionadoId)
+                  }
+                  disabled={!medidorSelecionadoId || consumoLoading || !token}
+                >
+                  {consumoLoading ? "Carregando..." : "Atualizar leituras"}
+                </button>
+              </div>
+
+              <div className="finance-card-grid" style={{ marginTop: 8 }}>
+                <div className="finance-card">
+                  <strong>Total consumido</strong>
+                  <p>
+                    {formatarConsumo(totalConsumoMedidor)}{" "}
+                    {medidorSelecionado?.unidadeMedida ?? ""}
+                  </p>
+                </div>
+                <div className="finance-card">
+                  <strong>Media por leitura</strong>
+                  <p>
+                    {formatarConsumo(mediaConsumoMedidor)}{" "}
+                    {medidorSelecionado?.unidadeMedida ?? ""}
+                  </p>
+                </div>
+                <div className="finance-card">
+                  <strong>Ultima leitura</strong>
+                  <p>
+                    {ultimaLeituraConsumo
+                      ? formatarConsumo(ultimaLeituraConsumo.leituraAtual)
+                      : "-"}{" "}
+                    {medidorSelecionado?.unidadeMedida ?? ""}
+                  </p>
+                </div>
+              </div>
+
+              <table className="table" style={{ marginTop: 12 }}>
+                <thead>
+                  <tr>
+                    <th>Competencia</th>
+                    <th>Data</th>
+                    <th className="finance-value-header">Anterior</th>
+                    <th className="finance-value-header">Atual</th>
+                    <th className="finance-value-header">Consumo</th>
+                    <th>Obs.</th>
+                    {canWrite && <th>Acoes</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {leiturasConsumoOrdenadas.map((leitura) => (
+                    <tr key={leitura.id}>
+                      <td>{leitura.competencia}</td>
+                      <td>{formatarData(leitura.dataLeitura)}</td>
+                      <td className="finance-value-cell">
+                        {formatarConsumo(leitura.leituraAnterior)}
+                      </td>
+                      <td className="finance-value-cell">
+                        {formatarConsumo(leitura.leituraAtual)}
+                      </td>
+                      <td className="finance-value-cell">
+                        {formatarConsumo(leitura.consumo)}
+                      </td>
+                      <td>{leitura.observacao ?? "-"}</td>
+                      {canWrite && (
+                        <td>
+                          <div className="finance-table-actions">
+                            <button
+                              type="button"
+                              className="action-secondary"
+                              onClick={() => void editarLeituraConsumo(leitura)}
+                            >
+                              Editar
+                            </button>
+                            <button
+                              type="button"
+                              className="action-secondary"
+                              onClick={() => void removerLeituraConsumo(leitura)}
+                            >
+                              Remover
+                            </button>
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                  {leiturasConsumoOrdenadas.length === 0 && (
+                    <tr>
+                      <td colSpan={canWrite ? 7 : 6} style={{ textAlign: "center" }}>
+                        Nenhuma leitura cadastrada ainda.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </section>
+          </div>
+        </div>
+      )}
 
       {aba === "receitasDespesas" && (
         <div className="finance-table-card" style={{ marginTop: 12 }}>
@@ -3441,38 +5955,47 @@ export default function FinanceiroView({
                 <h3>Historico de transferencias</h3>
               </div>
             </div>
-            <table className="table finance-table">
+
+            <div className="finance-card-grid" style={{ marginTop: 8 }}>
+              <div className="finance-card">
+                <strong>Total transferido</strong>
+                <p>{formatarValor(totalTransferido)}</p>
+              </div>
+              <div className="finance-card">
+                <strong>Movimentos</strong>
+                <p>{transferenciasAgrupadas.length}</p>
+              </div>
+            </div>
+
+            <table className="table finance-table" style={{ marginTop: 12 }}>
               <thead>
                 <tr>
-                  <th>Tipo</th>
+                  <th>Origem</th>
+                  <th>Destino</th>
                   <th>Descricao</th>
                   <th>Data</th>
                   <th className="finance-value-header">Valor</th>
+                  <th>Referencia</th>
                   <th>Situacao</th>
                 </tr>
               </thead>
               <tbody>
-                {transferenciasLancadas.map((lanc) => (
-                  <tr key={lanc.id}>
-                    <td>{lanc.tipo === "pagar" ? "Saida" : "Entrada"}</td>
-                    <td>{lanc.descricao}</td>
-                    <td>
-                      {lanc.dataCompetencia
-                        ? new Date(lanc.dataCompetencia).toLocaleDateString("pt-BR")
-                        : "-"}
-                    </td>
+                {transferenciasAgrupadas.map((item) => (
+                  <tr key={item.chave}>
+                    <td>{contasPorId[item.origemId ?? ""] ?? "-"}</td>
+                    <td>{contasPorId[item.destinoId ?? ""] ?? "-"}</td>
+                    <td>{item.descricao}</td>
+                    <td>{item.data ? formatarData(item.data) : "-"}</td>
                     <td className="finance-value-cell">
-                      {lanc.valor.toLocaleString("pt-BR", {
-                        style: "currency",
-                        currency: "BRL"
-                      })}
+                      {formatarValor(item.valor)}
                     </td>
-                    <td>{statusMeta(lanc.situacao).label}</td>
+                    <td>{item.referencia}</td>
+                    <td>{statusMeta(item.status).label}</td>
                   </tr>
                 ))}
-                {transferenciasLancadas.length === 0 && (
+                {transferenciasAgrupadas.length === 0 && (
                   <tr>
-                    <td colSpan={5} style={{ textAlign: "center" }}>
+                    <td colSpan={7} style={{ textAlign: "center" }}>
                       Nenhuma transferencia registrada no periodo.
                     </td>
                   </tr>
@@ -4051,89 +6574,957 @@ export default function FinanceiroView({
         </div>
       )}
 
-      {aba === "previsaoOrcamentaria" &&
-        renderModuloBase(
-          "Previsao orcamentaria",
-          "Base para planejar receitas, despesas e desvios por competencia.",
-          [
-            "Criar cenarios por ano e centro de custo.",
-            "Definir metas mensais de receita e limite de despesa.",
-            "Comparar previsto x realizado com alertas automaticos."
-          ]
-        )}
+      {aba === "previsaoOrcamentaria" && (
+        <div className="finance-layout">
+          <section className="finance-form-card">
+            <h3>Nova previsao</h3>
+            <p className="finance-form-sub">
+              Planejamento mensal por categoria para acompanhar o orcamento.
+            </p>
 
-      {aba === "abonos" &&
-        renderModuloBase(
-          "Abonos",
-          "MVP para registrar descontos/creditos em cobrancas e lancamentos.",
-          [
-            "Selecionar lancamento de origem e motivo do abono.",
-            "Aplicar percentual ou valor fixo com trilha de aprovacao.",
-            "Emitir comprovante de abono para morador/cliente."
-          ]
-        )}
+            {previsaoErro && <p className="error">{previsaoErro}</p>}
 
-      {aba === "baixasManuais" && (
-        <div className="finance-table-card" style={{ marginTop: 12 }}>
-          <div className="finance-table-header">
-            <div>
-              <h3>Baixas manuais</h3>
+            {canWrite ? (
+              <form className="form" onSubmit={criarPrevisaoOrcamentaria}>
+                <div className="finance-form-grid">
+                  <label>
+                    Ano
+                    <input
+                      type="number"
+                      min={2000}
+                      value={previsaoAno}
+                      onChange={(e) => setPrevisaoAno(Number(e.target.value))}
+                      required
+                    />
+                  </label>
+                  <label>
+                    Tipo
+                    <select
+                      value={previsaoTipo}
+                      onChange={(e) =>
+                        setPrevisaoTipo(
+                          e.target.value === "Despesa" ? "Despesa" : "Receita"
+                        )
+                      }
+                    >
+                      <option value="Receita">Receita</option>
+                      <option value="Despesa">Despesa</option>
+                    </select>
+                  </label>
+                </div>
+
+                <label>
+                  Categoria
+                  <select
+                    value={previsaoCategoriaId}
+                    onChange={(e) => setPrevisaoCategoriaId(e.target.value)}
+                    required
+                  >
+                    <option value="">Selecione</option>
+                    {categoriasPrevisao.map((cat) => (
+                      <option key={cat.id} value={cat.id}>
+                        {cat.codigo} - {cat.nome}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <div className="finance-form-grid">
+                  <label>
+                    Mes
+                    <select
+                      value={previsaoMes}
+                      onChange={(e) => setPrevisaoMes(Number(e.target.value))}
+                    >
+                      {mesesLabel.map((mes, idx) => (
+                        <option key={mes} value={idx + 1}>
+                          {mes}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Valor previsto
+                    <input
+                      value={previsaoValor}
+                      onChange={(e) => setPrevisaoValor(e.target.value)}
+                      placeholder="Ex.: 1.500,00"
+                      required
+                    />
+                  </label>
+                </div>
+
+                <label>
+                  Observacao
+                  <input
+                    value={previsaoObservacao}
+                    onChange={(e) => setPrevisaoObservacao(e.target.value)}
+                    placeholder="Opcional"
+                  />
+                </label>
+
+                <button type="submit" disabled={!token || previsaoLoading}>
+                  {previsaoLoading ? "Salvando..." : "Salvar previsao"}
+                </button>
+              </form>
+            ) : (
               <p className="finance-form-sub">
-                Base para baixa parcial, acerto por caixa e conciliacao manual.
+                Sem acesso para criar previsoes orcamentarias.
               </p>
+            )}
+          </section>
+
+          <section className="finance-table-card">
+            <div className="finance-table-header">
+              <div>
+                <h3>Previsoes cadastradas</h3>
+                <p className="finance-form-sub">
+                  {previsaoTipo} • {previsaoAno}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={carregarPrevisoesOrcamentarias}
+                disabled={previsaoLoading || !token}
+              >
+                {previsaoLoading ? "Carregando..." : "Atualizar lista"}
+              </button>
             </div>
-          </div>
-          <table className="table finance-table">
-            <thead>
-              <tr>
-                <th>Tipo</th>
-                <th>Descricao</th>
-                <th>Vencimento</th>
-                <th className="finance-value-header">Valor</th>
-                <th>Acao sugerida</th>
-              </tr>
-            </thead>
-            <tbody>
-              {pendentesParaBaixa.slice(0, 20).map((lanc) => (
-                <tr key={lanc.id}>
-                  <td>{lanc.tipo === "pagar" ? "Pagar" : "Receber"}</td>
-                  <td>{lanc.descricao}</td>
-                  <td>
-                    {lanc.dataVencimento
-                      ? new Date(lanc.dataVencimento).toLocaleDateString("pt-BR")
-                      : "-"}
-                  </td>
-                  <td className="finance-value-cell">
-                    {lanc.valor.toLocaleString("pt-BR", {
-                      style: "currency",
-                      currency: "BRL"
-                    })}
-                  </td>
-                  <td>Registrar baixa manual</td>
-                </tr>
-              ))}
-              {pendentesParaBaixa.length === 0 && (
+
+            <div className="finance-card-grid" style={{ marginTop: 8 }}>
+              <div className="finance-card">
+                <strong>Total previsto</strong>
+                <p>{formatarValor(totalPrevistoPrevisao)}</p>
+              </div>
+              <div className="finance-card">
+                <strong>Total realizado</strong>
+                <p>{formatarValor(totalRealizadoPrevisao)}</p>
+              </div>
+              <div className="finance-card">
+                <strong>Desvio</strong>
+                <p>{formatarValor(totalDesvioPrevisao)}</p>
+              </div>
+            </div>
+
+            <table className="table" style={{ marginTop: 12 }}>
+              <thead>
                 <tr>
-                  <td colSpan={5} style={{ textAlign: "center" }}>
-                    Nenhum lançamento em aberto para baixa manual.
-                  </td>
+                  <th>Mes</th>
+                  <th>Categoria</th>
+                  <th className="finance-value-header">Previsto</th>
+                  <th className="finance-value-header">Realizado</th>
+                  <th className="finance-value-header">Desvio</th>
+                  <th>Obs.</th>
+                  {canWrite && <th>Acoes</th>}
                 </tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {previsoesOrdenadas.map((item) => {
+                  const key = `${item.planoContasId}-${item.mes}`;
+                  const realizado = realizadosPorCategoriaMes[key] ?? 0;
+                  const desvio = realizado - item.valorPrevisto;
+                  return (
+                    <tr key={item.id}>
+                      <td>{mesesLabel[item.mes - 1] ?? item.mes}</td>
+                      <td>
+                        {categoriasPrevisaoPorId[item.planoContasId] ??
+                          item.planoContasId}
+                      </td>
+                      <td className="finance-value-cell">
+                        {formatarValor(item.valorPrevisto)}
+                      </td>
+                      <td className="finance-value-cell">
+                        {formatarValor(realizado)}
+                      </td>
+                      <td className="finance-value-cell">
+                        {formatarValor(desvio)}
+                      </td>
+                      <td>{item.observacao ?? "-"}</td>
+                      {canWrite && (
+                        <td>
+                          <div className="finance-table-actions">
+                            <button
+                              type="button"
+                              className="action-secondary"
+                              onClick={() => void atualizarPrevisaoOrcamentaria(item)}
+                            >
+                              Editar
+                            </button>
+                            <button
+                              type="button"
+                              className="action-secondary"
+                              onClick={() => void removerPrevisaoOrcamentaria(item)}
+                            >
+                              Remover
+                            </button>
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
+                {previsoesOrdenadas.length === 0 && (
+                  <tr>
+                    <td colSpan={canWrite ? 7 : 6} style={{ textAlign: "center" }}>
+                      Nenhuma previsao cadastrada ainda.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </section>
         </div>
       )}
 
-      {aba === "gruposRateio" &&
-        renderModuloBase(
-          "Grupos de rateio",
-          "MVP para distribuir custos por grupo, unidade ou fracao ideal.",
-          [
-            "Criar grupo de rateio com criterio (igual, fracao, consumo).",
-            "Vincular despesas recorrentes ao grupo de rateio.",
-            "Gerar lancamentos automaticamente por periodo."
-          ]
-        )}
+      {aba === "abonos" && (
+        <div className="finance-layout">
+          <section className="finance-form-card">
+            <h3>Novo abono</h3>
+            <p className="finance-form-sub">
+              Registre descontos ou creditos para lancamentos a receber.
+            </p>
+
+            {abonoErro && <p className="error">{abonoErro}</p>}
+
+            {canWrite ? (
+              <form className="form" onSubmit={criarAbono}>
+                <label>
+                  Lancamento
+                  <select
+                    value={abonoLancamentoId}
+                    onChange={(e) => setAbonoLancamentoId(e.target.value)}
+                    required
+                  >
+                    <option value="">Selecionar</option>
+                    {receitasElegiveisAbono.map((receita) => (
+                      <option key={receita.id} value={receita.id}>
+                        {receita.descricao} •{" "}
+                        {formatarValor(receita.valor)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <div className="finance-form-grid">
+                  <label>
+                    Tipo
+                    <select
+                      value={abonoTipo}
+                      onChange={(e) =>
+                        setAbonoTipo(
+                          e.target.value === "percentual"
+                            ? "percentual"
+                            : "valor"
+                        )
+                      }
+                    >
+                      <option value="valor">Valor fixo</option>
+                      <option value="percentual">Percentual</option>
+                    </select>
+                  </label>
+                  {abonoTipo === "percentual" ? (
+                    <label>
+                      Percentual (%)
+                      <input
+                        value={abonoPercentual}
+                        onChange={(e) => setAbonoPercentual(e.target.value)}
+                        placeholder="Ex.: 10"
+                        required
+                      />
+                    </label>
+                  ) : (
+                    <label>
+                      Valor do abono
+                      <input
+                        value={abonoValor}
+                        onChange={(e) => setAbonoValor(e.target.value)}
+                        placeholder="Ex.: 150,00"
+                        required
+                      />
+                    </label>
+                  )}
+                </div>
+
+                {abonoTipo === "percentual" && abonoLancamentoSelecionado && (
+                  <p className="finance-form-sub">
+                    Valor estimado: {formatarValor(abonoValorEstimado)}
+                  </p>
+                )}
+
+                <label>
+                  Motivo
+                  <input
+                    value={abonoMotivo}
+                    onChange={(e) => setAbonoMotivo(e.target.value)}
+                    placeholder="Ex.: boa conduta, acordo"
+                    required
+                  />
+                </label>
+
+                <label>
+                  Observacao
+                  <input
+                    value={abonoObservacao}
+                    onChange={(e) => setAbonoObservacao(e.target.value)}
+                    placeholder="Opcional"
+                  />
+                </label>
+
+                <button type="submit" disabled={!token || abonoLoading}>
+                  {abonoLoading ? "Salvando..." : "Solicitar abono"}
+                </button>
+              </form>
+            ) : (
+              <p className="finance-form-sub">Sem acesso para criar abonos.</p>
+            )}
+
+            {receitasElegiveisAbono.length === 0 && (
+              <p className="finance-form-sub">
+                Nenhum lancamento elegivel encontrado para abono.
+              </p>
+            )}
+          </section>
+
+          <section className="finance-table-card">
+            <div className="finance-table-header">
+              <div>
+                <h3>Abonos cadastrados</h3>
+                <p className="finance-form-sub">
+                  {abonosPendentes} pendentes • {abonosAprovados} aprovados •{" "}
+                  {abonosCancelados} cancelados
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={carregarAbonos}
+                disabled={abonoLoading || !token}
+              >
+                {abonoLoading ? "Carregando..." : "Atualizar lista"}
+              </button>
+            </div>
+
+            <table className="table" style={{ marginTop: 12 }}>
+              <thead>
+                <tr>
+                  <th>Lancamento</th>
+                  <th>Tipo</th>
+                  <th className="finance-value-header">Valor</th>
+                  <th>Motivo</th>
+                  <th>Status</th>
+                  <th>Solicitado</th>
+                  {canWrite && <th>Acoes</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {abonosOrdenados.map((abono) => {
+                  const statusInfo = statusAbonoMeta(abono.status);
+                  return (
+                    <tr key={abono.id}>
+                      <td>
+                        {receitasLabelPorId[abono.lancamentoFinanceiroId] ??
+                          abono.lancamentoFinanceiroId}
+                      </td>
+                      <td>
+                        {abono.tipo === "percentual"
+                          ? `Percentual${abono.percentual ? ` (${abono.percentual}%)` : ""}`
+                          : "Valor"}
+                      </td>
+                      <td className="finance-value-cell">
+                        {formatarValor(abono.valor)}
+                      </td>
+                      <td>{abono.motivo}</td>
+                      <td>
+                        <span className={`badge-status ${statusInfo.className}`}>
+                          {statusInfo.label}
+                        </span>
+                      </td>
+                      <td>{formatarData(abono.dataSolicitacao)}</td>
+                      {canWrite && (
+                        <td>
+                          <div className="finance-table-actions">
+                            {abono.status === "pendente" && (
+                              <>
+                                <button
+                                  type="button"
+                                  className="action-secondary"
+                                  onClick={() =>
+                                    void atualizarStatusAbono(abono, "aprovado")
+                                  }
+                                  disabled={abonoLoading}
+                                >
+                                  Aprovar
+                                </button>
+                                <button
+                                  type="button"
+                                  className="action-secondary"
+                                  onClick={() =>
+                                    void atualizarStatusAbono(abono, "cancelado")
+                                  }
+                                  disabled={abonoLoading}
+                                >
+                                  Cancelar
+                                </button>
+                              </>
+                            )}
+                            <button
+                              type="button"
+                              className="action-secondary"
+                              onClick={() => void removerAbono(abono)}
+                              disabled={abono.status === "aprovado" || abonoLoading}
+                            >
+                              Remover
+                            </button>
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
+                {abonosOrdenados.length === 0 && (
+                  <tr>
+                    <td colSpan={canWrite ? 7 : 6} style={{ textAlign: "center" }}>
+                      Nenhum abono cadastrado ainda.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </section>
+        </div>
+      )}
+
+      {aba === "baixasManuais" && (
+        <div className="finance-layout">
+          <section className="finance-form-card">
+            <h3>Baixa manual</h3>
+            <p className="finance-form-sub">
+              Registre pagamentos/recebimentos feitos fora do fluxo automatico.
+            </p>
+
+            {baixaErro && <p className="error">{baixaErro}</p>}
+
+            {canWrite ? (
+              <form className="form" onSubmit={baixarLancamentoManual}>
+                <label>
+                  Lancamento pendente
+                  <select
+                    value={baixaLancamentoId}
+                    onChange={(e) => setBaixaLancamentoId(e.target.value)}
+                    required
+                  >
+                    <option value="">Selecionar</option>
+                    {pendentesParaBaixaOrdenados.map((lanc) => (
+                      <option key={lanc.id} value={lanc.id}>
+                        {lanc.tipo === "pagar" ? "Pagar" : "Receber"} •{" "}
+                        {lanc.descricao} • {formatarValor(lanc.valor)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                {baixaLancamentoSelecionado && (
+                  <div className="finance-card-grid" style={{ marginTop: 8 }}>
+                    <div className="finance-card">
+                      <strong>Valor</strong>
+                      <p>{formatarValor(baixaLancamentoSelecionado.valor)}</p>
+                    </div>
+                    <div className="finance-card">
+                      <strong>Vencimento</strong>
+                      <p>{formatarData(baixaLancamentoSelecionado.dataVencimento)}</p>
+                    </div>
+                    <div className="finance-card">
+                      <strong>Pessoa</strong>
+                      <p>
+                        {pessoasPorId[baixaLancamentoSelecionado.pessoaId] ??
+                          "Nao informado"}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                <div className="finance-form-grid">
+                  <label>
+                    Data da baixa
+                    <input
+                      type="date"
+                      value={baixaData}
+                      onChange={(e) => setBaixaData(e.target.value)}
+                      required
+                    />
+                  </label>
+                  <label>
+                    Conta financeira
+                    <select
+                      value={baixaContaId}
+                      onChange={(e) => setBaixaContaId(e.target.value)}
+                    >
+                      <option value="">Selecionar</option>
+                      {contasAtivasLista.map((conta) => (
+                        <option key={conta.id} value={conta.id}>
+                          {conta.nome}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+
+                <div className="finance-form-grid">
+                  <label>
+                    Forma de pagamento
+                    <select
+                      value={baixaFormaPagamento}
+                      onChange={(e) => setBaixaFormaPagamento(e.target.value)}
+                    >
+                      <option value="pix">Pix</option>
+                      <option value="boleto">Boleto</option>
+                      <option value="transferencia">Transferência</option>
+                      <option value="cartao">Cartão</option>
+                      <option value="dinheiro">Dinheiro</option>
+                      <option value="indefinido">Indefinido</option>
+                    </select>
+                  </label>
+                  <label>
+                    Referencia
+                    <input
+                      value={baixaReferencia}
+                      onChange={(e) => setBaixaReferencia(e.target.value)}
+                      placeholder="Ex.: comprovante / recibo"
+                    />
+                  </label>
+                </div>
+
+                <button type="submit" disabled={!token || baixaLoading}>
+                  {baixaLoading ? "Processando..." : "Dar baixa manual"}
+                </button>
+              </form>
+            ) : (
+              <p className="finance-form-sub">
+                Sem acesso para registrar baixas manuais.
+              </p>
+            )}
+
+            {pendentesParaBaixa.length === 0 && (
+              <p className="finance-form-sub">
+                Nenhum lancamento em aberto para baixa manual.
+              </p>
+            )}
+          </section>
+
+          <section className="finance-table-card">
+            <div className="finance-table-header">
+              <div>
+                <h3>Lancamentos pendentes</h3>
+                <p className="finance-form-sub">
+                  {pendentesParaBaixaFiltrados.length} pendentes • Total{" "}
+                  {formatarValor(totalPendentesValor)}
+                </p>
+              </div>
+            </div>
+
+            <div className="finance-form-grid" style={{ marginTop: 8 }}>
+              <label>
+                Tipo
+                <select
+                  value={baixaFiltroTipo}
+                  onChange={(e) =>
+                    setBaixaFiltroTipo(
+                      e.target.value === "pagar"
+                        ? "pagar"
+                        : e.target.value === "receber"
+                          ? "receber"
+                          : "todos"
+                    )
+                  }
+                >
+                  <option value="todos">Todos</option>
+                  <option value="pagar">A pagar</option>
+                  <option value="receber">A receber</option>
+                </select>
+              </label>
+              <label>
+                Buscar
+                <input
+                  value={baixaFiltroTexto}
+                  onChange={(e) => setBaixaFiltroTexto(e.target.value)}
+                  placeholder="Descricao, pessoa, referencia"
+                />
+              </label>
+            </div>
+
+            <table className="table finance-table" style={{ marginTop: 12 }}>
+              <thead>
+                <tr>
+                  <th>Tipo</th>
+                  <th>Descricao</th>
+                  <th>Pessoa</th>
+                  <th>Vencimento</th>
+                  <th className="finance-value-header">Valor</th>
+                  <th>Status</th>
+                  {canWrite && <th>Acoes</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {pendentesParaBaixaFiltrados.map((lanc) => (
+                  <tr key={lanc.id}>
+                    <td>{lanc.tipo === "pagar" ? "Pagar" : "Receber"}</td>
+                    <td>{lanc.descricao}</td>
+                    <td>{pessoasPorId[lanc.pessoaId] ?? "-"}</td>
+                    <td>{formatarData(lanc.dataVencimento)}</td>
+                    <td className="finance-value-cell">
+                      {formatarValor(lanc.valor)}
+                    </td>
+                    <td>{statusMeta(lanc.situacao).label}</td>
+                    {canWrite && (
+                      <td>
+                        <div className="finance-table-actions">
+                          <button
+                            type="button"
+                            className="action-secondary"
+                            onClick={() => setBaixaLancamentoId(lanc.id)}
+                            disabled={baixaLancamentoId === lanc.id}
+                          >
+                            {baixaLancamentoId === lanc.id
+                              ? "Selecionado"
+                              : "Selecionar"}
+                          </button>
+                        </div>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+                {pendentesParaBaixaFiltrados.length === 0 && (
+                  <tr>
+                    <td colSpan={canWrite ? 7 : 6} style={{ textAlign: "center" }}>
+                      Nenhum lancamento pendente encontrado.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </section>
+        </div>
+      )}
+
+      {aba === "gruposRateio" && (
+        <div className="finance-layout finance-layout--rateio">
+          <section className="finance-form-card rateio-span">
+            <h3>Novo grupo de rateio</h3>
+            <p className="finance-form-sub">
+              Distribua despesas por unidade com regra igualitaria ou percentual.
+            </p>
+
+            {rateioErro && <p className="error">{rateioErro}</p>}
+
+            {canWrite ? (
+              <form className="form" onSubmit={criarRegraRateio}>
+                <div className="finance-form-grid">
+                  <label>
+                    Nome
+                    <input
+                      value={novoRateioNome}
+                      onChange={(e) => setNovoRateioNome(e.target.value)}
+                      placeholder="Ex.: Rateio limpeza mensal"
+                      required
+                    />
+                  </label>
+                  <label>
+                    Tipo
+                    <select
+                      value={novoRateioTipo}
+                      onChange={(e) =>
+                        setNovoRateioTipo(
+                          e.target.value === "percentual"
+                            ? "percentual"
+                            : "igual"
+                        )
+                      }
+                    >
+                      <option value="igual">Igualitario</option>
+                      <option value="percentual">Percentual</option>
+                    </select>
+                  </label>
+                </div>
+
+                <div className="finance-table-card" style={{ marginTop: 12 }}>
+                  <div className="finance-table-header">
+                    <div>
+                      <h4>Unidades no rateio</h4>
+                      <p className="finance-form-sub">
+                        {totalUnidadesRateioSelecionadas} selecionada(s).
+                      </p>
+                    </div>
+                    <div className="finance-card-actions">
+                      <button
+                        type="button"
+                        onClick={selecionarTodasUnidadesRateio}
+                      >
+                        Selecionar todas
+                      </button>
+                      <button
+                        type="button"
+                        className="button-secondary"
+                        onClick={() => setNovoRateioUnidades({})}
+                      >
+                        Limpar
+                      </button>
+                    </div>
+                  </div>
+
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th>Selecionar</th>
+                        <th>Unidade</th>
+                        <th>Tipo</th>
+                        <th>Percentual</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {unidadesRateioDisplay.map((unidade) => {
+                        const selecionada =
+                          novoRateioUnidades[unidade.id] !== undefined;
+                        return (
+                          <tr key={unidade.id}>
+                            <td>
+                              <input
+                                type="checkbox"
+                                checked={selecionada}
+                                onChange={(e) => {
+                                  const checked = e.target.checked;
+                                  setNovoRateioUnidades((prev) => {
+                                    if (!checked) {
+                                      const { [unidade.id]: _, ...rest } = prev;
+                                      return rest;
+                                    }
+                                    return {
+                                      ...prev,
+                                      [unidade.id]:
+                                        prev[unidade.id] ??
+                                        (novoRateioTipo === "percentual"
+                                          ? "0"
+                                          : "")
+                                    };
+                                  });
+                                }}
+                              />
+                            </td>
+                            <td>
+                              {unidade.codigoInterno} - {unidade.nome}
+                            </td>
+                            <td>{unidade.tipo}</td>
+                            <td>
+                              {novoRateioTipo === "percentual" ? (
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  min="0"
+                                  max="100"
+                                  value={novoRateioUnidades[unidade.id] ?? ""}
+                                  onChange={(e) =>
+                                    setNovoRateioUnidades((prev) => ({
+                                      ...prev,
+                                      [unidade.id]: e.target.value
+                                    }))
+                                  }
+                                  disabled={!selecionada}
+                                  placeholder="%"
+                                />
+                              ) : (
+                                <span className="finance-item-sub">
+                                  Divisao igual
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {unidadesRateioDisplay.length === 0 && (
+                        <tr>
+                          <td colSpan={4} style={{ textAlign: "center" }}>
+                            Nenhuma unidade disponivel para rateio.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                <button type="submit" disabled={!token || rateioLoading}>
+                  {rateioLoading ? "Salvando..." : "Salvar grupo"}
+                </button>
+              </form>
+            ) : (
+              <p className="finance-form-sub">
+                Sem acesso para criar grupos de rateio.
+              </p>
+            )}
+          </section>
+
+          <section className="finance-table-card">
+            <div className="finance-table-header">
+              <div>
+                <h3>Grupos cadastrados</h3>
+                <p className="finance-form-sub">
+                  Regras prontas para aplicar em lancamentos.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={carregarRegrasRateio}
+                disabled={rateioLoading || !token}
+              >
+                {rateioLoading ? "Carregando..." : "Atualizar lista"}
+              </button>
+            </div>
+
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Nome</th>
+                  <th>Tipo</th>
+                  <th>Unidades</th>
+                  {canWrite && <th>Acoes</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {regrasRateio.map((regra) => (
+                  <tr key={regra.id}>
+                    <td>{regra.nome}</td>
+                    <td>
+                      {regra.tipoBase.toLowerCase() === "percentual"
+                        ? "Percentual"
+                        : "Igualitario"}
+                    </td>
+                    <td>{obterResumoRegraRateio(regra)}</td>
+                    {canWrite && (
+                      <td>
+                        <button
+                          type="button"
+                          onClick={() => void removerRegraRateio(regra)}
+                          style={{
+                            backgroundColor: "#ef4444",
+                            color: "#ffffff"
+                          }}
+                        >
+                          Remover
+                        </button>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+                {regrasRateio.length === 0 && (
+                  <tr>
+                    <td colSpan={canWrite ? 4 : 3} style={{ textAlign: "center" }}>
+                      Nenhum grupo cadastrado ainda.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </section>
+
+          <section className="finance-table-card">
+            <div className="finance-table-header">
+              <div>
+                <h3>Aplicar rateio</h3>
+                <p className="finance-form-sub">
+                  Selecione um lancamento de despesa e um grupo para gerar as
+                  parcelas por unidade.
+                </p>
+              </div>
+            </div>
+
+            <div className="finance-form-inline" style={{ marginTop: 8 }}>
+              <label>
+                Lancamento
+                <select
+                  value={rateioLancamentoId}
+                  onChange={(e) => setRateioLancamentoId(e.target.value)}
+                >
+                  <option value="">Selecione</option>
+                  {despesasValidas.map((lanc) => (
+                    <option key={lanc.id} value={lanc.id}>
+                      {lanc.descricao} •{" "}
+                      {lanc.valor.toLocaleString("pt-BR", {
+                        style: "currency",
+                        currency: "BRL"
+                      })}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Grupo
+                <select
+                  value={rateioRegraSelecionadaId}
+                  onChange={(e) => setRateioRegraSelecionadaId(e.target.value)}
+                >
+                  <option value="">Selecione</option>
+                  {regrasRateio.map((regra) => (
+                    <option key={regra.id} value={regra.id}>
+                      {regra.nome}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            <div className="inline-actions" style={{ marginTop: 8 }}>
+              <button
+                type="button"
+                onClick={aplicarRegraRateio}
+                disabled={!token || rateioLoading || !canWrite}
+              >
+                {rateioLoading ? "Aplicando..." : "Aplicar rateio"}
+              </button>
+              <button
+                type="button"
+                className="button-secondary"
+                onClick={limparRateiosLancamento}
+                disabled={
+                  !token || rateioLoading || !rateioLancamentoId || !canWrite
+                }
+              >
+                Limpar rateio
+              </button>
+            </div>
+
+            <table className="table" style={{ marginTop: 12 }}>
+              <thead>
+                <tr>
+                  <th>Unidade</th>
+                  <th className="finance-value-header">Valor rateado</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rateiosLancamento.map((item) => (
+                  <tr key={item.id}>
+                    <td>
+                      {item.unidadeOrganizacionalId
+                        ? unidadesRateioPorId[item.unidadeOrganizacionalId] ??
+                          item.unidadeOrganizacionalId
+                        : "-"}
+                    </td>
+                    <td className="finance-value-cell">
+                      {item.valorRateado.toLocaleString("pt-BR", {
+                        style: "currency",
+                        currency: "BRL"
+                      })}
+                    </td>
+                  </tr>
+                ))}
+                {rateiosLancamento.length === 0 && (
+                  <tr>
+                    <td colSpan={2} style={{ textAlign: "center" }}>
+                      Nenhum rateio aplicado para este lancamento.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </section>
+        </div>
+      )}
 
       {aba === "itensCobrados" && (
         <div className="finance-layout">
@@ -4912,16 +8303,248 @@ export default function FinanceiroView({
         </div>
       )}
 
-      {aba === "livroPrestacaoContas" &&
-        renderModuloBase(
-          "Livro de prestacao de contas",
-          "Base para consolidar balancete, comprovantes e parecer por periodo.",
-          [
-            "Selecionar periodo de fechamento e dados obrigatorios.",
-            "Consolidar receitas, despesas, inadimplencia e saldos.",
-            "Exportar livro final em PDF para assembleia e auditoria."
-          ]
-        )}
+      {aba === "livroPrestacaoContas" && (
+        <div className="finance-layout finance-layout--single">
+          <section className="finance-form-card">
+            <div className="finance-table-header">
+              <div>
+                <h3>Livro de prestacao de contas</h3>
+                <p className="finance-form-sub">
+                  Consolidacao por periodo com resumo, categorias e anexos
+                  principais.
+                </p>
+              </div>
+              <div className="finance-card-actions">
+                <button type="button" onClick={() => void gerarLivroPrestacaoPdf()}>
+                  PDF
+                </button>
+                <button type="button" onClick={gerarLivroPrestacaoExcel}>
+                  Excel
+                </button>
+              </div>
+            </div>
+
+            <div className="finance-form-grid">
+              <label>
+                Inicio
+                <input
+                  type="date"
+                  value={livroInicio}
+                  onChange={(e) => setLivroInicio(e.target.value)}
+                />
+              </label>
+              <label>
+                Fim
+                <input
+                  type="date"
+                  value={livroFim}
+                  onChange={(e) => setLivroFim(e.target.value)}
+                />
+              </label>
+            </div>
+
+            <div className="finance-form-inline" style={{ marginTop: 8 }}>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={livroIncluirInadimplencia}
+                  onChange={(e) => setLivroIncluirInadimplencia(e.target.checked)}
+                />
+                Incluir inadimplencia
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={livroIncluirDetalhes}
+                  onChange={(e) => setLivroIncluirDetalhes(e.target.checked)}
+                />
+                Incluir detalhes dos lancamentos
+              </label>
+            </div>
+
+            <div className="finance-card-grid" style={{ marginTop: 12 }}>
+              <div className="finance-card">
+                <strong>Total receitas</strong>
+                <p>{formatarValor(totalReceitasLivro)}</p>
+              </div>
+              <div className="finance-card">
+                <strong>Total despesas</strong>
+                <p>{formatarValor(totalDespesasLivro)}</p>
+              </div>
+              <div className="finance-card">
+                <strong>Saldo do periodo</strong>
+                <p>{formatarValor(saldoLivro)}</p>
+              </div>
+              {livroIncluirInadimplencia && (
+                <div className="finance-card">
+                  <strong>Inadimplencia</strong>
+                  <p>{formatarValor(totalInadimplenciaLivro)}</p>
+                </div>
+              )}
+            </div>
+          </section>
+
+          <section className="finance-table-card">
+            <div className="finance-table-header">
+              <div>
+                <h3>Receitas e despesas por categoria</h3>
+              </div>
+            </div>
+
+            <div className="finance-card-grid" style={{ marginTop: 12 }}>
+              <div className="finance-card">
+                <h4>Receitas</h4>
+                <table className="table" style={{ marginTop: 8 }}>
+                  <thead>
+                    <tr>
+                      <th>Categoria</th>
+                      <th className="finance-value-header">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Object.entries(receitasLivroPorCategoria).map(
+                      ([id, total]) => (
+                        <tr key={id}>
+                          <td>{categoriasReceitaPorId[id] ?? "Sem categoria"}</td>
+                          <td className="finance-value-cell">
+                            {formatarValor(total)}
+                          </td>
+                        </tr>
+                      )
+                    )}
+                    {Object.keys(receitasLivroPorCategoria).length === 0 && (
+                      <tr>
+                        <td colSpan={2} style={{ textAlign: "center" }}>
+                          Nenhuma receita no periodo.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="finance-card">
+                <h4>Despesas</h4>
+                <table className="table" style={{ marginTop: 8 }}>
+                  <thead>
+                    <tr>
+                      <th>Categoria</th>
+                      <th className="finance-value-header">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Object.entries(despesasLivroPorCategoria).map(
+                      ([id, total]) => (
+                        <tr key={id}>
+                          <td>{categoriasDespesaPorId[id] ?? "Sem categoria"}</td>
+                          <td className="finance-value-cell">
+                            {formatarValor(total)}
+                          </td>
+                        </tr>
+                      )
+                    )}
+                    {Object.keys(despesasLivroPorCategoria).length === 0 && (
+                      <tr>
+                        <td colSpan={2} style={{ textAlign: "center" }}>
+                          Nenhuma despesa no periodo.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+
+          {livroIncluirInadimplencia && (
+            <section className="finance-table-card">
+              <div className="finance-table-header">
+                <div>
+                  <h3>Inadimplentes no periodo</h3>
+                </div>
+              </div>
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Descricao</th>
+                    <th>Vencimento</th>
+                    <th className="finance-value-header">Valor</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {inadimplentesLivro.map((item) => (
+                    <tr key={item.id}>
+                      <td>{item.descricao}</td>
+                      <td>{formatarData(item.dataVencimento)}</td>
+                      <td className="finance-value-cell">
+                        {formatarValor(item.valor)}
+                      </td>
+                    </tr>
+                  ))}
+                  {inadimplentesLivro.length === 0 && (
+                    <tr>
+                      <td colSpan={3} style={{ textAlign: "center" }}>
+                        Nenhum inadimplente no periodo.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </section>
+          )}
+
+          {livroIncluirDetalhes && (
+            <section className="finance-table-card">
+              <div className="finance-table-header">
+                <div>
+                  <h3>Lancamentos do periodo</h3>
+                </div>
+              </div>
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Tipo</th>
+                    <th>Descricao</th>
+                    <th>Categoria</th>
+                    <th>Vencimento</th>
+                    <th>Situacao</th>
+                    <th className="finance-value-header">Valor</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {lancamentosLivro.map((item) => {
+                    const categoria =
+                      item.tipo === "pagar"
+                        ? categoriasDespesaPorId[item.planoContasId] ??
+                          "Sem categoria"
+                        : categoriasReceitaPorId[item.planoContasId] ??
+                          "Sem categoria";
+                    return (
+                      <tr key={item.id}>
+                        <td>{item.tipo === "pagar" ? "Despesa" : "Receita"}</td>
+                        <td>{item.descricao}</td>
+                        <td>{categoria}</td>
+                        <td>{formatarData(item.dataVencimento ?? item.dataCompetencia)}</td>
+                        <td>{statusMeta(item.situacao).label}</td>
+                        <td className="finance-value-cell">
+                          {formatarValor(item.valor)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {lancamentosLivro.length === 0 && (
+                    <tr>
+                      <td colSpan={6} style={{ textAlign: "center" }}>
+                        Nenhum lancamento no periodo.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </section>
+          )}
+        </div>
+      )}
 
       {aba === "categorias" && (
         <div className="finance-layout">

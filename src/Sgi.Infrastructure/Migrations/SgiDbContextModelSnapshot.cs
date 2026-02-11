@@ -1206,6 +1206,184 @@ namespace Sgi.Infrastructure.Migrations
                     b.ToTable("PlanosContas", (string)null);
                 });
 
+            modelBuilder.Entity("Sgi.Domain.Financeiro.PrevisaoOrcamentaria", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Ano")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Mes")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Observacao")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("OrganizacaoId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("PlanoContasId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Source")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Tipo")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<decimal>("ValorPrevisto")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizacaoId", "PlanoContasId", "Ano", "Mes", "Tipo")
+                        .IsUnique();
+
+                    b.ToTable("PrevisoesOrcamentarias", (string)null);
+                });
+
+            modelBuilder.Entity("Sgi.Domain.Financeiro.AbonoFinanceiro", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("DataAprovacao")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("DataSolicitacao")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("LancamentoFinanceiroId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Motivo")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Observacao")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("OrganizacaoId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<decimal?>("Percentual")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Source")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Tipo")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<decimal>("Valor")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LancamentoFinanceiroId");
+
+                    b.HasIndex("OrganizacaoId");
+
+                    b.ToTable("AbonosFinanceiros", (string)null);
+                });
+
+            modelBuilder.Entity("Sgi.Domain.Financeiro.MedidorConsumo", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("Ativo")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Nome")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("NumeroSerie")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Observacao")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("OrganizacaoId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("UnidadeOrganizacionalId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Source")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Tipo")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UnidadeMedida")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizacaoId");
+
+                    b.HasIndex("UnidadeOrganizacionalId");
+
+                    b.ToTable("MedidoresConsumo", (string)null);
+                });
+
+            modelBuilder.Entity("Sgi.Domain.Financeiro.LeituraConsumo", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Competencia")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<decimal>("Consumo")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("DataLeitura")
+                        .HasColumnType("TEXT");
+
+                    b.Property<decimal>("LeituraAnterior")
+                        .HasColumnType("TEXT");
+
+                    b.Property<decimal>("LeituraAtual")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("MedidorId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Observacao")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("OrganizacaoId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Source")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MedidorId");
+
+                    b.HasIndex("OrganizacaoId");
+
+                    b.ToTable("LeiturasConsumo", (string)null);
+                });
+
             modelBuilder.Entity("Sgi.Domain.Financeiro.RegraRateio", b =>
                 {
                     b.Property<Guid>("Id")

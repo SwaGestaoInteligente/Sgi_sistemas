@@ -1249,6 +1249,18 @@ button:focus-visible {
   margin-top: 12px;
 }
 
+.finance-layout--single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.finance-layout--rateio {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.finance-layout--rateio .rateio-span {
+  grid-column: 1 / -1;
+}
+
 .finance-side-column {
   display: flex;
   flex-direction: column;

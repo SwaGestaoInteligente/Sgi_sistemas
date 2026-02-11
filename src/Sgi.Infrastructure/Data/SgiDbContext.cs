@@ -37,6 +37,10 @@ public class SgiDbContext : DbContext
     public DbSet<LancamentoFinanceiro> LancamentosFinanceiros => Set<LancamentoFinanceiro>();
     public DbSet<DocumentoCobranca> DocumentosCobranca => Set<DocumentoCobranca>();
     public DbSet<CotaCondominial> CotasCondominio => Set<CotaCondominial>();
+    public DbSet<PrevisaoOrcamentaria> PrevisoesOrcamentarias => Set<PrevisaoOrcamentaria>();
+    public DbSet<AbonoFinanceiro> AbonosFinanceiros => Set<AbonoFinanceiro>();
+    public DbSet<MedidorConsumo> MedidoresConsumo => Set<MedidorConsumo>();
+    public DbSet<LeituraConsumo> LeiturasConsumo => Set<LeituraConsumo>();
     public DbSet<RegraRateio> RegrasRateio => Set<RegraRateio>();
     public DbSet<LancamentoRateado> LancamentosRateados => Set<LancamentoRateado>();
     public DbSet<FinanceAudit> FinanceAudits => Set<FinanceAudit>();
@@ -89,6 +93,10 @@ public class SgiDbContext : DbContext
         modelBuilder.Entity<LancamentoFinanceiro>().ToTable("LancamentosFinanceiros");
         modelBuilder.Entity<DocumentoCobranca>().ToTable("DocumentosCobranca");
         modelBuilder.Entity<CotaCondominial>().ToTable("CotasCondominio");
+        modelBuilder.Entity<PrevisaoOrcamentaria>().ToTable("PrevisoesOrcamentarias");
+        modelBuilder.Entity<AbonoFinanceiro>().ToTable("AbonosFinanceiros");
+        modelBuilder.Entity<MedidorConsumo>().ToTable("MedidoresConsumo");
+        modelBuilder.Entity<LeituraConsumo>().ToTable("LeiturasConsumo");
         modelBuilder.Entity<RegraRateio>().ToTable("RegrasRateio");
         modelBuilder.Entity<LancamentoRateado>().ToTable("LancamentosRateados");
         modelBuilder.Entity<FinanceAudit>().ToTable("FinanceAudits");
@@ -131,6 +139,10 @@ public class SgiDbContext : DbContext
         AddSource<LancamentoFinanceiro>(modelBuilder);
         AddSource<DocumentoCobranca>(modelBuilder);
         AddSource<CotaCondominial>(modelBuilder);
+        AddSource<PrevisaoOrcamentaria>(modelBuilder);
+        AddSource<AbonoFinanceiro>(modelBuilder);
+        AddSource<MedidorConsumo>(modelBuilder);
+        AddSource<LeituraConsumo>(modelBuilder);
         AddSource<RegraRateio>(modelBuilder);
         AddSource<LancamentoRateado>(modelBuilder);
         AddSource<FinanceAudit>(modelBuilder);

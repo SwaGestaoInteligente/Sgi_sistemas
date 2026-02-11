@@ -208,6 +208,56 @@ public class FinanceiroAccessFilter : IAsyncActionFilter
                     .Where(i => i.Id == id)
                     .Select(i => (Guid?)i.OrganizacaoId)
                     .FirstOrDefaultAsync(),
+            nameof(Controllers.FinanceiroController.AtualizarRegraRateio) =>
+                await _db.RegrasRateio.AsNoTracking()
+                    .Where(r => r.Id == id)
+                    .Select(r => (Guid?)r.OrganizacaoId)
+                    .FirstOrDefaultAsync(),
+            nameof(Controllers.FinanceiroController.RemoverRegraRateio) =>
+                await _db.RegrasRateio.AsNoTracking()
+                    .Where(r => r.Id == id)
+                    .Select(r => (Guid?)r.OrganizacaoId)
+                    .FirstOrDefaultAsync(),
+            nameof(Controllers.FinanceiroController.AtualizarPrevisaoOrcamentaria) =>
+                await _db.PrevisoesOrcamentarias.AsNoTracking()
+                    .Where(p => p.Id == id)
+                    .Select(p => (Guid?)p.OrganizacaoId)
+                    .FirstOrDefaultAsync(),
+            nameof(Controllers.FinanceiroController.RemoverPrevisaoOrcamentaria) =>
+                await _db.PrevisoesOrcamentarias.AsNoTracking()
+                    .Where(p => p.Id == id)
+                    .Select(p => (Guid?)p.OrganizacaoId)
+                    .FirstOrDefaultAsync(),
+            nameof(Controllers.FinanceiroController.AtualizarStatusAbono) =>
+                await _db.AbonosFinanceiros.AsNoTracking()
+                    .Where(a => a.Id == id)
+                    .Select(a => (Guid?)a.OrganizacaoId)
+                    .FirstOrDefaultAsync(),
+            nameof(Controllers.FinanceiroController.RemoverAbono) =>
+                await _db.AbonosFinanceiros.AsNoTracking()
+                    .Where(a => a.Id == id)
+                    .Select(a => (Guid?)a.OrganizacaoId)
+                    .FirstOrDefaultAsync(),
+            nameof(Controllers.FinanceiroController.AtualizarMedidorConsumo) =>
+                await _db.MedidoresConsumo.AsNoTracking()
+                    .Where(m => m.Id == id)
+                    .Select(m => (Guid?)m.OrganizacaoId)
+                    .FirstOrDefaultAsync(),
+            nameof(Controllers.FinanceiroController.RemoverMedidorConsumo) =>
+                await _db.MedidoresConsumo.AsNoTracking()
+                    .Where(m => m.Id == id)
+                    .Select(m => (Guid?)m.OrganizacaoId)
+                    .FirstOrDefaultAsync(),
+            nameof(Controllers.FinanceiroController.AtualizarLeituraConsumo) =>
+                await _db.LeiturasConsumo.AsNoTracking()
+                    .Where(l => l.Id == id)
+                    .Select(l => (Guid?)l.OrganizacaoId)
+                    .FirstOrDefaultAsync(),
+            nameof(Controllers.FinanceiroController.RemoverLeituraConsumo) =>
+                await _db.LeiturasConsumo.AsNoTracking()
+                    .Where(l => l.Id == id)
+                    .Select(l => (Guid?)l.OrganizacaoId)
+                    .FirstOrDefaultAsync(),
             nameof(Controllers.FinanceiroController.MarcarLancamentoComoPago) =>
                 await _db.LancamentosFinanceiros.AsNoTracking()
                     .Where(l => l.Id == id)

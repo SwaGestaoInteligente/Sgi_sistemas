@@ -572,6 +572,95 @@ public class FinanceiroController : ControllerBase
         return NoContent();
     }
 
+    public class BaixaManualRequest
+    {
+        public Guid OrganizacaoId { get; set; }
+        public DateTime? DataPagamento { get; set; }
+        public Guid? ContaFinanceiraId { get; set; }
+        public string? FormaPagamento { get; set; }
+        public string? Referencia { get; set; }
+    }
+
+    [HttpPost("lancamentos/{id:guid}/baixa-manual")]
+    public async Task<IActionResult> BaixarLancamentoManual(Guid id, BaixaManualRequest request)
+    {
+        if (request.OrganizacaoId == Guid.Empty)
+        {
+            return BadRequest("Organizacao e obrigatoria.");
+        }
+
+        var lancamento = await _db.LancamentosFinanceiros.FindAsync(id);
+        if (lancamento is null)
+        {
+            return NotFound();
+        }
+
+        if (lancamento.OrganizacaoId != request.OrganizacaoId)
+        {
+            return BadRequest("Lancamento nao pertence a organizacao informada.");
+        }
+
+        var situacaoAtual = NormalizarSituacao(lancamento.Situacao);
+        if (situacaoAtual is SituacaoCancelado or SituacaoFechado or SituacaoPago or SituacaoConciliado)
+        {
+            return BadRequest("Lancamento nao pode receber baixa manual.");
+        }
+
+        if (request.ContaFinanceiraId.HasValue && request.ContaFinanceiraId.Value != Guid.Empty)
+        {
+            var contaValida = await _db.ContasFinanceiras.AsNoTracking()
+                .AnyAsync(c =>
+                    c.Id == request.ContaFinanceiraId.Value &&
+                    c.OrganizacaoId == request.OrganizacaoId &&
+                    (c.Status ?? "ativo").ToLowerInvariant() == "ativo");
+            if (!contaValida)
+            {
+                return BadRequest("Conta financeira invalida para esta organizacao.");
+            }
+
+            lancamento.ContaFinanceiraId = request.ContaFinanceiraId.Value;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.FormaPagamento))
+        {
+            lancamento.FormaPagamento = request.FormaPagamento.Trim();
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Referencia))
+        {
+            lancamento.Referencia = request.Referencia.Trim();
+        }
+
+        var dataPagamento = request.DataPagamento?.Date ?? DateTime.UtcNow.Date;
+        lancamento.DataPagamento = dataPagamento;
+        lancamento.Situacao = SituacaoPago;
+
+        if (string.Equals(lancamento.Tipo, "receber", StringComparison.OrdinalIgnoreCase))
+        {
+            var faturas = await _db.DocumentosCobranca
+                .Where(f =>
+                    f.LancamentoFinanceiroId == lancamento.Id &&
+                    f.Status != "cancelada")
+                .ToListAsync();
+
+            foreach (var fatura in faturas)
+            {
+                fatura.Status = "paga";
+                fatura.DataBaixa = dataPagamento;
+            }
+        }
+
+        RegistrarAudit(lancamento.OrganizacaoId, lancamento.Id, "LancamentoFinanceiro", "BAIXA_MANUAL", new
+        {
+            lancamento.Descricao,
+            lancamento.Valor,
+            dataPagamento
+        });
+        await _db.SaveChangesAsync();
+
+        return NoContent();
+    }
+
     [HttpPost("lancamentos/{id:guid}/cancelar")]
     public async Task<IActionResult> CancelarLancamento(Guid id)
     {
@@ -1375,6 +1464,1469 @@ public class FinanceiroController : ControllerBase
         }
 
         item.Ativo = request.Ativo;
+        await _db.SaveChangesAsync();
+
+        return NoContent();
+    }
+
+    // ---------------------------
+    // Grupos de rateio
+    // ---------------------------
+
+    public record RegraRateioUnidadeDto(Guid UnidadeId, decimal? Percentual);
+
+    public class CriarRegraRateioRequest
+    {
+        public Guid OrganizacaoId { get; set; }
+        public string Nome { get; set; } = string.Empty;
+        public string TipoBase { get; set; } = string.Empty;
+        public List<RegraRateioUnidadeDto> Unidades { get; set; } = new();
+    }
+
+    public class AtualizarRegraRateioRequest
+    {
+        public string Nome { get; set; } = string.Empty;
+        public string TipoBase { get; set; } = string.Empty;
+        public List<RegraRateioUnidadeDto> Unidades { get; set; } = new();
+    }
+
+    public class AplicarRateioRequest
+    {
+        public Guid OrganizacaoId { get; set; }
+        public Guid LancamentoId { get; set; }
+    }
+
+    private record RateioConfig(string Tipo, List<RegraRateioUnidadeDto> Unidades, int? UnidadesTotal);
+
+    private static RateioConfig ParseRateioConfig(RegraRateio regra)
+    {
+        if (string.IsNullOrWhiteSpace(regra.ConfiguracaoJson))
+        {
+            return new RateioConfig(regra.TipoBase, new List<RegraRateioUnidadeDto>(), null);
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(regra.ConfiguracaoJson);
+            var root = doc.RootElement;
+            var tipo = root.TryGetProperty("tipo", out var tipoProp)
+                ? (tipoProp.GetString() ?? regra.TipoBase)
+                : regra.TipoBase;
+
+            if (root.TryGetProperty("unidades", out var unidadesProp))
+            {
+                if (unidadesProp.ValueKind == JsonValueKind.Number &&
+                    unidadesProp.TryGetInt32(out var total))
+                {
+                    return new RateioConfig(tipo, new List<RegraRateioUnidadeDto>(), total);
+                }
+
+                if (unidadesProp.ValueKind == JsonValueKind.Array)
+                {
+                    var unidades = new List<RegraRateioUnidadeDto>();
+                    foreach (var item in unidadesProp.EnumerateArray())
+                    {
+                        if (item.ValueKind != JsonValueKind.Object)
+                        {
+                            continue;
+                        }
+
+                        Guid unidadeId = Guid.Empty;
+                        if (item.TryGetProperty("unidadeId", out var unidadeIdProp))
+                        {
+                            Guid.TryParse(unidadeIdProp.ToString(), out unidadeId);
+                        }
+                        else if (item.TryGetProperty("unidadeOrganizacionalId", out var unidadeOrgProp))
+                        {
+                            Guid.TryParse(unidadeOrgProp.ToString(), out unidadeId);
+                        }
+                        else if (item.TryGetProperty("id", out var idProp))
+                        {
+                            Guid.TryParse(idProp.ToString(), out unidadeId);
+                        }
+
+                        if (unidadeId == Guid.Empty)
+                        {
+                            continue;
+                        }
+
+                        decimal? percentual = null;
+                        if (item.TryGetProperty("percentual", out var percProp))
+                        {
+                            if (percProp.ValueKind == JsonValueKind.Number)
+                            {
+                                percentual = percProp.GetDecimal();
+                            }
+                            else if (decimal.TryParse(percProp.ToString(), NumberStyles.Any, CultureInfo.InvariantCulture, out var perc))
+                            {
+                                percentual = perc;
+                            }
+                        }
+
+                        unidades.Add(new RegraRateioUnidadeDto(unidadeId, percentual));
+                    }
+
+                    return new RateioConfig(tipo, unidades, null);
+                }
+            }
+        }
+        catch
+        {
+            // Ignora configuracoes invalidas
+        }
+
+        return new RateioConfig(regra.TipoBase, new List<RegraRateioUnidadeDto>(), null);
+    }
+
+    [HttpGet("rateios")]
+    public async Task<ActionResult<IEnumerable<RegraRateio>>> ListarRegrasRateio([FromQuery] Guid organizacaoId)
+    {
+        if (organizacaoId == Guid.Empty)
+        {
+            return BadRequest("Organizacao e obrigatoria.");
+        }
+
+        var auth = await EnsureRoleAsync(organizacaoId, UserRole.CONDO_ADMIN, UserRole.CONDO_STAFF);
+        if (auth.Error is not null)
+        {
+            return auth.Error;
+        }
+
+        var regras = await _db.RegrasRateio
+            .AsNoTracking()
+            .Where(r => r.OrganizacaoId == organizacaoId)
+            .OrderBy(r => r.Nome)
+            .ToListAsync();
+
+        return Ok(regras);
+    }
+
+    [HttpPost("rateios")]
+    public async Task<ActionResult<RegraRateio>> CriarRegraRateio(CriarRegraRateioRequest request)
+    {
+        if (request.OrganizacaoId == Guid.Empty)
+        {
+            return BadRequest("Organizacao e obrigatoria.");
+        }
+
+        var auth = await EnsureRoleAsync(request.OrganizacaoId, UserRole.CONDO_ADMIN);
+        if (auth.Error is not null)
+        {
+            return auth.Error;
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Nome))
+        {
+            return BadRequest("Nome e obrigatorio.");
+        }
+
+        if (string.IsNullOrWhiteSpace(request.TipoBase))
+        {
+            return BadRequest("Tipo base e obrigatorio.");
+        }
+
+        var regra = new RegraRateio
+        {
+            Id = Guid.NewGuid(),
+            OrganizacaoId = request.OrganizacaoId,
+            Nome = request.Nome.Trim(),
+            TipoBase = request.TipoBase.Trim(),
+            ConfiguracaoJson = JsonSerializer.Serialize(new
+            {
+                tipo = request.TipoBase.Trim(),
+                unidades = request.Unidades.Select(u => new { unidadeId = u.UnidadeId, percentual = u.Percentual })
+            })
+        };
+
+        _db.RegrasRateio.Add(regra);
+        RegistrarAudit(request.OrganizacaoId, regra.Id, "RegraRateio", "CRIAR_RATEIO", new
+        {
+            regra.Nome,
+            regra.TipoBase
+        });
+        await _db.SaveChangesAsync();
+
+        return CreatedAtAction(nameof(ListarRegrasRateio), new { organizacaoId = request.OrganizacaoId }, regra);
+    }
+
+    [HttpPut("rateios/{id:guid}")]
+    public async Task<IActionResult> AtualizarRegraRateio(Guid id, AtualizarRegraRateioRequest request)
+    {
+        var regra = await _db.RegrasRateio.FindAsync(id);
+        if (regra is null)
+        {
+            return NotFound();
+        }
+
+        var auth = await EnsureRoleAsync(regra.OrganizacaoId, UserRole.CONDO_ADMIN);
+        if (auth.Error is not null)
+        {
+            return auth.Error;
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Nome))
+        {
+            return BadRequest("Nome e obrigatorio.");
+        }
+
+        if (string.IsNullOrWhiteSpace(request.TipoBase))
+        {
+            return BadRequest("Tipo base e obrigatorio.");
+        }
+
+        regra.Nome = request.Nome.Trim();
+        regra.TipoBase = request.TipoBase.Trim();
+        regra.ConfiguracaoJson = JsonSerializer.Serialize(new
+        {
+            tipo = regra.TipoBase,
+            unidades = request.Unidades.Select(u => new { unidadeId = u.UnidadeId, percentual = u.Percentual })
+        });
+
+        RegistrarAudit(regra.OrganizacaoId, regra.Id, "RegraRateio", "ATUALIZAR_RATEIO", new
+        {
+            regra.Nome,
+            regra.TipoBase
+        });
+        await _db.SaveChangesAsync();
+
+        return NoContent();
+    }
+
+    [HttpDelete("rateios/{id:guid}")]
+    public async Task<IActionResult> RemoverRegraRateio(Guid id)
+    {
+        var regra = await _db.RegrasRateio.FindAsync(id);
+        if (regra is null)
+        {
+            return NotFound();
+        }
+
+        var auth = await EnsureRoleAsync(regra.OrganizacaoId, UserRole.CONDO_ADMIN);
+        if (auth.Error is not null)
+        {
+            return auth.Error;
+        }
+
+        _db.RegrasRateio.Remove(regra);
+        RegistrarAudit(regra.OrganizacaoId, regra.Id, "RegraRateio", "REMOVER_RATEIO", new
+        {
+            regra.Nome,
+            regra.TipoBase
+        });
+        await _db.SaveChangesAsync();
+
+        return NoContent();
+    }
+
+    [HttpGet("lancamentos/{id:guid}/rateios")]
+    public async Task<ActionResult<IEnumerable<LancamentoRateado>>> ListarRateiosLancamento(
+        Guid id,
+        [FromQuery] Guid organizacaoId)
+    {
+        if (organizacaoId == Guid.Empty)
+        {
+            return BadRequest("Organizacao e obrigatoria.");
+        }
+
+        var auth = await EnsureRoleAsync(organizacaoId, UserRole.CONDO_ADMIN, UserRole.CONDO_STAFF);
+        if (auth.Error is not null)
+        {
+            return auth.Error;
+        }
+
+        var lancamento = await _db.LancamentosFinanceiros.AsNoTracking()
+            .FirstOrDefaultAsync(l => l.Id == id && l.OrganizacaoId == organizacaoId);
+        if (lancamento is null)
+        {
+            return NotFound();
+        }
+
+        var itens = await _db.LancamentosRateados.AsNoTracking()
+            .Where(r => r.LancamentoOriginalId == id)
+            .ToListAsync();
+
+        return Ok(itens);
+    }
+
+    [HttpDelete("lancamentos/{id:guid}/rateios")]
+    public async Task<IActionResult> RemoverRateiosLancamento(
+        Guid id,
+        [FromQuery] Guid organizacaoId)
+    {
+        if (organizacaoId == Guid.Empty)
+        {
+            return BadRequest("Organizacao e obrigatoria.");
+        }
+
+        var auth = await EnsureRoleAsync(organizacaoId, UserRole.CONDO_ADMIN);
+        if (auth.Error is not null)
+        {
+            return auth.Error;
+        }
+
+        var lancamento = await _db.LancamentosFinanceiros.FindAsync(id);
+        if (lancamento is null || lancamento.OrganizacaoId != organizacaoId)
+        {
+            return NotFound();
+        }
+
+        var existentes = await _db.LancamentosRateados
+            .Where(r => r.LancamentoOriginalId == id)
+            .ToListAsync();
+
+        if (existentes.Count > 0)
+        {
+            _db.LancamentosRateados.RemoveRange(existentes);
+            RegistrarAudit(organizacaoId, id, "LancamentoRateado", "LIMPAR_RATEIO", new
+            {
+                LancamentoId = id
+            });
+            await _db.SaveChangesAsync();
+        }
+
+        return NoContent();
+    }
+
+    [HttpPost("rateios/{id:guid}/aplicar")]
+    public async Task<ActionResult<IEnumerable<LancamentoRateado>>> AplicarRateio(
+        Guid id,
+        AplicarRateioRequest request)
+    {
+        if (request.OrganizacaoId == Guid.Empty)
+        {
+            return BadRequest("Organizacao e obrigatoria.");
+        }
+
+        if (request.LancamentoId == Guid.Empty)
+        {
+            return BadRequest("Lancamento e obrigatorio.");
+        }
+
+        var auth = await EnsureRoleAsync(request.OrganizacaoId, UserRole.CONDO_ADMIN);
+        if (auth.Error is not null)
+        {
+            return auth.Error;
+        }
+
+        var regra = await _db.RegrasRateio.AsNoTracking()
+            .FirstOrDefaultAsync(r => r.Id == id && r.OrganizacaoId == request.OrganizacaoId);
+        if (regra is null)
+        {
+            return NotFound("Regra de rateio nao encontrada.");
+        }
+
+        var lancamento = await _db.LancamentosFinanceiros
+            .FirstOrDefaultAsync(l => l.Id == request.LancamentoId && l.OrganizacaoId == request.OrganizacaoId);
+        if (lancamento is null)
+        {
+            return NotFound("Lancamento nao encontrado.");
+        }
+
+        var config = ParseRateioConfig(regra);
+        var unidadesConfig = config.Unidades.ToList();
+
+        if (unidadesConfig.Count == 0 && config.UnidadesTotal.HasValue)
+        {
+            var unidades = await _db.UnidadesOrganizacionais.AsNoTracking()
+                .Where(u => u.OrganizacaoId == request.OrganizacaoId)
+                .OrderBy(u => u.CodigoInterno)
+                .Take(config.UnidadesTotal.Value)
+                .ToListAsync();
+
+            unidadesConfig = unidades
+                .Select(u => new RegraRateioUnidadeDto(u.Id, null))
+                .ToList();
+        }
+
+        if (unidadesConfig.Count == 0)
+        {
+            return BadRequest("Regra de rateio sem unidades vinculadas.");
+        }
+
+        var tipo = string.IsNullOrWhiteSpace(config.Tipo) ? regra.TipoBase : config.Tipo;
+        var total = lancamento.Valor;
+        var valores = new List<decimal>();
+
+        if (string.Equals(tipo, "percentual", StringComparison.OrdinalIgnoreCase))
+        {
+            var soma = unidadesConfig.Sum(u => u.Percentual ?? 0m);
+            if (Math.Abs(soma - 100m) > 0.01m)
+            {
+                return BadRequest("Percentuais devem totalizar 100%.");
+            }
+
+            foreach (var unidade in unidadesConfig)
+            {
+                var perc = unidade.Percentual ?? 0m;
+                var valor = Math.Round(total * perc / 100m, 2, MidpointRounding.AwayFromZero);
+                valores.Add(valor);
+            }
+        }
+        else
+        {
+            var baseValor = Math.Round(total / unidadesConfig.Count, 2, MidpointRounding.AwayFromZero);
+            for (var i = 0; i < unidadesConfig.Count; i++)
+            {
+                valores.Add(baseValor);
+            }
+        }
+
+        var diferenca = total - valores.Sum();
+        if (valores.Count > 0 && diferenca != 0m)
+        {
+            valores[^1] = Math.Round(valores[^1] + diferenca, 2, MidpointRounding.AwayFromZero);
+        }
+
+        var existentes = await _db.LancamentosRateados
+            .Where(r => r.LancamentoOriginalId == request.LancamentoId)
+            .ToListAsync();
+        if (existentes.Count > 0)
+        {
+            _db.LancamentosRateados.RemoveRange(existentes);
+        }
+
+        var novos = new List<LancamentoRateado>();
+        for (var i = 0; i < unidadesConfig.Count; i++)
+        {
+            novos.Add(new LancamentoRateado
+            {
+                Id = Guid.NewGuid(),
+                LancamentoOriginalId = request.LancamentoId,
+                UnidadeOrganizacionalId = unidadesConfig[i].UnidadeId,
+                CentroCustoId = null,
+                ValorRateado = valores[i]
+            });
+        }
+
+        _db.LancamentosRateados.AddRange(novos);
+        RegistrarAudit(request.OrganizacaoId, request.LancamentoId, "LancamentoRateado", "APLICAR_RATEIO", new
+        {
+            regra.Id,
+            regra.Nome,
+            regra.TipoBase,
+            Total = total,
+            Unidades = unidadesConfig.Count
+        });
+        await _db.SaveChangesAsync();
+
+        return Ok(novos);
+    }
+
+    // ---------------------------
+    // Previsao orcamentaria
+    // ---------------------------
+
+    private static string NormalizarTipoPrevisao(string tipo)
+    {
+        var normalizado = (tipo ?? string.Empty).Trim();
+        if (string.Equals(normalizado, "receita", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Receita";
+        }
+        if (string.Equals(normalizado, "despesa", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Despesa";
+        }
+        return string.Empty;
+    }
+
+    public class CriarPrevisaoOrcamentariaRequest
+    {
+        public Guid OrganizacaoId { get; set; }
+        public Guid PlanoContasId { get; set; }
+        public string Tipo { get; set; } = string.Empty;
+        public int Ano { get; set; }
+        public int Mes { get; set; }
+        public decimal ValorPrevisto { get; set; }
+        public string? Observacao { get; set; }
+    }
+
+    public class AtualizarPrevisaoOrcamentariaRequest
+    {
+        public Guid PlanoContasId { get; set; }
+        public string Tipo { get; set; } = string.Empty;
+        public int Ano { get; set; }
+        public int Mes { get; set; }
+        public decimal ValorPrevisto { get; set; }
+        public string? Observacao { get; set; }
+    }
+
+    [HttpGet("previsao-orcamentaria")]
+    public async Task<ActionResult<IEnumerable<PrevisaoOrcamentaria>>> ListarPrevisoesOrcamentarias(
+        [FromQuery] Guid organizacaoId,
+        [FromQuery] int? ano,
+        [FromQuery] string? tipo)
+    {
+        if (organizacaoId == Guid.Empty)
+        {
+            return BadRequest("Organizacao e obrigatoria.");
+        }
+
+        var query = _db.PrevisoesOrcamentarias.AsNoTracking()
+            .Where(p => p.OrganizacaoId == organizacaoId);
+
+        if (ano.HasValue)
+        {
+            query = query.Where(p => p.Ano == ano.Value);
+        }
+
+        if (!string.IsNullOrWhiteSpace(tipo))
+        {
+            var tipoNormalizado = NormalizarTipoPrevisao(tipo);
+            if (!string.IsNullOrWhiteSpace(tipoNormalizado))
+            {
+                query = query.Where(p => p.Tipo == tipoNormalizado);
+            }
+        }
+
+        var itens = await query
+            .OrderBy(p => p.Ano)
+            .ThenBy(p => p.Mes)
+            .ThenBy(p => p.Tipo)
+            .ThenBy(p => p.PlanoContasId)
+            .ToListAsync();
+
+        return Ok(itens);
+    }
+
+    [HttpPost("previsao-orcamentaria")]
+    public async Task<ActionResult<PrevisaoOrcamentaria>> CriarPrevisaoOrcamentaria(
+        CriarPrevisaoOrcamentariaRequest request)
+    {
+        if (request.OrganizacaoId == Guid.Empty)
+        {
+            return BadRequest("Organizacao e obrigatoria.");
+        }
+
+        if (request.PlanoContasId == Guid.Empty)
+        {
+            return BadRequest("Categoria financeira e obrigatoria.");
+        }
+
+        var tipoNormalizado = NormalizarTipoPrevisao(request.Tipo);
+        if (string.IsNullOrWhiteSpace(tipoNormalizado))
+        {
+            return BadRequest("Tipo invalido. Use Receita ou Despesa.");
+        }
+
+        if (request.Ano < 2000)
+        {
+            return BadRequest("Ano invalido.");
+        }
+
+        if (request.Mes < 1 || request.Mes > 12)
+        {
+            return BadRequest("Mes invalido.");
+        }
+
+        if (request.ValorPrevisto <= 0)
+        {
+            return BadRequest("Valor previsto deve ser maior que zero.");
+        }
+
+        var existente = await _db.PrevisoesOrcamentarias
+            .FirstOrDefaultAsync(p =>
+                p.OrganizacaoId == request.OrganizacaoId &&
+                p.PlanoContasId == request.PlanoContasId &&
+                p.Ano == request.Ano &&
+                p.Mes == request.Mes &&
+                p.Tipo == tipoNormalizado);
+
+        if (existente is not null)
+        {
+            existente.ValorPrevisto = request.ValorPrevisto;
+            existente.Observacao = string.IsNullOrWhiteSpace(request.Observacao)
+                ? null
+                : request.Observacao.Trim();
+
+            RegistrarAudit(existente.OrganizacaoId, existente.Id, "PrevisaoOrcamentaria", "ATUALIZAR_PREVISAO", new
+            {
+                existente.Tipo,
+                existente.Ano,
+                existente.Mes,
+                existente.ValorPrevisto
+            });
+            await _db.SaveChangesAsync();
+            return Ok(existente);
+        }
+
+        var previsao = new PrevisaoOrcamentaria
+        {
+            Id = Guid.NewGuid(),
+            OrganizacaoId = request.OrganizacaoId,
+            PlanoContasId = request.PlanoContasId,
+            Tipo = tipoNormalizado,
+            Ano = request.Ano,
+            Mes = request.Mes,
+            ValorPrevisto = request.ValorPrevisto,
+            Observacao = string.IsNullOrWhiteSpace(request.Observacao)
+                ? null
+                : request.Observacao.Trim()
+        };
+
+        _db.PrevisoesOrcamentarias.Add(previsao);
+        RegistrarAudit(previsao.OrganizacaoId, previsao.Id, "PrevisaoOrcamentaria", "CRIAR_PREVISAO", new
+        {
+            previsao.Tipo,
+            previsao.Ano,
+            previsao.Mes,
+            previsao.ValorPrevisto
+        });
+        await _db.SaveChangesAsync();
+
+        return CreatedAtAction(nameof(ListarPrevisoesOrcamentarias), new { organizacaoId = previsao.OrganizacaoId }, previsao);
+    }
+
+    [HttpPut("previsao-orcamentaria/{id:guid}")]
+    public async Task<IActionResult> AtualizarPrevisaoOrcamentaria(
+        Guid id,
+        AtualizarPrevisaoOrcamentariaRequest request)
+    {
+        var previsao = await _db.PrevisoesOrcamentarias.FindAsync(id);
+        if (previsao is null)
+        {
+            return NotFound();
+        }
+
+        if (request.PlanoContasId == Guid.Empty)
+        {
+            return BadRequest("Categoria financeira e obrigatoria.");
+        }
+
+        var tipoNormalizado = NormalizarTipoPrevisao(request.Tipo);
+        if (string.IsNullOrWhiteSpace(tipoNormalizado))
+        {
+            return BadRequest("Tipo invalido. Use Receita ou Despesa.");
+        }
+
+        if (request.Ano < 2000)
+        {
+            return BadRequest("Ano invalido.");
+        }
+
+        if (request.Mes < 1 || request.Mes > 12)
+        {
+            return BadRequest("Mes invalido.");
+        }
+
+        if (request.ValorPrevisto <= 0)
+        {
+            return BadRequest("Valor previsto deve ser maior que zero.");
+        }
+
+        previsao.PlanoContasId = request.PlanoContasId;
+        previsao.Tipo = tipoNormalizado;
+        previsao.Ano = request.Ano;
+        previsao.Mes = request.Mes;
+        previsao.ValorPrevisto = request.ValorPrevisto;
+        previsao.Observacao = string.IsNullOrWhiteSpace(request.Observacao)
+            ? null
+            : request.Observacao.Trim();
+
+        RegistrarAudit(previsao.OrganizacaoId, previsao.Id, "PrevisaoOrcamentaria", "ATUALIZAR_PREVISAO", new
+        {
+            previsao.Tipo,
+            previsao.Ano,
+            previsao.Mes,
+            previsao.ValorPrevisto
+        });
+        await _db.SaveChangesAsync();
+
+        return NoContent();
+    }
+
+    [HttpDelete("previsao-orcamentaria/{id:guid}")]
+    public async Task<IActionResult> RemoverPrevisaoOrcamentaria(Guid id)
+    {
+        var previsao = await _db.PrevisoesOrcamentarias.FindAsync(id);
+        if (previsao is null)
+        {
+            return NotFound();
+        }
+
+        _db.PrevisoesOrcamentarias.Remove(previsao);
+        RegistrarAudit(previsao.OrganizacaoId, previsao.Id, "PrevisaoOrcamentaria", "REMOVER_PREVISAO", new
+        {
+            previsao.Tipo,
+            previsao.Ano,
+            previsao.Mes,
+            previsao.ValorPrevisto
+        });
+        await _db.SaveChangesAsync();
+
+        return NoContent();
+    }
+
+    // ---------------------------
+    // Abonos
+    // ---------------------------
+
+    private static string NormalizarTipoAbono(string tipo)
+    {
+        var normalizado = (tipo ?? string.Empty).Trim().ToLowerInvariant();
+        return normalizado switch
+        {
+            "valor" => "valor",
+            "percentual" => "percentual",
+            _ => string.Empty
+        };
+    }
+
+    private static string NormalizarStatusAbono(string status)
+    {
+        var normalizado = (status ?? string.Empty).Trim().ToLowerInvariant();
+        return normalizado switch
+        {
+            "pendente" => "pendente",
+            "aprovado" => "aprovado",
+            "cancelado" => "cancelado",
+            _ => string.Empty
+        };
+    }
+
+    public class CriarAbonoRequest
+    {
+        public Guid OrganizacaoId { get; set; }
+        public Guid LancamentoFinanceiroId { get; set; }
+        public string Tipo { get; set; } = string.Empty; // valor | percentual
+        public decimal? Valor { get; set; }
+        public decimal? Percentual { get; set; }
+        public string Motivo { get; set; } = string.Empty;
+        public string? Observacao { get; set; }
+    }
+
+    public class AtualizarStatusAbonoRequest
+    {
+        public string Status { get; set; } = string.Empty; // pendente | aprovado | cancelado
+    }
+
+    [HttpGet("abonos")]
+    public async Task<ActionResult<IEnumerable<AbonoFinanceiro>>> ListarAbonos(
+        [FromQuery] Guid organizacaoId,
+        [FromQuery] Guid? lancamentoId,
+        [FromQuery] string? status)
+    {
+        if (organizacaoId == Guid.Empty)
+        {
+            return BadRequest("Organizacao e obrigatoria.");
+        }
+
+        var query = _db.AbonosFinanceiros.AsNoTracking()
+            .Where(a => a.OrganizacaoId == organizacaoId);
+
+        if (lancamentoId.HasValue && lancamentoId.Value != Guid.Empty)
+        {
+            query = query.Where(a => a.LancamentoFinanceiroId == lancamentoId.Value);
+        }
+
+        if (!string.IsNullOrWhiteSpace(status))
+        {
+            var statusNormalizado = NormalizarStatusAbono(status);
+            if (string.IsNullOrWhiteSpace(statusNormalizado))
+            {
+                return BadRequest("Status invalido. Use pendente, aprovado ou cancelado.");
+            }
+            query = query.Where(a => a.Status == statusNormalizado);
+        }
+
+        var itens = await query
+            .OrderByDescending(a => a.DataSolicitacao)
+            .ToListAsync();
+
+        return Ok(itens);
+    }
+
+    [HttpPost("abonos")]
+    public async Task<ActionResult<AbonoFinanceiro>> CriarAbono(CriarAbonoRequest request)
+    {
+        if (request.OrganizacaoId == Guid.Empty)
+        {
+            return BadRequest("Organizacao e obrigatoria.");
+        }
+
+        if (request.LancamentoFinanceiroId == Guid.Empty)
+        {
+            return BadRequest("Lancamento financeiro e obrigatorio.");
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Motivo))
+        {
+            return BadRequest("Motivo do abono e obrigatorio.");
+        }
+
+        var tipoNormalizado = NormalizarTipoAbono(request.Tipo);
+        if (string.IsNullOrWhiteSpace(tipoNormalizado))
+        {
+            return BadRequest("Tipo invalido. Use valor ou percentual.");
+        }
+
+        var lancamento = await _db.LancamentosFinanceiros
+            .FirstOrDefaultAsync(l =>
+                l.Id == request.LancamentoFinanceiroId &&
+                l.OrganizacaoId == request.OrganizacaoId);
+
+        if (lancamento is null)
+        {
+            return NotFound("Lancamento financeiro nao encontrado.");
+        }
+
+        if (!string.Equals(lancamento.Tipo, "receber", StringComparison.OrdinalIgnoreCase))
+        {
+            return BadRequest("Abonos so podem ser aplicados em lancamentos a receber.");
+        }
+
+        var situacao = NormalizarSituacao(lancamento.Situacao);
+        if (situacao is SituacaoPago or SituacaoConciliado or SituacaoFechado or SituacaoCancelado)
+        {
+            return BadRequest("Lancamento ja liquidado ou cancelado, nao e possivel abonar.");
+        }
+
+        decimal valor;
+        decimal? percentual = null;
+        if (tipoNormalizado == "percentual")
+        {
+            if (!request.Percentual.HasValue)
+            {
+                return BadRequest("Percentual e obrigatorio.");
+            }
+
+            if (request.Percentual <= 0 || request.Percentual > 100)
+            {
+                return BadRequest("Percentual deve estar entre 0 e 100.");
+            }
+
+            percentual = request.Percentual.Value;
+            valor = Math.Round(lancamento.Valor * (percentual.Value / 100m), 2, MidpointRounding.AwayFromZero);
+            if (valor <= 0)
+            {
+                return BadRequest("Valor do abono invalido.");
+            }
+        }
+        else
+        {
+            if (!request.Valor.HasValue)
+            {
+                return BadRequest("Valor do abono e obrigatorio.");
+            }
+
+            valor = Math.Round(request.Valor.Value, 2, MidpointRounding.AwayFromZero);
+            if (valor <= 0)
+            {
+                return BadRequest("Valor do abono invalido.");
+            }
+        }
+
+        if (valor > lancamento.Valor)
+        {
+            return BadRequest("Valor do abono nao pode ser maior que o valor do lancamento.");
+        }
+
+        var abono = new AbonoFinanceiro
+        {
+            Id = Guid.NewGuid(),
+            OrganizacaoId = request.OrganizacaoId,
+            LancamentoFinanceiroId = request.LancamentoFinanceiroId,
+            Tipo = tipoNormalizado,
+            Valor = valor,
+            Percentual = percentual,
+            Motivo = request.Motivo.Trim(),
+            Observacao = string.IsNullOrWhiteSpace(request.Observacao)
+                ? null
+                : request.Observacao.Trim(),
+            Status = "pendente",
+            DataSolicitacao = DateTime.UtcNow
+        };
+
+        _db.AbonosFinanceiros.Add(abono);
+        RegistrarAudit(abono.OrganizacaoId, abono.Id, "AbonoFinanceiro", "CRIAR_ABONO", new
+        {
+            abono.LancamentoFinanceiroId,
+            abono.Tipo,
+            abono.Valor
+        });
+        await _db.SaveChangesAsync();
+
+        return CreatedAtAction(nameof(ListarAbonos), new { organizacaoId = abono.OrganizacaoId }, abono);
+    }
+
+    [HttpPatch("abonos/{id:guid}/status")]
+    public async Task<IActionResult> AtualizarStatusAbono(Guid id, AtualizarStatusAbonoRequest request)
+    {
+        var abono = await _db.AbonosFinanceiros.FindAsync(id);
+        if (abono is null)
+        {
+            return NotFound();
+        }
+
+        var statusNormalizado = NormalizarStatusAbono(request.Status);
+        if (string.IsNullOrWhiteSpace(statusNormalizado))
+        {
+            return BadRequest("Status invalido. Use pendente, aprovado ou cancelado.");
+        }
+
+        if (abono.Status == statusNormalizado)
+        {
+            return NoContent();
+        }
+
+        if (statusNormalizado == "aprovado")
+        {
+            if (abono.Status != "pendente")
+            {
+                return BadRequest("Somente abonos pendentes podem ser aprovados.");
+            }
+
+            var lancamento = await _db.LancamentosFinanceiros.FindAsync(abono.LancamentoFinanceiroId);
+            if (lancamento is null)
+            {
+                return BadRequest("Lancamento financeiro nao encontrado.");
+            }
+
+            var situacao = NormalizarSituacao(lancamento.Situacao);
+            if (situacao is SituacaoPago or SituacaoConciliado or SituacaoFechado or SituacaoCancelado)
+            {
+                return BadRequest("Lancamento ja liquidado ou cancelado, nao e possivel abonar.");
+            }
+
+            if (abono.Valor > lancamento.Valor)
+            {
+                return BadRequest("Valor do abono maior que o valor do lancamento.");
+            }
+
+            lancamento.Valor = Math.Round(
+                lancamento.Valor - abono.Valor,
+                2,
+                MidpointRounding.AwayFromZero);
+            abono.Status = "aprovado";
+            abono.DataAprovacao = DateTime.UtcNow;
+
+            RegistrarAudit(abono.OrganizacaoId, abono.Id, "AbonoFinanceiro", "APROVAR_ABONO", new
+            {
+                abono.LancamentoFinanceiroId,
+                abono.Valor
+            });
+        }
+        else if (statusNormalizado == "cancelado")
+        {
+            if (abono.Status == "aprovado")
+            {
+                return BadRequest("Nao e possivel cancelar um abono aprovado.");
+            }
+
+            abono.Status = "cancelado";
+            RegistrarAudit(abono.OrganizacaoId, abono.Id, "AbonoFinanceiro", "CANCELAR_ABONO", new
+            {
+                abono.LancamentoFinanceiroId,
+                abono.Valor
+            });
+        }
+        else
+        {
+            abono.Status = "pendente";
+        }
+
+        await _db.SaveChangesAsync();
+
+        return NoContent();
+    }
+
+    [HttpDelete("abonos/{id:guid}")]
+    public async Task<IActionResult> RemoverAbono(Guid id)
+    {
+        var abono = await _db.AbonosFinanceiros.FindAsync(id);
+        if (abono is null)
+        {
+            return NotFound();
+        }
+
+        if (abono.Status == "aprovado")
+        {
+            return BadRequest("Nao e possivel remover um abono aprovado.");
+        }
+
+        _db.AbonosFinanceiros.Remove(abono);
+        RegistrarAudit(abono.OrganizacaoId, abono.Id, "AbonoFinanceiro", "REMOVER_ABONO", new
+        {
+            abono.LancamentoFinanceiroId,
+            abono.Valor
+        });
+        await _db.SaveChangesAsync();
+
+        return NoContent();
+    }
+
+    // ---------------------------
+    // Consumos
+    // ---------------------------
+
+    private static string NormalizarTipoConsumo(string tipo)
+    {
+        var normalizado = (tipo ?? string.Empty).Trim();
+        if (string.Equals(normalizado, "agua", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Agua";
+        }
+        if (string.Equals(normalizado, "gas", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Gas";
+        }
+        if (string.Equals(normalizado, "energia", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Energia";
+        }
+        if (string.Equals(normalizado, "outro", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(normalizado, "outros", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Outro";
+        }
+        return string.Empty;
+    }
+
+    private static bool CompetenciaValida(string competencia)
+    {
+        if (string.IsNullOrWhiteSpace(competencia))
+        {
+            return false;
+        }
+
+        return DateTime.TryParseExact(
+            competencia,
+            "yyyy-MM",
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.None,
+            out _);
+    }
+
+    public class CriarMedidorConsumoRequest
+    {
+        public Guid OrganizacaoId { get; set; }
+        public Guid UnidadeOrganizacionalId { get; set; }
+        public string Nome { get; set; } = string.Empty;
+        public string Tipo { get; set; } = string.Empty;
+        public string UnidadeMedida { get; set; } = string.Empty;
+        public string? NumeroSerie { get; set; }
+        public bool Ativo { get; set; } = true;
+        public string? Observacao { get; set; }
+    }
+
+    public class AtualizarMedidorConsumoRequest
+    {
+        public Guid UnidadeOrganizacionalId { get; set; }
+        public string Nome { get; set; } = string.Empty;
+        public string Tipo { get; set; } = string.Empty;
+        public string UnidadeMedida { get; set; } = string.Empty;
+        public string? NumeroSerie { get; set; }
+        public bool Ativo { get; set; } = true;
+        public string? Observacao { get; set; }
+    }
+
+    public class CriarLeituraConsumoRequest
+    {
+        public Guid OrganizacaoId { get; set; }
+        public Guid MedidorId { get; set; }
+        public string Competencia { get; set; } = string.Empty; // yyyy-MM
+        public DateTime DataLeitura { get; set; }
+        public decimal LeituraAtual { get; set; }
+        public string? Observacao { get; set; }
+    }
+
+    public class AtualizarLeituraConsumoRequest
+    {
+        public string Competencia { get; set; } = string.Empty; // yyyy-MM
+        public DateTime DataLeitura { get; set; }
+        public decimal LeituraAtual { get; set; }
+        public string? Observacao { get; set; }
+    }
+
+    [HttpGet("consumos/medidores")]
+    public async Task<ActionResult<IEnumerable<MedidorConsumo>>> ListarMedidoresConsumo(
+        [FromQuery] Guid organizacaoId,
+        [FromQuery] Guid? unidadeId,
+        [FromQuery] string? tipo,
+        [FromQuery] bool? ativo)
+    {
+        if (organizacaoId == Guid.Empty)
+        {
+            return BadRequest("Organizacao e obrigatoria.");
+        }
+
+        var query = _db.MedidoresConsumo.AsNoTracking()
+            .Where(m => m.OrganizacaoId == organizacaoId);
+
+        if (unidadeId.HasValue && unidadeId.Value != Guid.Empty)
+        {
+            query = query.Where(m => m.UnidadeOrganizacionalId == unidadeId.Value);
+        }
+
+        if (!string.IsNullOrWhiteSpace(tipo))
+        {
+            var tipoNormalizado = NormalizarTipoConsumo(tipo);
+            if (string.IsNullOrWhiteSpace(tipoNormalizado))
+            {
+                return BadRequest("Tipo invalido. Use Agua, Gas, Energia ou Outro.");
+            }
+            query = query.Where(m => m.Tipo == tipoNormalizado);
+        }
+
+        if (ativo.HasValue)
+        {
+            query = query.Where(m => m.Ativo == ativo.Value);
+        }
+
+        var itens = await query
+            .OrderBy(m => m.Nome)
+            .ToListAsync();
+
+        return Ok(itens);
+    }
+
+    [HttpPost("consumos/medidores")]
+    public async Task<ActionResult<MedidorConsumo>> CriarMedidorConsumo(
+        CriarMedidorConsumoRequest request)
+    {
+        if (request.OrganizacaoId == Guid.Empty)
+        {
+            return BadRequest("Organizacao e obrigatoria.");
+        }
+
+        if (request.UnidadeOrganizacionalId == Guid.Empty)
+        {
+            return BadRequest("Unidade e obrigatoria.");
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Nome))
+        {
+            return BadRequest("Nome do medidor e obrigatorio.");
+        }
+
+        if (string.IsNullOrWhiteSpace(request.UnidadeMedida))
+        {
+            return BadRequest("Unidade de medida e obrigatoria.");
+        }
+
+        var unidadeValida = await _db.UnidadesOrganizacionais.AsNoTracking()
+            .AnyAsync(u =>
+                u.Id == request.UnidadeOrganizacionalId &&
+                u.OrganizacaoId == request.OrganizacaoId);
+        if (!unidadeValida)
+        {
+            return BadRequest("Unidade invalida para esta organizacao.");
+        }
+
+        var tipoNormalizado = NormalizarTipoConsumo(request.Tipo);
+        if (string.IsNullOrWhiteSpace(tipoNormalizado))
+        {
+            return BadRequest("Tipo invalido. Use Agua, Gas, Energia ou Outro.");
+        }
+
+        var medidor = new MedidorConsumo
+        {
+            Id = Guid.NewGuid(),
+            OrganizacaoId = request.OrganizacaoId,
+            UnidadeOrganizacionalId = request.UnidadeOrganizacionalId,
+            Nome = request.Nome.Trim(),
+            Tipo = tipoNormalizado,
+            UnidadeMedida = request.UnidadeMedida.Trim(),
+            NumeroSerie = string.IsNullOrWhiteSpace(request.NumeroSerie)
+                ? null
+                : request.NumeroSerie.Trim(),
+            Ativo = request.Ativo,
+            Observacao = string.IsNullOrWhiteSpace(request.Observacao)
+                ? null
+                : request.Observacao.Trim()
+        };
+
+        _db.MedidoresConsumo.Add(medidor);
+        RegistrarAudit(medidor.OrganizacaoId, medidor.Id, "MedidorConsumo", "CRIAR_MEDIDOR", new
+        {
+            medidor.Tipo,
+            medidor.UnidadeOrganizacionalId
+        });
+        await _db.SaveChangesAsync();
+
+        return CreatedAtAction(nameof(ListarMedidoresConsumo), new { organizacaoId = medidor.OrganizacaoId }, medidor);
+    }
+
+    [HttpPut("consumos/medidores/{id:guid}")]
+    public async Task<IActionResult> AtualizarMedidorConsumo(
+        Guid id,
+        AtualizarMedidorConsumoRequest request)
+    {
+        var medidor = await _db.MedidoresConsumo.FindAsync(id);
+        if (medidor is null)
+        {
+            return NotFound();
+        }
+
+        if (request.UnidadeOrganizacionalId == Guid.Empty)
+        {
+            return BadRequest("Unidade e obrigatoria.");
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Nome))
+        {
+            return BadRequest("Nome do medidor e obrigatorio.");
+        }
+
+        if (string.IsNullOrWhiteSpace(request.UnidadeMedida))
+        {
+            return BadRequest("Unidade de medida e obrigatoria.");
+        }
+
+        var unidadeValida = await _db.UnidadesOrganizacionais.AsNoTracking()
+            .AnyAsync(u =>
+                u.Id == request.UnidadeOrganizacionalId &&
+                u.OrganizacaoId == medidor.OrganizacaoId);
+        if (!unidadeValida)
+        {
+            return BadRequest("Unidade invalida para esta organizacao.");
+        }
+
+        var tipoNormalizado = NormalizarTipoConsumo(request.Tipo);
+        if (string.IsNullOrWhiteSpace(tipoNormalizado))
+        {
+            return BadRequest("Tipo invalido. Use Agua, Gas, Energia ou Outro.");
+        }
+
+        medidor.UnidadeOrganizacionalId = request.UnidadeOrganizacionalId;
+        medidor.Nome = request.Nome.Trim();
+        medidor.Tipo = tipoNormalizado;
+        medidor.UnidadeMedida = request.UnidadeMedida.Trim();
+        medidor.NumeroSerie = string.IsNullOrWhiteSpace(request.NumeroSerie)
+            ? null
+            : request.NumeroSerie.Trim();
+        medidor.Ativo = request.Ativo;
+        medidor.Observacao = string.IsNullOrWhiteSpace(request.Observacao)
+            ? null
+            : request.Observacao.Trim();
+
+        RegistrarAudit(medidor.OrganizacaoId, medidor.Id, "MedidorConsumo", "ATUALIZAR_MEDIDOR", new
+        {
+            medidor.Tipo,
+            medidor.UnidadeOrganizacionalId,
+            medidor.Ativo
+        });
+        await _db.SaveChangesAsync();
+
+        return NoContent();
+    }
+
+    [HttpDelete("consumos/medidores/{id:guid}")]
+    public async Task<IActionResult> RemoverMedidorConsumo(Guid id)
+    {
+        var medidor = await _db.MedidoresConsumo.FindAsync(id);
+        if (medidor is null)
+        {
+            return NotFound();
+        }
+
+        var leituras = await _db.LeiturasConsumo
+            .Where(l => l.MedidorId == id)
+            .ToListAsync();
+        if (leituras.Count > 0)
+        {
+            _db.LeiturasConsumo.RemoveRange(leituras);
+        }
+
+        _db.MedidoresConsumo.Remove(medidor);
+        RegistrarAudit(medidor.OrganizacaoId, medidor.Id, "MedidorConsumo", "REMOVER_MEDIDOR", new
+        {
+            medidor.Tipo,
+            medidor.UnidadeOrganizacionalId
+        });
+        await _db.SaveChangesAsync();
+
+        return NoContent();
+    }
+
+    [HttpGet("consumos/medidores/{medidorId:guid}/leituras")]
+    public async Task<ActionResult<IEnumerable<LeituraConsumo>>> ListarLeiturasConsumo(
+        Guid medidorId,
+        [FromQuery] Guid organizacaoId,
+        [FromQuery] string? competencia)
+    {
+        if (organizacaoId == Guid.Empty)
+        {
+            return BadRequest("Organizacao e obrigatoria.");
+        }
+
+        if (medidorId == Guid.Empty)
+        {
+            return BadRequest("Medidor e obrigatorio.");
+        }
+
+        var query = _db.LeiturasConsumo.AsNoTracking()
+            .Where(l => l.OrganizacaoId == organizacaoId && l.MedidorId == medidorId);
+
+        if (!string.IsNullOrWhiteSpace(competencia))
+        {
+            if (!CompetenciaValida(competencia))
+            {
+                return BadRequest("Competencia invalida. Use yyyy-MM.");
+            }
+
+            query = query.Where(l => l.Competencia == competencia);
+        }
+
+        var itens = await query
+            .OrderByDescending(l => l.DataLeitura)
+            .ThenByDescending(l => l.Competencia)
+            .ToListAsync();
+
+        return Ok(itens);
+    }
+
+    [HttpPost("consumos/leituras")]
+    public async Task<ActionResult<LeituraConsumo>> CriarLeituraConsumo(
+        CriarLeituraConsumoRequest request)
+    {
+        if (request.OrganizacaoId == Guid.Empty)
+        {
+            return BadRequest("Organizacao e obrigatoria.");
+        }
+
+        if (request.MedidorId == Guid.Empty)
+        {
+            return BadRequest("Medidor e obrigatorio.");
+        }
+
+        if (!CompetenciaValida(request.Competencia))
+        {
+            return BadRequest("Competencia invalida. Use yyyy-MM.");
+        }
+
+        if (request.DataLeitura == default)
+        {
+            return BadRequest("Data de leitura invalida.");
+        }
+
+        if (request.LeituraAtual < 0)
+        {
+            return BadRequest("Leitura atual invalida.");
+        }
+
+        var medidor = await _db.MedidoresConsumo.AsNoTracking()
+            .FirstOrDefaultAsync(m => m.Id == request.MedidorId);
+        if (medidor is null)
+        {
+            return BadRequest("Medidor nao encontrado.");
+        }
+
+        if (medidor.OrganizacaoId != request.OrganizacaoId)
+        {
+            return BadRequest("Medidor nao pertence a organizacao informada.");
+        }
+
+        var ultima = await _db.LeiturasConsumo.AsNoTracking()
+            .Where(l => l.MedidorId == request.MedidorId)
+            .OrderByDescending(l => l.DataLeitura)
+            .ThenByDescending(l => l.Competencia)
+            .FirstOrDefaultAsync();
+
+        var leituraAnterior = ultima?.LeituraAtual ?? 0m;
+        var consumo = request.LeituraAtual - leituraAnterior;
+        if (consumo < 0)
+        {
+            return BadRequest("Leitura atual deve ser maior ou igual a anterior.");
+        }
+
+        var leitura = new LeituraConsumo
+        {
+            Id = Guid.NewGuid(),
+            OrganizacaoId = request.OrganizacaoId,
+            MedidorId = request.MedidorId,
+            Competencia = request.Competencia,
+            DataLeitura = request.DataLeitura,
+            LeituraAtual = request.LeituraAtual,
+            LeituraAnterior = leituraAnterior,
+            Consumo = consumo,
+            Observacao = string.IsNullOrWhiteSpace(request.Observacao)
+                ? null
+                : request.Observacao.Trim()
+        };
+
+        _db.LeiturasConsumo.Add(leitura);
+        RegistrarAudit(leitura.OrganizacaoId, leitura.Id, "LeituraConsumo", "CRIAR_LEITURA", new
+        {
+            leitura.MedidorId,
+            leitura.Competencia,
+            leitura.Consumo
+        });
+        await _db.SaveChangesAsync();
+
+        return CreatedAtAction(
+            nameof(ListarLeiturasConsumo),
+            new { organizacaoId = leitura.OrganizacaoId, medidorId = leitura.MedidorId },
+            leitura);
+    }
+
+    [HttpPut("consumos/leituras/{id:guid}")]
+    public async Task<IActionResult> AtualizarLeituraConsumo(
+        Guid id,
+        AtualizarLeituraConsumoRequest request)
+    {
+        var leitura = await _db.LeiturasConsumo.FindAsync(id);
+        if (leitura is null)
+        {
+            return NotFound();
+        }
+
+        if (!CompetenciaValida(request.Competencia))
+        {
+            return BadRequest("Competencia invalida. Use yyyy-MM.");
+        }
+
+        if (request.DataLeitura == default)
+        {
+            return BadRequest("Data de leitura invalida.");
+        }
+
+        if (request.LeituraAtual < 0)
+        {
+            return BadRequest("Leitura atual invalida.");
+        }
+
+        var consumo = request.LeituraAtual - leitura.LeituraAnterior;
+        if (consumo < 0)
+        {
+            return BadRequest("Leitura atual deve ser maior ou igual a anterior.");
+        }
+
+        leitura.Competencia = request.Competencia;
+        leitura.DataLeitura = request.DataLeitura;
+        leitura.LeituraAtual = request.LeituraAtual;
+        leitura.Consumo = consumo;
+        leitura.Observacao = string.IsNullOrWhiteSpace(request.Observacao)
+            ? null
+            : request.Observacao.Trim();
+
+        RegistrarAudit(leitura.OrganizacaoId, leitura.Id, "LeituraConsumo", "ATUALIZAR_LEITURA", new
+        {
+            leitura.MedidorId,
+            leitura.Competencia,
+            leitura.Consumo
+        });
+        await _db.SaveChangesAsync();
+
+        return NoContent();
+    }
+
+    [HttpDelete("consumos/leituras/{id:guid}")]
+    public async Task<IActionResult> RemoverLeituraConsumo(Guid id)
+    {
+        var leitura = await _db.LeiturasConsumo.FindAsync(id);
+        if (leitura is null)
+        {
+            return NotFound();
+        }
+
+        _db.LeiturasConsumo.Remove(leitura);
+        RegistrarAudit(leitura.OrganizacaoId, leitura.Id, "LeituraConsumo", "REMOVER_LEITURA", new
+        {
+            leitura.MedidorId,
+            leitura.Competencia,
+            leitura.Consumo
+        });
         await _db.SaveChangesAsync();
 
         return NoContent();
