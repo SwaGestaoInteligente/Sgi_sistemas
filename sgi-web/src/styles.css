@@ -928,6 +928,19 @@ button:focus-visible {
   --card-sticky-pad: 12px;
 }
 
+.finance-side-column .finance-table-card {
+  overflow: visible;
+  max-height: none;
+}
+
+.finance-side-column .finance-table-card .finance-table-header {
+  position: static;
+  margin: 0 0 8px;
+  padding: 0 0 8px;
+  box-shadow: none;
+  background: transparent;
+}
+
 .finance-table-card .finance-table-header,
 .finance-table-card .config-filters {
   position: sticky;
@@ -988,6 +1001,16 @@ button:focus-visible {
 .table--fixed td {
   overflow-wrap: anywhere;
   word-break: break-word;
+}
+
+.unit-table-scroll .table--fixed {
+  table-layout: auto;
+}
+
+.unit-table-scroll .table--fixed th,
+.unit-table-scroll .table--fixed td {
+  overflow-wrap: normal;
+  word-break: keep-all;
 }
 
 .table--chamados th:nth-child(1),
