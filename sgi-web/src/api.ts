@@ -530,6 +530,15 @@ export interface PoliticaCobranca {
   atualizadoEm: string;
 }
 
+export interface IndiceEconomico {
+  tipo: string;
+  ano: number;
+  mes: number;
+  valorPercentual: number;
+  fonte: string;
+  atualizadoEm: string;
+}
+
 export interface AcordoCobranca {
   id: string;
   organizacaoId: string;
@@ -2658,6 +2667,20 @@ export const api = {
       },
       token
     );
+  },
+
+  async obterIndiceEconomicoAtual(
+    token: string,
+    organizacaoId: string,
+    tipo: string
+  ): Promise<IndiceEconomico | null> {
+    const search = new URLSearchParams({ organizacaoId, tipo });
+    const indice = await request<IndiceEconomico | undefined>(
+      `/financeiro/indices/ultimo?${search.toString()}`,
+      {},
+      token
+    );
+    return indice ?? null;
   },
 
   async gerarRemessaCobranca(

@@ -30,6 +30,7 @@ import {
   RegraRateio,
   RecursoReservavel,
   AcordoCobranca,
+  IndiceEconomico,
   PoliticaCobranca,
   UnidadeOrganizacional
 } from "../api";
@@ -342,6 +343,9 @@ export default function FinanceiroView({
     "PERCENTUAL_FIXO"
   );
   const [politicaCorrecaoIndice, setPoliticaCorrecaoIndice] = useState("");
+  const [indiceAtual, setIndiceAtual] = useState<IndiceEconomico | null>(null);
+  const [indiceLoading, setIndiceLoading] = useState(false);
+  const [indiceErro, setIndiceErro] = useState<string | null>(null);
   const [politicaCarencia, setPoliticaCarencia] = useState("");
   const [politicaAtiva, setPoliticaAtiva] = useState(true);
   const [politicaLoading, setPoliticaLoading] = useState(false);
@@ -1945,6 +1949,7 @@ export default function FinanceiroView({
       setPoliticaCorrecaoIndice(politica.correcaoIndice || "");
       setPoliticaCarencia(politica.diasCarencia.toString());
       setPoliticaAtiva(politica.ativo);
+      void carregarIndiceAtual(politica.correcaoTipo || "PERCENTUAL_FIXO");
     } catch (e: any) {
       setPoliticaErro(e.message || "Erro ao carregar politica de cobranca.");
     } finally {
@@ -1996,6 +2001,38 @@ export default function FinanceiroView({
       setPoliticaErro(e.message || "Erro ao salvar politica.");
     } finally {
       setPoliticaLoading(false);
+    }
+  };
+
+  const carregarIndiceAtual = async (tipo: string) => {
+    if (!token) return;
+    if (
+      tipo === "PERCENTUAL_FIXO" ||
+      tipo === "SEM_CORRECAO" ||
+      tipo === "OUTRO"
+    ) {
+      setIndiceAtual(null);
+      setIndiceErro(null);
+      return;
+    }
+
+    try {
+      setIndiceErro(null);
+      setIndiceLoading(true);
+      const indice = await api.obterIndiceEconomicoAtual(
+        token,
+        organizacaoId,
+        tipo
+      );
+      setIndiceAtual(indice);
+      if (!indice) {
+        setIndiceErro("Indice ainda nao carregado. Aguarde alguns minutos.");
+      }
+    } catch (e: any) {
+      setIndiceErro(e.message || "Erro ao carregar indice.");
+      setIndiceAtual(null);
+    } finally {
+      setIndiceLoading(false);
     }
   };
 
@@ -8722,6 +8759,7 @@ export default function FinanceiroView({
                         if (value === "SEM_CORRECAO") {
                           setPoliticaCorrecao("0");
                         }
+                        void carregarIndiceAtual(value);
                       }}
                     >
                       <option value="PERCENTUAL_FIXO">Percentual fixo</option>
@@ -8732,6 +8770,23 @@ export default function FinanceiroView({
                       <option value="SEM_CORRECAO">Sem correcao</option>
                       <option value="OUTRO">Outro</option>
                     </select>
+                    {indiceLoading && (
+                      <span className="finance-form-sub">Carregando indice...</span>
+                    )}
+                    {!indiceLoading && indiceAtual && (
+                      <span className="finance-form-sub">
+                        Indice atual:{" "}
+                        {indiceAtual.valorPercentual.toLocaleString("pt-BR", {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2
+                        })}
+                        % ({String(indiceAtual.mes).padStart(2, "0")}/
+                        {indiceAtual.ano})
+                      </span>
+                    )}
+                    {!indiceLoading && indiceErro && (
+                      <span className="finance-form-sub">{indiceErro}</span>
+                    )}
                   </label>
                   <label>
                     Indice (quando outro)

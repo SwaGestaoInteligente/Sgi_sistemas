@@ -1784,6 +1784,14 @@ public class FinanceiroController : ControllerBase
         public bool Ativo { get; set; } = true;
     }
 
+    public record IndiceEconomicoDto(
+        string Tipo,
+        int Ano,
+        int Mes,
+        decimal ValorPercentual,
+        string Fonte,
+        DateTime AtualizadoEm);
+
     [HttpGet("cobrancas/politica")]
     public async Task<ActionResult<PoliticaCobranca>> ObterPoliticaCobranca(
         [FromQuery] Guid organizacaoId)
@@ -1887,6 +1895,49 @@ public class FinanceiroController : ControllerBase
 
         await _db.SaveChangesAsync();
         return Ok(politica);
+    }
+
+    [HttpGet("indices/ultimo")]
+    public async Task<ActionResult<IndiceEconomicoDto>> ObterIndiceEconomicoAtual(
+        [FromQuery] Guid organizacaoId,
+        [FromQuery] string? tipo)
+    {
+        if (organizacaoId == Guid.Empty)
+        {
+            return BadRequest("Organizacao e obrigatoria.");
+        }
+
+        if (string.IsNullOrWhiteSpace(tipo))
+        {
+            return BadRequest("Tipo do indice e obrigatorio.");
+        }
+
+        var auth = await EnsureRoleAsync(organizacaoId, UserRole.CONDO_ADMIN);
+        if (auth.Error is not null)
+        {
+            return auth.Error;
+        }
+
+        var tipoNormalizado = tipo.Trim().ToUpperInvariant();
+        var indice = await _db.IndicesEconomicos.AsNoTracking()
+            .Where(i => i.Tipo == tipoNormalizado)
+            .OrderByDescending(i => i.Ano)
+            .ThenByDescending(i => i.Mes)
+            .ThenByDescending(i => i.AtualizadoEm)
+            .FirstOrDefaultAsync();
+
+        if (indice is null)
+        {
+            return NoContent();
+        }
+
+        return Ok(new IndiceEconomicoDto(
+            indice.Tipo,
+            indice.Ano,
+            indice.Mes,
+            indice.ValorPercentual,
+            indice.Fonte,
+            indice.AtualizadoEm));
     }
 
     public class GerarRemessaCobrancaRequest
