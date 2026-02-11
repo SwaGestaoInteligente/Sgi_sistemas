@@ -1,10 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   api,
+  IndiceEconomico,
   NotificacaoConfig,
   Organizacao,
   Pessoa,
   PlanoContas,
+  PoliticaCobranca,
   UnidadeOrganizacional,
   VinculoPessoaOrganizacao
 } from "../api";
@@ -45,7 +47,8 @@ type CadastroBaseTipo =
   | "categoria_financeira"
   | "centro_custo"
   | "forma_pagamento"
-  | "status_financeiro";
+  | "status_financeiro"
+  | "tipo_lancamento";
 
 type CadastroBaseRegistro = {
   id: string;
@@ -179,6 +182,14 @@ const cadastroBaseConfig: Record<
     nomeLabel: "Nome do status",
     codigoPlaceholder: "Ex.: ABERTO",
     nomePlaceholder: "Ex.: Aberto"
+  },
+  tipo_lancamento: {
+    label: "Tipos de lancamento",
+    descricao: "Fixos, variaveis e recorrentes.",
+    codigoLabel: "Codigo",
+    nomeLabel: "Nome do tipo",
+    codigoPlaceholder: "Ex.: FIXO",
+    nomePlaceholder: "Ex.: Fixo"
   }
 };
 
@@ -1570,7 +1581,12 @@ type EstruturaSubTab =
 
 type CadastrosSubTab = "visao" | "notificacoes" | "cadastro";
 type PessoasSubTab = "visao" | "pessoas" | "vinculos";
-type FinanceiroSubTab = "visao" | "plano-contas";
+type FinanceiroSubTab =
+  | "visao"
+  | "plano-contas"
+  | "cadastro"
+  | "politica"
+  | "indices";
 
 export default function ConfiguracoesView(props: ConfiguracoesViewProps) {
   const { organizacao, abaSelecionada, readOnly = false } = props;
@@ -1585,6 +1601,23 @@ export default function ConfiguracoesView(props: ConfiguracoesViewProps) {
     useState<FinanceiroSubTab>("visao");
   const [cadastroBaseTipo, setCadastroBaseTipo] =
     useState<CadastroBaseTipo | null>(null);
+  const [politicaCobranca, setPoliticaCobranca] =
+    useState<PoliticaCobranca | null>(null);
+  const [politicaMulta, setPoliticaMulta] = useState("");
+  const [politicaJuros, setPoliticaJuros] = useState("");
+  const [politicaCorrecao, setPoliticaCorrecao] = useState("");
+  const [politicaCorrecaoTipo, setPoliticaCorrecaoTipo] = useState(
+    "PERCENTUAL_FIXO"
+  );
+  const [politicaCorrecaoIndice, setPoliticaCorrecaoIndice] = useState("");
+  const [politicaCarencia, setPoliticaCarencia] = useState("0");
+  const [politicaAtiva, setPoliticaAtiva] = useState(true);
+  const [politicaLoading, setPoliticaLoading] = useState(false);
+  const [politicaErro, setPoliticaErro] = useState<string | null>(null);
+  const [indiceAtual, setIndiceAtual] = useState<IndiceEconomico | null>(null);
+  const [indiceErro, setIndiceErro] = useState<string | null>(null);
+  const [indiceLoading, setIndiceLoading] = useState(false);
+  const [indiceTipo, setIndiceTipo] = useState("IPCA");
   const [cadastrosBase, setCadastrosBase] = useState<CadastroBaseRegistro[]>([]);
   const [planosContas, setPlanosContas] = useState<PlanoContas[]>([]);
   const [planosLoading, setPlanosLoading] = useState(false);
@@ -1598,6 +1631,13 @@ export default function ConfiguracoesView(props: ConfiguracoesViewProps) {
 
   const abaAtual: ConfiguracoesTab = abaSelecionada ?? "cadastros-base";
   const acaoGerenciar = readOnly ? "Visualizar" : "Gerenciar";
+  const formatarData = (data?: string) => {
+    if (!data) return "-";
+    const parsed = new Date(data);
+    return Number.isNaN(parsed.getTime())
+      ? "-"
+      : parsed.toLocaleDateString("pt-BR");
+  };
 
   useEffect(() => {
     setEstruturaAba("visao");
@@ -1782,6 +1822,112 @@ export default function ConfiguracoesView(props: ConfiguracoesViewProps) {
       setPlanosLoading(false);
     }
   }, [organizacao.id, planosContas, token]);
+
+  const carregarIndiceAtual = useCallback(
+    async (tipo: string) => {
+      if (!token) return;
+      if (
+        tipo === "PERCENTUAL_FIXO" ||
+        tipo === "SEM_CORRECAO" ||
+        tipo === "OUTRO"
+      ) {
+        setIndiceAtual(null);
+        setIndiceErro(null);
+        return;
+      }
+
+      try {
+        setIndiceErro(null);
+        setIndiceLoading(true);
+        const indice = await api.obterIndiceEconomicoAtual(
+          token,
+          organizacao.id,
+          tipo
+        );
+        setIndiceAtual(indice);
+      } catch (e: any) {
+        setIndiceErro(e?.message || "Erro ao carregar indice.");
+      } finally {
+        setIndiceLoading(false);
+      }
+    },
+    [organizacao.id, token]
+  );
+
+  const carregarPoliticaCobranca = useCallback(async () => {
+    if (!token) return;
+    try {
+      setPoliticaErro(null);
+      setPoliticaLoading(true);
+      const politica = await api.obterPoliticaCobranca(token, organizacao.id);
+      setPoliticaCobranca(politica);
+      setPoliticaMulta(politica.multaPercentual.toString().replace(".", ","));
+      setPoliticaJuros(politica.jurosMensalPercentual.toString().replace(".", ","));
+      setPoliticaCorrecao(
+        politica.correcaoMensalPercentual.toString().replace(".", ",")
+      );
+      setPoliticaCorrecaoTipo(politica.correcaoTipo || "PERCENTUAL_FIXO");
+      setPoliticaCorrecaoIndice(politica.correcaoIndice || "");
+      setPoliticaCarencia(politica.diasCarencia.toString());
+      setPoliticaAtiva(politica.ativo);
+      void carregarIndiceAtual(politica.correcaoTipo || "PERCENTUAL_FIXO");
+    } catch (e: any) {
+      setPoliticaErro(e?.message || "Erro ao carregar politica de cobranca.");
+    } finally {
+      setPoliticaLoading(false);
+    }
+  }, [carregarIndiceAtual, organizacao.id, token]);
+
+  const salvarPoliticaCobranca = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!token) return;
+    const multa = Number(politicaMulta.replace(/\./g, "").replace(",", "."));
+    const juros = Number(politicaJuros.replace(/\./g, "").replace(",", "."));
+    const correcao =
+      politicaCorrecaoTipo === "SEM_CORRECAO"
+        ? 0
+        : Number(politicaCorrecao.replace(/\./g, "").replace(",", "."));
+    const carencia = Number(politicaCarencia);
+    if (
+      !Number.isFinite(multa) ||
+      !Number.isFinite(juros) ||
+      (politicaCorrecaoTipo !== "SEM_CORRECAO" && !Number.isFinite(correcao)) ||
+      !Number.isFinite(carencia)
+    ) {
+      setPoliticaErro("Informe valores validos para a politica.");
+      return;
+    }
+    if (politicaCorrecaoTipo === "OUTRO" && !politicaCorrecaoIndice.trim()) {
+      setPoliticaErro("Informe o indice de correcao.");
+      return;
+    }
+    try {
+      setPoliticaErro(null);
+      setPoliticaLoading(true);
+      const politica = await api.atualizarPoliticaCobranca(token, {
+        organizacaoId: organizacao.id,
+        multaPercentual: multa,
+        jurosMensalPercentual: juros,
+        correcaoMensalPercentual: correcao,
+        correcaoTipo: politicaCorrecaoTipo,
+        correcaoIndice:
+          politicaCorrecaoTipo === "OUTRO"
+            ? politicaCorrecaoIndice.trim()
+            : null,
+        diasCarencia: Math.max(0, Math.floor(carencia)),
+        ativo: politicaAtiva
+      });
+      setPoliticaCobranca(politica);
+    } catch (e: any) {
+      setPoliticaErro(e?.message || "Erro ao salvar politica.");
+    } finally {
+      setPoliticaLoading(false);
+    }
+  };
+
+  const carregarIndiceSelecionado = useCallback(async () => {
+    await carregarIndiceAtual(indiceTipo);
+  }, [carregarIndiceAtual, indiceTipo]);
 
   const storageKey = `sgi:cadastros-base:${organizacao.id}`;
 
@@ -2038,7 +2184,19 @@ export default function ConfiguracoesView(props: ConfiguracoesViewProps) {
     if (abaAtual === "financeiro-base" && financeiroAba === "plano-contas") {
       void carregarPlanosContas();
     }
-  }, [abaAtual, financeiroAba, carregarPlanosContas]);
+    if (abaAtual === "financeiro-base" && financeiroAba === "politica") {
+      void carregarPoliticaCobranca();
+    }
+    if (abaAtual === "financeiro-base" && financeiroAba === "indices") {
+      void carregarIndiceSelecionado();
+    }
+  }, [
+    abaAtual,
+    financeiroAba,
+    carregarPlanosContas,
+    carregarPoliticaCobranca,
+    carregarIndiceSelecionado
+  ]);
 
   const getConfig = (tipo: string, canal: "email" | "app") =>
     notificacoes.find((n) => n.tipo === tipo && n.canal === canal);
@@ -2287,6 +2445,275 @@ export default function ConfiguracoesView(props: ConfiguracoesViewProps) {
               })}
             </tbody>
           </table>
+        </section>
+      </div>
+    );
+  }
+
+  if (
+    abaAtual === "financeiro-base" &&
+    financeiroAba === "cadastro" &&
+    cadastroBaseTipo
+  ) {
+    return (
+      <CadastrosBaseTable
+        organizacao={organizacao}
+        tipo={cadastroBaseTipo}
+        registros={cadastrosBase}
+        onCreate={(registro) => setCadastrosBase((prev) => [...prev, registro])}
+        onUpdate={(registro) =>
+          setCadastrosBase((prev) =>
+            prev.map((item) => (item.id === registro.id ? registro : item))
+          )
+        }
+        onArchive={(registro) =>
+          setCadastrosBase((prev) =>
+            prev.map((item) => (item.id === registro.id ? registro : item))
+          )
+        }
+        onVoltar={() => {
+          setFinanceiroAba("visao");
+          setCadastroBaseTipo(null);
+        }}
+        onTipoChange={(novoTipo) => setCadastroBaseTipo(novoTipo)}
+        readOnly={readOnly}
+      />
+    );
+  }
+
+  if (abaAtual === "financeiro-base" && financeiroAba === "politica") {
+    return (
+      <div className="config-page">
+        <header className="config-header">
+          <div>
+            <h2>Regras de inadimplencia</h2>
+            <p className="config-subtitle">
+              Multa, juros e correcao aplicados em cobrancas atrasadas.
+              {politicaCobranca && (
+                <>
+                  {" "}
+                  • Atualizado em {formatarData(politicaCobranca.atualizadoEm)}
+                </>
+              )}
+            </p>
+          </div>
+          <div className="config-actions">
+            <button
+              type="button"
+              className="button-secondary"
+              onClick={() => setFinanceiroAba("visao")}
+            >
+              Voltar
+            </button>
+            <button
+              type="button"
+              onClick={() => void carregarPoliticaCobranca()}
+              disabled={politicaLoading}
+            >
+              {politicaLoading ? "Carregando..." : "Atualizar"}
+            </button>
+          </div>
+        </header>
+
+        <section className="finance-table-card">
+          {politicaErro && <p className="error">{politicaErro}</p>}
+
+          {!readOnly ? (
+            <form className="form" onSubmit={salvarPoliticaCobranca}>
+              <div className="finance-form-grid">
+                <label>
+                  Multa (%)
+                  <input
+                    value={politicaMulta}
+                    onChange={(e) => setPoliticaMulta(e.target.value)}
+                    placeholder="Ex.: 2"
+                  />
+                </label>
+                <label>
+                  Juros ao mes (%)
+                  <input
+                    value={politicaJuros}
+                    onChange={(e) => setPoliticaJuros(e.target.value)}
+                    placeholder="Ex.: 1"
+                  />
+                </label>
+              </div>
+              <div className="finance-form-grid">
+                <label>
+                  Tipo de correcao
+                  <select
+                    value={politicaCorrecaoTipo}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setPoliticaCorrecaoTipo(value);
+                      if (value !== "OUTRO") {
+                        setPoliticaCorrecaoIndice("");
+                      }
+                      if (value === "SEM_CORRECAO") {
+                        setPoliticaCorrecao("0");
+                      }
+                      void carregarIndiceAtual(value);
+                    }}
+                  >
+                    <option value="PERCENTUAL_FIXO">Percentual fixo</option>
+                    <option value="IPCA">IPCA</option>
+                    <option value="IGPM">IGP-M</option>
+                    <option value="INPC">INPC</option>
+                    <option value="CDI">CDI</option>
+                    <option value="SEM_CORRECAO">Sem correcao</option>
+                    <option value="OUTRO">Outro</option>
+                  </select>
+                  {indiceLoading && (
+                    <span className="finance-form-sub">Carregando indice...</span>
+                  )}
+                  {!indiceLoading && indiceAtual && (
+                    <span className="finance-form-sub">
+                      Indice atual:{" "}
+                      {indiceAtual.valorPercentual.toLocaleString("pt-BR", {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2
+                      })}
+                      % ({String(indiceAtual.mes).padStart(2, "0")}/
+                      {indiceAtual.ano})
+                    </span>
+                  )}
+                  {!indiceLoading && indiceErro && (
+                    <span className="finance-form-sub">{indiceErro}</span>
+                  )}
+                </label>
+                <label>
+                  Indice (quando outro)
+                  <input
+                    value={politicaCorrecaoIndice}
+                    onChange={(e) => setPoliticaCorrecaoIndice(e.target.value)}
+                    placeholder="Ex.: TR"
+                    disabled={politicaCorrecaoTipo !== "OUTRO"}
+                  />
+                </label>
+              </div>
+              <div className="finance-form-grid">
+                <label>
+                  Correcao ao mes (%)
+                  <input
+                    value={politicaCorrecao}
+                    onChange={(e) => setPoliticaCorrecao(e.target.value)}
+                    placeholder="Ex.: 0,5 (fallback)"
+                    disabled={politicaCorrecaoTipo === "SEM_CORRECAO"}
+                  />
+                </label>
+                <label>
+                  Carencia (dias)
+                  <input
+                    type="number"
+                    min="0"
+                    value={politicaCarencia}
+                    onChange={(e) => setPoliticaCarencia(e.target.value)}
+                  />
+                </label>
+              </div>
+              <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <input
+                  type="checkbox"
+                  checked={politicaAtiva}
+                  onChange={(e) => setPoliticaAtiva(e.target.checked)}
+                />
+                Politica ativa
+              </label>
+              <button type="submit" disabled={politicaLoading || !token}>
+                {politicaLoading ? "Salvando..." : "Salvar politica"}
+              </button>
+            </form>
+          ) : (
+            <p className="finance-form-sub">
+              Sem acesso para editar politica de cobranca.
+            </p>
+          )}
+        </section>
+      </div>
+    );
+  }
+
+  if (abaAtual === "financeiro-base" && financeiroAba === "indices") {
+    return (
+      <div className="config-page">
+        <header className="config-header">
+          <div>
+            <h2>Indices economicos</h2>
+            <p className="config-subtitle">
+              Acompanhe o indice oficial para reajustes (IPCA, IGP-M, INPC, CDI).
+            </p>
+          </div>
+          <div className="config-actions">
+            <button
+              type="button"
+              className="button-secondary"
+              onClick={() => setFinanceiroAba("visao")}
+            >
+              Voltar
+            </button>
+            <button
+              type="button"
+              onClick={() => void carregarIndiceSelecionado()}
+              disabled={indiceLoading}
+            >
+              {indiceLoading ? "Carregando..." : "Atualizar"}
+            </button>
+          </div>
+        </header>
+
+        <section className="finance-table-card">
+          <div className="finance-form-grid">
+            <label>
+              Tipo de indice
+              <select
+                value={indiceTipo}
+                onChange={(e) => setIndiceTipo(e.target.value)}
+              >
+                <option value="IPCA">IPCA</option>
+                <option value="IGPM">IGP-M</option>
+                <option value="INPC">INPC</option>
+                <option value="CDI">CDI</option>
+              </select>
+            </label>
+          </div>
+
+          {indiceErro && <p className="error">{indiceErro}</p>}
+
+          {indiceAtual ? (
+            <div className="finance-card-list">
+              <div className="finance-item-card">
+                <div className="finance-item-main">
+                  <div>
+                    <strong className="finance-item-title">
+                      {indiceAtual.tipo}
+                    </strong>
+                    <div className="finance-item-sub">
+                      {String(indiceAtual.mes).padStart(2, "0")}/{indiceAtual.ano} •{" "}
+                      Fonte: {indiceAtual.fonte}
+                    </div>
+                  </div>
+                  <div className="finance-item-right">
+                    <span className="finance-value">
+                      {indiceAtual.valorPercentual.toLocaleString("pt-BR", {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2
+                      })}
+                      %
+                    </span>
+                    <span className="finance-item-sub">
+                      Atualizado em {formatarData(indiceAtual.atualizadoEm)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            !indiceLoading && (
+              <p className="finance-form-sub">
+                Nenhum indice encontrado para o tipo selecionado.
+              </p>
+            )
+          )}
         </section>
       </div>
     );
@@ -3313,36 +3740,45 @@ export default function ConfiguracoesView(props: ConfiguracoesViewProps) {
       id: "tipos-receita",
       title: "Vinculo de receita",
       description: "Pessoa, unidade, bloco e categoria.",
-      actionLabel: "Em breve",
-      disabled: true
+      actionLabel: acaoGerenciar,
+      onClick: () => {
+        setCadastroBaseTipo("tipo_receita");
+        setFinanceiroAba("cadastro");
+      }
     },
     {
       id: "tipos-despesa",
       title: "Vinculo de despesa",
       description: "Fornecedor, categoria e centro de custo.",
-      actionLabel: "Em breve",
-      disabled: true
+      actionLabel: acaoGerenciar,
+      onClick: () => {
+        setCadastroBaseTipo("tipo_despesa");
+        setFinanceiroAba("cadastro");
+      }
     },
     {
       id: "tipos-lancamento",
       title: "Tipos de lancamento",
       description: "Fixos, variaveis e recorrentes.",
-      actionLabel: "Em breve",
-      disabled: true
+      actionLabel: acaoGerenciar,
+      onClick: () => {
+        setCadastroBaseTipo("tipo_lancamento");
+        setFinanceiroAba("cadastro");
+      }
     },
     {
       id: "inadimplencia",
       title: "Regras de inadimplencia",
       description: "Configuracoes futuras de cobrança.",
-      actionLabel: "Em breve",
-      disabled: true
+      actionLabel: acaoGerenciar,
+      onClick: () => setFinanceiroAba("politica")
     },
     {
       id: "indices",
       title: "Indices (IGPM/IPCA)",
       description: "Indices opcionais para reajustes.",
-      actionLabel: "Em breve",
-      disabled: true
+      actionLabel: "Consultar",
+      onClick: () => setFinanceiroAba("indices")
     }
   ]);
 }
