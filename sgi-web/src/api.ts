@@ -523,6 +523,8 @@ export interface PoliticaCobranca {
   multaPercentual: number;
   jurosMensalPercentual: number;
   correcaoMensalPercentual: number;
+  correcaoTipo: string;
+  correcaoIndice?: string | null;
   diasCarencia: number;
   ativo: boolean;
   atualizadoEm: string;
@@ -2642,6 +2644,8 @@ export const api = {
       multaPercentual: number;
       jurosMensalPercentual: number;
       correcaoMensalPercentual: number;
+      correcaoTipo?: string;
+      correcaoIndice?: string | null;
       diasCarencia: number;
       ativo: boolean;
     }

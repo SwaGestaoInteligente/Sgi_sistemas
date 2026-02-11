@@ -38,6 +38,19 @@ public class FinanceiroController : ControllerBase
         "FECHADA"
     };
 
+    private const string CorrecaoTipoPadrao = "PERCENTUAL_FIXO";
+
+    private static readonly HashSet<string> CorrecaoTiposValidos = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "PERCENTUAL_FIXO",
+        "IPCA",
+        "IGPM",
+        "INPC",
+        "CDI",
+        "SEM_CORRECAO",
+        "OUTRO"
+    };
+
     public FinanceiroController(SgiDbContext db, IWebHostEnvironment env)
     {
         _db = db;
@@ -66,6 +79,17 @@ public class FinanceiroController : ControllerBase
         return StatusCobrancaValidos.Contains(normalizado) ? normalizado : "ABERTA";
     }
 
+    private static string NormalizarCorrecaoTipo(string? tipo)
+    {
+        if (string.IsNullOrWhiteSpace(tipo))
+        {
+            return CorrecaoTipoPadrao;
+        }
+
+        var normalizado = tipo.Trim().ToUpperInvariant();
+        return CorrecaoTiposValidos.Contains(normalizado) ? normalizado : CorrecaoTipoPadrao;
+    }
+
     private record CobrancaEncargos(
         decimal ValorAtualizado,
         decimal Multa,
@@ -88,7 +112,12 @@ public class FinanceiroController : ControllerBase
         var diasAplicados = diasAtraso - politica.DiasCarencia;
         var multa = Math.Round(valor * (politica.MultaPercentual / 100m), 2, MidpointRounding.AwayFromZero);
         var juros = Math.Round(valor * (politica.JurosMensalPercentual / 100m) * (diasAplicados / 30m), 2, MidpointRounding.AwayFromZero);
-        var correcao = Math.Round(valor * (politica.CorrecaoMensalPercentual / 100m) * (diasAplicados / 30m), 2, MidpointRounding.AwayFromZero);
+        var correcaoPercentual = politica.CorrecaoMensalPercentual;
+        if (string.Equals(politica.CorrecaoTipo, "SEM_CORRECAO", StringComparison.OrdinalIgnoreCase))
+        {
+            correcaoPercentual = 0m;
+        }
+        var correcao = Math.Round(valor * (correcaoPercentual / 100m) * (diasAplicados / 30m), 2, MidpointRounding.AwayFromZero);
         var total = Math.Round(valor + multa + juros + correcao, 2, MidpointRounding.AwayFromZero);
 
         return new CobrancaEncargos(total, multa, juros, correcao, diasAtraso);
@@ -109,6 +138,11 @@ public class FinanceiroController : ControllerBase
             .FirstOrDefaultAsync(p => p.OrganizacaoId == organizacaoId && p.Ativo);
         if (politica is not null)
         {
+            politica.CorrecaoTipo = NormalizarCorrecaoTipo(politica.CorrecaoTipo);
+            if (!string.Equals(politica.CorrecaoTipo, "OUTRO", StringComparison.OrdinalIgnoreCase))
+            {
+                politica.CorrecaoIndice = null;
+            }
             return politica;
         }
 
@@ -118,6 +152,8 @@ public class FinanceiroController : ControllerBase
             MultaPercentual = 0m,
             JurosMensalPercentual = 0m,
             CorrecaoMensalPercentual = 0m,
+            CorrecaoTipo = CorrecaoTipoPadrao,
+            CorrecaoIndice = null,
             DiasCarencia = 0,
             Ativo = true,
             AtualizadoEm = DateTime.UtcNow
@@ -1592,6 +1628,8 @@ public class FinanceiroController : ControllerBase
         public decimal MultaPercentual { get; set; }
         public decimal JurosMensalPercentual { get; set; }
         public decimal CorrecaoMensalPercentual { get; set; }
+        public string? CorrecaoTipo { get; set; }
+        public string? CorrecaoIndice { get; set; }
         public int DiasCarencia { get; set; }
         public bool Ativo { get; set; } = true;
     }
@@ -1622,10 +1660,20 @@ public class FinanceiroController : ControllerBase
                 MultaPercentual = 0m,
                 JurosMensalPercentual = 0m,
                 CorrecaoMensalPercentual = 0m,
+                CorrecaoTipo = CorrecaoTipoPadrao,
+                CorrecaoIndice = null,
                 DiasCarencia = 0,
                 Ativo = true,
                 AtualizadoEm = DateTime.UtcNow
             };
+        }
+        else
+        {
+            politica.CorrecaoTipo = NormalizarCorrecaoTipo(politica.CorrecaoTipo);
+            if (!string.Equals(politica.CorrecaoTipo, "OUTRO", StringComparison.OrdinalIgnoreCase))
+            {
+                politica.CorrecaoIndice = null;
+            }
         }
 
         return Ok(politica);
@@ -1659,9 +1707,19 @@ public class FinanceiroController : ControllerBase
             _db.PoliticasCobranca.Add(politica);
         }
 
+        var correcaoTipo = NormalizarCorrecaoTipo(request.CorrecaoTipo);
+        if (string.Equals(correcaoTipo, "OUTRO", StringComparison.OrdinalIgnoreCase)
+            && string.IsNullOrWhiteSpace(request.CorrecaoIndice))
+        {
+            return BadRequest("Informe o indice de correcao.");
+        }
         politica.MultaPercentual = Math.Max(0m, request.MultaPercentual);
         politica.JurosMensalPercentual = Math.Max(0m, request.JurosMensalPercentual);
         politica.CorrecaoMensalPercentual = Math.Max(0m, request.CorrecaoMensalPercentual);
+        politica.CorrecaoTipo = correcaoTipo;
+        politica.CorrecaoIndice = string.Equals(correcaoTipo, "OUTRO", StringComparison.OrdinalIgnoreCase)
+            ? (string.IsNullOrWhiteSpace(request.CorrecaoIndice) ? null : request.CorrecaoIndice.Trim())
+            : null;
         politica.DiasCarencia = Math.Max(0, request.DiasCarencia);
         politica.Ativo = request.Ativo;
         politica.AtualizadoEm = DateTime.UtcNow;
@@ -1671,6 +1729,8 @@ public class FinanceiroController : ControllerBase
             politica.MultaPercentual,
             politica.JurosMensalPercentual,
             politica.CorrecaoMensalPercentual,
+            politica.CorrecaoTipo,
+            politica.CorrecaoIndice,
             politica.DiasCarencia,
             politica.Ativo
         });

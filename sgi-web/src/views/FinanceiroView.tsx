@@ -338,6 +338,10 @@ export default function FinanceiroView({
   const [politicaMulta, setPoliticaMulta] = useState("");
   const [politicaJuros, setPoliticaJuros] = useState("");
   const [politicaCorrecao, setPoliticaCorrecao] = useState("");
+  const [politicaCorrecaoTipo, setPoliticaCorrecaoTipo] = useState(
+    "PERCENTUAL_FIXO"
+  );
+  const [politicaCorrecaoIndice, setPoliticaCorrecaoIndice] = useState("");
   const [politicaCarencia, setPoliticaCarencia] = useState("");
   const [politicaAtiva, setPoliticaAtiva] = useState(true);
   const [politicaLoading, setPoliticaLoading] = useState(false);
@@ -1937,6 +1941,8 @@ export default function FinanceiroView({
       setPoliticaCorrecao(
         politica.correcaoMensalPercentual.toString().replace(".", ",")
       );
+      setPoliticaCorrecaoTipo(politica.correcaoTipo || "PERCENTUAL_FIXO");
+      setPoliticaCorrecaoIndice(politica.correcaoIndice || "");
       setPoliticaCarencia(politica.diasCarencia.toString());
       setPoliticaAtiva(politica.ativo);
     } catch (e: any) {
@@ -1951,15 +1957,22 @@ export default function FinanceiroView({
     if (!token) return;
     const multa = Number(politicaMulta.replace(/\./g, "").replace(",", "."));
     const juros = Number(politicaJuros.replace(/\./g, "").replace(",", "."));
-    const correcao = Number(politicaCorrecao.replace(/\./g, "").replace(",", "."));
+    const correcao =
+      politicaCorrecaoTipo === "SEM_CORRECAO"
+        ? 0
+        : Number(politicaCorrecao.replace(/\./g, "").replace(",", "."));
     const carencia = Number(politicaCarencia);
     if (
       !Number.isFinite(multa) ||
       !Number.isFinite(juros) ||
-      !Number.isFinite(correcao) ||
+      (politicaCorrecaoTipo !== "SEM_CORRECAO" && !Number.isFinite(correcao)) ||
       !Number.isFinite(carencia)
     ) {
       setPoliticaErro("Informe valores validos para a politica.");
+      return;
+    }
+    if (politicaCorrecaoTipo === "OUTRO" && !politicaCorrecaoIndice.trim()) {
+      setPoliticaErro("Informe o indice de correcao.");
       return;
     }
     try {
@@ -1970,6 +1983,11 @@ export default function FinanceiroView({
         multaPercentual: multa,
         jurosMensalPercentual: juros,
         correcaoMensalPercentual: correcao,
+        correcaoTipo: politicaCorrecaoTipo,
+        correcaoIndice:
+          politicaCorrecaoTipo === "OUTRO"
+            ? politicaCorrecaoIndice.trim()
+            : null,
         diasCarencia: Math.max(0, Math.floor(carencia)),
         ativo: politicaAtiva
       });
@@ -8673,11 +8691,47 @@ export default function FinanceiroView({
                 </div>
                 <div className="finance-form-grid">
                   <label>
+                    Tipo de correcao
+                    <select
+                      value={politicaCorrecaoTipo}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setPoliticaCorrecaoTipo(value);
+                        if (value !== "OUTRO") {
+                          setPoliticaCorrecaoIndice("");
+                        }
+                        if (value === "SEM_CORRECAO") {
+                          setPoliticaCorrecao("0");
+                        }
+                      }}
+                    >
+                      <option value="PERCENTUAL_FIXO">Percentual fixo</option>
+                      <option value="IPCA">IPCA</option>
+                      <option value="IGPM">IGP-M</option>
+                      <option value="INPC">INPC</option>
+                      <option value="CDI">CDI</option>
+                      <option value="SEM_CORRECAO">Sem correcao</option>
+                      <option value="OUTRO">Outro</option>
+                    </select>
+                  </label>
+                  <label>
+                    Indice (quando outro)
+                    <input
+                      value={politicaCorrecaoIndice}
+                      onChange={(e) => setPoliticaCorrecaoIndice(e.target.value)}
+                      placeholder="Ex.: TR"
+                      disabled={politicaCorrecaoTipo !== "OUTRO"}
+                    />
+                  </label>
+                </div>
+                <div className="finance-form-grid">
+                  <label>
                     Correcao ao mes (%)
                     <input
                       value={politicaCorrecao}
                       onChange={(e) => setPoliticaCorrecao(e.target.value)}
                       placeholder="Ex.: 0,5"
+                      disabled={politicaCorrecaoTipo === "SEM_CORRECAO"}
                     />
                   </label>
                   <label>

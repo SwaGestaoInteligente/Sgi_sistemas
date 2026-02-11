@@ -7,6 +7,8 @@ public class PoliticaCobranca
     public decimal MultaPercentual { get; set; }
     public decimal JurosMensalPercentual { get; set; }
     public decimal CorrecaoMensalPercentual { get; set; }
+    public string CorrecaoTipo { get; set; } = "PERCENTUAL_FIXO";
+    public string? CorrecaoIndice { get; set; }
     public int DiasCarencia { get; set; }
     public bool Ativo { get; set; } = true;
     public DateTime AtualizadoEm { get; set; }
