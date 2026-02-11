@@ -2132,80 +2132,100 @@ export default function FinanceiroView({
       setErro(null);
       setLoading(true);
       const boleto = await api.obterBoletoFatura(token, fatura.id, organizacaoId);
-      const doc = new jsPDF({ orientation: "portrait" });
+      const doc = new jsPDF({ orientation: "portrait", unit: "mm" });
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const margin = 10;
+      const fullWidth = pageWidth - margin * 2;
 
-      doc.setFontSize(14);
-      doc.text("BOLETO DE TESTE", 14, 16);
-      doc.setFontSize(9);
-      doc.text(
-        `${boleto.banco.nome} • ${boleto.banco.codigo}`,
-        14,
-        22
-      );
-      doc.text(`Linha digitavel: ${boleto.linhaDigitavel ?? "-"}`, 14, 27);
+      const linhaDigitavel = boleto.linhaDigitavel ?? "-";
+      const valorTexto = formatarValor(boleto.valor);
+      const vencimentoTexto = formatarData(boleto.vencimento);
 
+      const drawField = (
+        x: number,
+        y: number,
+        w: number,
+        h: number,
+        label: string,
+        value: string,
+        align: "left" | "right" = "left"
+      ) => {
+        doc.rect(x, y, w, h);
+        doc.setFontSize(7);
+        doc.text(label, x + 1.5, y + 3.5);
+        doc.setFontSize(9);
+        const valueX = align === "right" ? x + w - 1.5 : x + 1.5;
+        doc.text(value, valueX, y + h - 3, { align });
+      };
+
+      // Header
       doc.setFontSize(10);
-      doc.text(`Cedente: ${boleto.cedente.nome}`, 14, 36);
-      doc.text(
-        `Documento: ${boleto.cedente.documento ?? "-"}`,
-        14,
-        41
-      );
-      doc.text(
-        `Endereco: ${formatarEndereco(boleto.enderecoCedente)}`,
-        14,
-        46
-      );
+      doc.text(boleto.banco.nome.toUpperCase(), margin, 14);
+      doc.setFontSize(12);
+      doc.text(boleto.banco.codigo, margin + 55, 14);
+      doc.setFontSize(9);
+      doc.text(linhaDigitavel, margin + 75, 14);
 
-      doc.text(`Sacado: ${boleto.sacado.nome}`, 14, 56);
-      doc.text(
-        `Documento: ${boleto.sacado.documento ?? "-"}`,
-        14,
-        61
-      );
-      doc.text(
-        `Endereco: ${formatarEndereco(boleto.enderecoSacado)}`,
-        14,
-        66
-      );
+      doc.setFontSize(7);
+      doc.text("Recibo do pagador", margin, 18);
+      doc.setFontSize(7);
+      doc.setTextColor(180);
+      doc.text("BOLETO DE TESTE (NAO PAGAVEL)", margin + 120, 18);
+      doc.setTextColor(0);
 
-      doc.text(`Descricao: ${boleto.descricao}`, 14, 76);
-      doc.text(
-        `Valor: ${formatarValor(boleto.valor)}`,
-        14,
-        81
-      );
-      doc.text(
-        `Vencimento: ${formatarData(boleto.vencimento)}`,
-        14,
-        86
-      );
+      let y = 20;
+      drawField(margin, y, 120, 10, "Local de pagamento", "Pagavel em qualquer banco ate o vencimento");
+      drawField(margin + 120, y, 70, 10, "Vencimento", vencimentoTexto, "right");
+      y += 10;
+      drawField(margin, y, 120, 10, "Beneficiario", boleto.cedente.nome);
+      const agenciaConta = [boleto.banco.agencia, boleto.banco.conta].filter(Boolean).join(" / ");
+      drawField(margin + 120, y, 70, 10, "Agencia/Codigo beneficiario", agenciaConta || "0000-0/00000-0");
+      y += 10;
+
+      drawField(margin, y, 30, 10, "Data doc.", formatarData(boleto.emissao));
+      drawField(margin + 30, y, 40, 10, "Numero doc.", boleto.identificador);
+      drawField(margin + 70, y, 25, 10, "Especie", "DM");
+      drawField(margin + 95, y, 15, 10, "Aceite", "N");
+      drawField(margin + 110, y, 40, 10, "Data proc.", formatarData(boleto.emissao));
+      drawField(margin + 150, y, 40, 10, "Nosso numero", boleto.identificador.slice(-10));
+      y += 10;
+
+      drawField(margin, y, 60, 10, "Uso do banco", "");
+      drawField(margin + 60, y, 20, 10, "Carteira", "17");
+      drawField(margin + 80, y, 20, 10, "Especie moeda", "R$");
+      drawField(margin + 100, y, 30, 10, "Qtd.", "");
+      drawField(margin + 130, y, 60, 10, "Valor", valorTexto, "right");
+      y += 10;
+
+      drawField(margin, y, 130, 18, "Instrucoes", (boleto.instrucoes?.[0] ?? "Boleto de teste."));
+      drawField(margin + 130, y, 60, 18, "Valor do documento", valorTexto, "right");
+      y += 18;
+
+      drawField(margin, y, 130, 18, "Sacado", boleto.sacado.nome);
+      drawField(margin + 130, y, 60, 18, "CPF/CNPJ", boleto.sacado.documento ?? "-");
+      y += 18;
+
+      drawField(margin, y, fullWidth, 14, "Endereco do sacado", formatarEndereco(boleto.enderecoSacado));
+      y += 16;
 
       if (boleto.qrCode) {
-        doc.text("PIX (copia e cola):", 14, 96);
-        doc.setFontSize(8);
-        doc.text(boleto.qrCode, 14, 100, { maxWidth: 180 });
-        doc.setFontSize(10);
+        doc.setFontSize(7);
+        doc.text("PIX copia e cola:", margin, y + 4);
+        doc.setFontSize(7);
+        doc.text(boleto.qrCode, margin + 25, y + 4, { maxWidth: fullWidth - 25 });
+        y += 10;
       }
 
+      doc.setFontSize(7);
+      doc.text("Ficha de compensacao", margin, y + 4);
       const codigoBase =
         boleto.linhaDigitavel?.replace(/\D/g, "") ||
         boleto.identificador.replace(/\D/g, "") ||
         "00000000000000000000000000000000000000000000";
       const codigo = codigoBase.padEnd(44, "0").slice(0, 44);
-      doc.text("Codigo de barras:", 14, 120);
-      desenharCodigoBarras(doc, codigo, 14, 124, 180, 18);
-      doc.setFontSize(8);
-      doc.text(codigo, 14, 146);
-
-      doc.setFontSize(8);
-      const instrucoes = boleto.instrucoes?.length
-        ? boleto.instrucoes
-        : ["Boleto de teste."];
-      doc.text("Instrucoes:", 14, 156);
-      instrucoes.forEach((linha, index) => {
-        doc.text(`• ${linha}`, 14, 160 + index * 4);
-      });
+      desenharCodigoBarras(doc, codigo, margin, y + 6, fullWidth, 18);
+      doc.setFontSize(7);
+      doc.text(codigo, margin, y + 28);
 
       const stamp = new Date()
         .toISOString()
