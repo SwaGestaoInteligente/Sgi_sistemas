@@ -4570,17 +4570,28 @@ button:focus-visible {
   color: #516580;
 }
 
+.finance-dashboard .dashboard-grid {
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.finance-dashboard .dashboard-card,
+.finance-dashboard .dashboard-card--primary,
+.finance-dashboard .dashboard-alerts {
+  grid-column: auto;
+}
+
 .dashboard-quick-grid {
   margin-top: 12px;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 12px;
 }
 
 .dashboard-quick-card {
   display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: center;
+  grid-template-columns: 40px 1fr;
+  grid-template-rows: auto auto;
+  align-items: start;
   gap: 10px;
   padding: 12px 14px;
   border-radius: 12px;
@@ -4620,6 +4631,7 @@ button:focus-visible {
   align-items: center;
   justify-content: center;
   font-size: 12px;
+  grid-row: 1 / span 2;
 }
 
 .dashboard-quick-badge {
@@ -4630,6 +4642,9 @@ button:focus-visible {
   padding: 4px 8px;
   border-radius: 999px;
   border: 1px solid rgba(63, 127, 216, 0.2);
+  grid-column: 2;
+  grid-row: 2;
+  justify-self: start;
 }
 
 @media (max-width: 1320px) {

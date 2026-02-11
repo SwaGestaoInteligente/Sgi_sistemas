@@ -5030,7 +5030,7 @@ export default function FinanceiroView({
 
       {aba === "mapaFinanceiro" && (
         <>
-          <section className="dashboard">
+          <section className="dashboard finance-dashboard">
             <div className="dashboard-header-row">
               <div>
                 <h3>Painel financeiro</h3>
