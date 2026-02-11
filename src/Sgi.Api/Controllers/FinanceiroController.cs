@@ -1601,6 +1601,141 @@ public class FinanceiroController : ControllerBase
         return Ok(item);
     }
 
+    [HttpGet("faturas/{id:guid}/boleto")]
+    public async Task<ActionResult<BoletoFaturaDto>> ObterBoletoFatura(
+        Guid id,
+        [FromQuery] Guid organizacaoId)
+    {
+        if (organizacaoId == Guid.Empty)
+        {
+            return BadRequest("Organizacao e obrigatoria.");
+        }
+
+        var auth = await EnsureRoleAsync(organizacaoId, UserRole.CONDO_ADMIN, UserRole.CONDO_STAFF);
+        if (auth.Error is not null)
+        {
+            return auth.Error;
+        }
+
+        var fatura = await _db.DocumentosCobranca.AsNoTracking()
+            .FirstOrDefaultAsync(f => f.Id == id && f.OrganizacaoId == organizacaoId);
+        if (fatura is null)
+        {
+            return NotFound();
+        }
+
+        var lancamento = await _db.LancamentosFinanceiros.AsNoTracking()
+            .FirstOrDefaultAsync(l => l.Id == fatura.LancamentoFinanceiroId);
+        if (lancamento is null)
+        {
+            return NotFound("Lancamento financeiro nao encontrado.");
+        }
+
+        var organizacao = await _db.Organizacoes.AsNoTracking()
+            .FirstOrDefaultAsync(o => o.Id == fatura.OrganizacaoId);
+
+        var conta = lancamento.ContaFinanceiraId.HasValue
+            ? await _db.ContasFinanceiras.AsNoTracking()
+                .FirstOrDefaultAsync(c => c.Id == lancamento.ContaFinanceiraId.Value)
+            : null;
+
+        var pessoa = await _db.Pessoas.AsNoTracking()
+            .FirstOrDefaultAsync(p => p.Id == lancamento.PessoaId);
+
+        var enderecoCedente = organizacao is null
+            ? null
+            : await _db.Enderecos.AsNoTracking()
+                .Where(e => e.OrganizacaoId == organizacao.Id)
+                .OrderBy(e => e.Tipo)
+                .FirstOrDefaultAsync();
+
+        var enderecoSacado = pessoa is null
+            ? null
+            : await _db.Enderecos.AsNoTracking()
+                .Where(e => e.PessoaId == pessoa.Id)
+                .OrderBy(e => e.Tipo)
+                .FirstOrDefaultAsync();
+
+        if (enderecoSacado is null && pessoa is not null)
+        {
+            var vinculo = await _db.VinculosPessoaOrganizacao.AsNoTracking()
+                .Where(v => v.OrganizacaoId == organizacaoId &&
+                            v.PessoaId == pessoa.Id &&
+                            (v.DataFim == null || v.DataFim > DateTime.UtcNow))
+                .OrderByDescending(v => v.DataInicio)
+                .FirstOrDefaultAsync();
+
+            if (vinculo?.UnidadeOrganizacionalId.HasValue == true)
+            {
+                enderecoSacado = await _db.Enderecos.AsNoTracking()
+                    .Where(e => e.UnidadeOrganizacionalId == vinculo.UnidadeOrganizacionalId)
+                    .OrderBy(e => e.Tipo)
+                    .FirstOrDefaultAsync();
+            }
+        }
+
+        var banco = new BoletoBancoDto(
+            string.IsNullOrWhiteSpace(conta?.Banco) ? "Banco Ficticio" : conta!.Banco!,
+            "999-9",
+            conta?.Agencia,
+            conta?.NumeroConta);
+
+        var cedente = new BoletoPessoaDto(
+            organizacao?.Nome ?? "Condominio",
+            organizacao?.Documento,
+            organizacao?.Email,
+            organizacao?.Telefone);
+
+        var sacado = new BoletoPessoaDto(
+            pessoa?.Nome ?? "Morador",
+            pessoa?.Documento,
+            pessoa?.Email,
+            pessoa?.Telefone);
+
+        var instrucoes = new List<string>
+        {
+            "Boleto de teste (nao pagavel).",
+            "Em caso de duvida, contate a administracao."
+        };
+
+        return Ok(new BoletoFaturaDto(
+            fatura.Id,
+            fatura.Tipo,
+            fatura.IdentificadorExterno ?? GerarIdentificadorExternoFicticio(fatura.Id),
+            lancamento.Descricao,
+            lancamento.Valor,
+            fatura.DataEmissao,
+            fatura.DataVencimento,
+            fatura.Status,
+            fatura.LinhaDigitavel,
+            fatura.QrCode,
+            fatura.UrlPagamento,
+            banco,
+            cedente,
+            enderecoCedente is null
+                ? null
+                : new BoletoEnderecoDto(
+                    enderecoCedente.Logradouro,
+                    enderecoCedente.Numero,
+                    enderecoCedente.Complemento,
+                    enderecoCedente.Bairro,
+                    enderecoCedente.Cidade,
+                    enderecoCedente.Estado,
+                    enderecoCedente.Cep),
+            sacado,
+            enderecoSacado is null
+                ? null
+                : new BoletoEnderecoDto(
+                    enderecoSacado.Logradouro,
+                    enderecoSacado.Numero,
+                    enderecoSacado.Complemento,
+                    enderecoSacado.Bairro,
+                    enderecoSacado.Cidade,
+                    enderecoSacado.Estado,
+                    enderecoSacado.Cep),
+            instrucoes));
+    }
+
     [HttpPost("faturas")]
     public async Task<ActionResult<DocumentoCobranca>> CriarFatura(CriarFaturaRequest request)
     {
@@ -4108,6 +4243,46 @@ public class FinanceiroController : ControllerBase
     }
 
     public record GerarBoletosAcordoResumo(int Criadas, int Ignoradas);
+
+    public record BoletoBancoDto(
+        string Nome,
+        string Codigo,
+        string? Agencia,
+        string? Conta);
+
+    public record BoletoPessoaDto(
+        string Nome,
+        string? Documento,
+        string? Email,
+        string? Telefone);
+
+    public record BoletoEnderecoDto(
+        string Logradouro,
+        string? Numero,
+        string? Complemento,
+        string? Bairro,
+        string? Cidade,
+        string? Estado,
+        string? Cep);
+
+    public record BoletoFaturaDto(
+        Guid Id,
+        string Tipo,
+        string Identificador,
+        string Descricao,
+        decimal Valor,
+        DateTime Emissao,
+        DateTime Vencimento,
+        string Status,
+        string? LinhaDigitavel,
+        string? QrCode,
+        string? UrlPagamento,
+        BoletoBancoDto Banco,
+        BoletoPessoaDto Cedente,
+        BoletoEnderecoDto? EnderecoCedente,
+        BoletoPessoaDto Sacado,
+        BoletoEnderecoDto? EnderecoSacado,
+        IEnumerable<string> Instrucoes);
 
     [HttpGet("cobrancas/acordos")]
     public async Task<ActionResult<IEnumerable<AcordoCobranca>>> ListarAcordosCobranca(

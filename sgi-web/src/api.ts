@@ -556,6 +556,50 @@ export interface GerarBoletosAcordoResumo {
   ignoradas: number;
 }
 
+export interface BoletoBanco {
+  nome: string;
+  codigo: string;
+  agencia?: string | null;
+  conta?: string | null;
+}
+
+export interface BoletoPessoa {
+  nome: string;
+  documento?: string | null;
+  email?: string | null;
+  telefone?: string | null;
+}
+
+export interface BoletoEndereco {
+  logradouro: string;
+  numero?: string | null;
+  complemento?: string | null;
+  bairro?: string | null;
+  cidade?: string | null;
+  estado?: string | null;
+  cep?: string | null;
+}
+
+export interface BoletoFatura {
+  id: string;
+  tipo: string;
+  identificador: string;
+  descricao: string;
+  valor: number;
+  emissao: string;
+  vencimento: string;
+  status: string;
+  linhaDigitavel?: string | null;
+  qrCode?: string | null;
+  urlPagamento?: string | null;
+  banco: BoletoBanco;
+  cedente: BoletoPessoa;
+  enderecoCedente?: BoletoEndereco | null;
+  sacado: BoletoPessoa;
+  enderecoSacado?: BoletoEndereco | null;
+  instrucoes: string[];
+}
+
 export interface AcordoCobranca {
   id: string;
   organizacaoId: string;
@@ -2732,6 +2776,19 @@ export const api = {
         method: "POST",
         body: JSON.stringify(payload)
       },
+      token
+    );
+  },
+
+  async obterBoletoFatura(
+    token: string,
+    faturaId: string,
+    organizacaoId: string
+  ): Promise<BoletoFatura> {
+    const search = new URLSearchParams({ organizacaoId });
+    return request<BoletoFatura>(
+      `/financeiro/faturas/${faturaId}/boleto?${search.toString()}`,
+      {},
       token
     );
   },

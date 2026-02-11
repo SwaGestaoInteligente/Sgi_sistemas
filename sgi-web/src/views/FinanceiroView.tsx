@@ -30,6 +30,7 @@ import {
   RegraRateio,
   RecursoReservavel,
   AcordoCobranca,
+  BoletoFatura,
   IndiceEconomico,
   PoliticaCobranca,
   RemessaCobrancaItem,
@@ -2086,6 +2087,135 @@ export default function FinanceiroView({
       setAcordosErro(e.message || "Erro ao gerar boletos.");
     } finally {
       setAcordosGerandoId(null);
+    }
+  };
+
+  const formatarEndereco = (endereco?: BoletoFatura["enderecoSacado"] | null) => {
+    if (!endereco) return "-";
+    const partes = [
+      endereco.logradouro,
+      endereco.numero,
+      endereco.complemento
+    ].filter(Boolean);
+    const linha1 = partes.join(", ");
+    const linha2 = [endereco.bairro, endereco.cidade, endereco.estado]
+      .filter(Boolean)
+      .join(" - ");
+    const cep = endereco.cep ? `CEP ${endereco.cep}` : "";
+    return [linha1, linha2, cep].filter(Boolean).join(" • ");
+  };
+
+  const desenharCodigoBarras = (
+    doc: jsPDF,
+    digits: string,
+    x: number,
+    y: number,
+    width: number,
+    height: number
+  ) => {
+    const valores = digits.replace(/\D/g, "");
+    if (!valores) return;
+    const totalBars = valores.length * 2;
+    const unit = width / totalBars;
+    let cursor = x;
+    for (let i = 0; i < valores.length; i += 1) {
+      const num = Number(valores[i] ?? "0");
+      const barWidth = unit * (num % 2 === 0 ? 1 : 1.6);
+      doc.rect(cursor, y, barWidth, height, "F");
+      cursor += barWidth + unit * 0.4;
+    }
+  };
+
+  const gerarBoletoPdf = async (fatura: DocumentoCobranca) => {
+    if (!token) return;
+    try {
+      setErro(null);
+      setLoading(true);
+      const boleto = await api.obterBoletoFatura(token, fatura.id, organizacaoId);
+      const doc = new jsPDF({ orientation: "portrait" });
+
+      doc.setFontSize(14);
+      doc.text("BOLETO DE TESTE", 14, 16);
+      doc.setFontSize(9);
+      doc.text(
+        `${boleto.banco.nome} • ${boleto.banco.codigo}`,
+        14,
+        22
+      );
+      doc.text(`Linha digitavel: ${boleto.linhaDigitavel ?? "-"}`, 14, 27);
+
+      doc.setFontSize(10);
+      doc.text(`Cedente: ${boleto.cedente.nome}`, 14, 36);
+      doc.text(
+        `Documento: ${boleto.cedente.documento ?? "-"}`,
+        14,
+        41
+      );
+      doc.text(
+        `Endereco: ${formatarEndereco(boleto.enderecoCedente)}`,
+        14,
+        46
+      );
+
+      doc.text(`Sacado: ${boleto.sacado.nome}`, 14, 56);
+      doc.text(
+        `Documento: ${boleto.sacado.documento ?? "-"}`,
+        14,
+        61
+      );
+      doc.text(
+        `Endereco: ${formatarEndereco(boleto.enderecoSacado)}`,
+        14,
+        66
+      );
+
+      doc.text(`Descricao: ${boleto.descricao}`, 14, 76);
+      doc.text(
+        `Valor: ${formatarValor(boleto.valor)}`,
+        14,
+        81
+      );
+      doc.text(
+        `Vencimento: ${formatarData(boleto.vencimento)}`,
+        14,
+        86
+      );
+
+      if (boleto.qrCode) {
+        doc.text("PIX (copia e cola):", 14, 96);
+        doc.setFontSize(8);
+        doc.text(boleto.qrCode, 14, 100, { maxWidth: 180 });
+        doc.setFontSize(10);
+      }
+
+      const codigoBase =
+        boleto.linhaDigitavel?.replace(/\D/g, "") ||
+        boleto.identificador.replace(/\D/g, "") ||
+        "00000000000000000000000000000000000000000000";
+      const codigo = codigoBase.padEnd(44, "0").slice(0, 44);
+      doc.text("Codigo de barras:", 14, 120);
+      desenharCodigoBarras(doc, codigo, 14, 124, 180, 18);
+      doc.setFontSize(8);
+      doc.text(codigo, 14, 146);
+
+      doc.setFontSize(8);
+      const instrucoes = boleto.instrucoes?.length
+        ? boleto.instrucoes
+        : ["Boleto de teste."];
+      doc.text("Instrucoes:", 14, 156);
+      instrucoes.forEach((linha, index) => {
+        doc.text(`• ${linha}`, 14, 160 + index * 4);
+      });
+
+      const stamp = new Date()
+        .toISOString()
+        .replace(/[-:]/g, "")
+        .slice(0, 14);
+      doc.save(`boleto-${boleto.identificador}-${stamp}.pdf`);
+    } catch (e: any) {
+      setErro(e.message || "Erro ao gerar boleto.");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -8776,17 +8906,27 @@ export default function FinanceiroView({
                           >
                             Dar baixa
                           </button>
-                          <details className="action-menu">
-                            <summary title="Mais acoes" aria-label="Mais acoes">
-                              ⋮
-                            </summary>
-                            <div className="action-menu-panel">
-                              <button
-                                type="button"
-                                className="action-secondary"
-                                disabled={loading || fat.status === "cancelada"}
-                                onClick={() => void atualizarStatusFatura(fat, "cancelada")}
-                              >
+                      <details className="action-menu">
+                        <summary title="Mais acoes" aria-label="Mais acoes">
+                          ⋮
+                        </summary>
+                        <div className="action-menu-panel">
+                          {(fat.tipo === "boleto" || fat.tipo === "pix") && (
+                            <button
+                              type="button"
+                              className="action-secondary"
+                              disabled={loading}
+                              onClick={() => void gerarBoletoPdf(fat)}
+                            >
+                              Baixar boleto
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            className="action-secondary"
+                            disabled={loading || fat.status === "cancelada"}
+                            onClick={() => void atualizarStatusFatura(fat, "cancelada")}
+                          >
                                 Cancelar
                               </button>
                               <button
