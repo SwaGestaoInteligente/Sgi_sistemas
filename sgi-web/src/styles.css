@@ -4402,6 +4402,18 @@ button:focus-visible {
   background: #f0b26a;
 }
 
+.legend-item--receita::before {
+  background: #5aa6ff;
+}
+
+.legend-item--despesa::before {
+  background: #f08c6a;
+}
+
+.legend-item--saldo::before {
+  background: #7fd3b3;
+}
+
 .dashboard-chart-bars {
   margin-top: 14px;
   display: flex;
@@ -4441,6 +4453,18 @@ button:focus-visible {
 
 .dashboard-chart-bar--alertas {
   background: #f0b26a;
+}
+
+.dashboard-chart-bar--receita {
+  background: #5aa6ff;
+}
+
+.dashboard-chart-bar--despesa {
+  background: #f08c6a;
+}
+
+.dashboard-chart-bar--saldo {
+  background: #7fd3b3;
 }
 
 .dashboard-chart-label {
@@ -4540,6 +4564,68 @@ button:focus-visible {
 .dashboard-card-sub {
   margin-top: 6px;
   color: #516580;
+}
+
+.dashboard-quick-grid {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.dashboard-quick-card {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border-strong);
+  background: #f7fbff;
+  box-shadow: var(--shadow-sm);
+  text-align: left;
+  color: #0f172a;
+  min-height: 64px;
+}
+
+.dashboard-quick-card:not(:disabled):hover {
+  background: #eef5ff;
+  box-shadow: 0 12px 18px rgba(63, 127, 216, 0.18);
+  transform: translateY(-1px);
+}
+
+.dashboard-quick-card strong {
+  display: block;
+  font-size: 13px;
+  color: #0f172a;
+}
+
+.dashboard-quick-card span {
+  font-size: 12px;
+  color: #5b6b82;
+}
+
+.dashboard-quick-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+}
+
+.dashboard-quick-badge {
+  font-size: 11px;
+  font-weight: 600;
+  color: #1f3b73;
+  background: #e3efff;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(63, 127, 216, 0.2);
 }
 
 @media (max-width: 1320px) {

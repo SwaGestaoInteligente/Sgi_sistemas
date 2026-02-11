@@ -143,6 +143,7 @@ export default function FinanceiroView({
   );
   const [contas, setContas] = useState<ContaFinanceira[]>([]);
   const [loading, setLoading] = useState(false);
+  const [painelLoading, setPainelLoading] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const membershipAtual = session?.memberships?.find(
     (m) => m.condoId === organizacao.id && m.isActive
@@ -3491,6 +3492,24 @@ export default function FinanceiroView({
     }
   };
 
+  const recarregarPainel = async () => {
+    if (!token) return;
+    try {
+      setPainelLoading(true);
+      await Promise.all([
+        carregarContas(),
+        carregarDespesas(),
+        carregarReceitas(),
+        carregarFaturas(),
+        carregarCategoriasReceita(),
+        carregarCategoriasDespesa(),
+        carregarPessoasFinanceiro()
+      ]);
+    } finally {
+      setPainelLoading(false);
+    }
+  };
+
   const transferirEntreContas = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!token) return;
@@ -3834,6 +3853,113 @@ export default function FinanceiroView({
     0
   );
   const saldoPeriodo = totalReceitas - totalDespesas;
+  const resumoMeses = useMemo(() => {
+    const mesesBase = Array.from({ length: 6 }, (_, index) => {
+      const data = new Date(anoAtual, mesAtual - (5 - index), 1);
+      const key = `${data.getFullYear()}-${String(data.getMonth() + 1).padStart(2, "0")}`;
+      return {
+        key,
+        label: data
+          .toLocaleDateString("pt-BR", { month: "short" })
+          .replace(".", ""),
+        receitas: 0,
+        despesas: 0
+      };
+    });
+    const baseMap = new Map(mesesBase.map((mes) => [mes.key, mes]));
+    const obterMesKey = (data?: string) => {
+      if (!data) return null;
+      const parsed = new Date(data);
+      if (Number.isNaN(parsed.getTime())) return null;
+      return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, "0")}`;
+    };
+    receitasValidas.forEach((r) => {
+      const key = obterMesKey(r.dataCompetencia ?? r.dataVencimento ?? r.dataPagamento);
+      const item = key ? baseMap.get(key) : null;
+      if (item) {
+        item.receitas += r.valor;
+      }
+    });
+    despesasValidas.forEach((d) => {
+      const key = obterMesKey(d.dataCompetencia ?? d.dataVencimento ?? d.dataPagamento);
+      const item = key ? baseMap.get(key) : null;
+      if (item) {
+        item.despesas += d.valor;
+      }
+    });
+    return mesesBase.map((item) => ({
+      ...item,
+      saldo: item.receitas - item.despesas
+    }));
+  }, [anoAtual, mesAtual, receitasValidas, despesasValidas]);
+  const maxGraficoValor = useMemo(() => {
+    const maximo = Math.max(
+      ...resumoMeses.map((m) => Math.max(m.receitas, m.despesas, Math.abs(m.saldo))),
+      1
+    );
+    return maximo;
+  }, [resumoMeses]);
+  const atalhosFinanceiro = useMemo(
+    () => [
+      {
+        icon: "CR",
+        label: "Contas a receber",
+        sub: "Receitas do condominio",
+        badge: `${receitas.length} lancamentos`,
+        goTo: "contasReceber" as FinanceiroTab
+      },
+      {
+        icon: "CP",
+        label: "Contas a pagar",
+        sub: "Despesas e fornecedores",
+        badge: `${despesas.length} lancamentos`,
+        goTo: "contasPagar" as FinanceiroTab
+      },
+      {
+        icon: "FT",
+        label: "Faturas",
+        sub: "Boletos e pix",
+        badge: `${faturas.length} emitidas`,
+        goTo: "faturas" as FinanceiroTab
+      },
+      {
+        icon: "IN",
+        label: "Inadimplentes",
+        sub: "Atrasos e acordos",
+        badge: `${inadimplentes.length} em atraso`,
+        goTo: "inadimplentes" as FinanceiroTab
+      },
+      {
+        icon: "CB",
+        label: "Cobrancas",
+        sub: "Itens cobrados",
+        badge: `${itensCobrados.length} itens`,
+        goTo: "itensCobrados" as FinanceiroTab
+      },
+      {
+        icon: "CC",
+        label: "Conciliacao",
+        sub: "Banco e extratos",
+        badge: "Importar extrato",
+        goTo: "conciliacaoBancaria" as FinanceiroTab
+      },
+      {
+        icon: "LR",
+        label: "Livro de contas",
+        sub: "Prestacao anual",
+        badge: "Balanco",
+        goTo: "livroPrestacaoContas" as FinanceiroTab
+      },
+      {
+        icon: "RL",
+        label: "Relatorios",
+        sub: "PDF e CSV",
+        badge: "Gerar agora",
+        goTo: "relatorios" as FinanceiroTab
+      }
+    ],
+    [despesas.length, faturas.length, inadimplentes.length, itensCobrados.length, receitas.length]
+  );
   const pessoasPorId = Object.fromEntries(
     pessoasFinanceiro.map((p) => [p.id, p.nome])
   );
@@ -3858,6 +3984,13 @@ export default function FinanceiroView({
     .sort((a, b) =>
       (a.dataVencimento ?? "").localeCompare(b.dataVencimento ?? "")
     );
+  const totalInadimplenteValor = inadimplentes.reduce(
+    (sum, item) => sum + item.valor,
+    0
+  );
+  const percentualPagoMes = totalAPagarMes
+    ? Math.round((totalPagoMes / totalAPagarMes) * 100)
+    : 0;
   const filtroInadimplencia = inadimplenciaBusca.trim().toLowerCase();
   const inadimplentesFiltrados = !filtroInadimplencia
     ? inadimplentes
@@ -4873,7 +5006,185 @@ export default function FinanceiroView({
       )}
 
       {aba === "mapaFinanceiro" && (
-        <section className="finance-map">
+        <>
+          <section className="dashboard">
+            <div className="dashboard-header-row">
+              <div>
+                <h3>Painel financeiro</h3>
+                <p className="dashboard-caption">
+                  Visao executiva do condominio com indicadores, atalhos e tendencias do caixa.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="dashboard-refresh"
+                onClick={recarregarPainel}
+                disabled={painelLoading}
+              >
+                {painelLoading ? "Atualizando..." : "Atualizar painel"}
+              </button>
+            </div>
+
+            <div className="dashboard-grid">
+              <div className="dashboard-card dashboard-card--primary">
+                <div className="dashboard-card-label">
+                  <span className="dashboard-card-icon">Σ</span>
+                  Saldo consolidado
+                </div>
+                <div className="dashboard-card-value">{formatarValor(saldoAtual)}</div>
+                <div className="dashboard-card-sub">
+                  Receitas pagas {formatarValor(receitasPagas)} • Despesas pagas{" "}
+                  {formatarValor(despesasPagas)}
+                </div>
+              </div>
+              <div className="dashboard-card">
+                <div className="dashboard-card-label">
+                  <span className="dashboard-card-icon">R</span>
+                  Receitas do periodo
+                </div>
+                <div className="dashboard-card-value">{formatarValor(totalReceitas)}</div>
+                <div className="dashboard-card-sub">
+                  Lancadas no periodo atual
+                </div>
+              </div>
+              <div className="dashboard-card">
+                <div className="dashboard-card-label">
+                  <span className="dashboard-card-icon">D</span>
+                  Despesas do periodo
+                </div>
+                <div className="dashboard-card-value">{formatarValor(totalDespesas)}</div>
+                <div className="dashboard-card-sub">A pagar no mes {formatarValor(totalAPagarMes)}</div>
+              </div>
+              <div className="dashboard-card">
+                <div className="dashboard-card-label">
+                  <span className="dashboard-card-icon">S</span>
+                  Saldo do periodo
+                </div>
+                <div className="dashboard-card-value">{formatarValor(saldoPeriodo)}</div>
+                <div className="dashboard-card-sub">
+                  Pago no mes {formatarValor(totalPagoMes)}
+                </div>
+              </div>
+              <div className="dashboard-card">
+                <div className="dashboard-card-label">
+                  <span className="dashboard-card-icon">!</span>
+                  Inadimplencia
+                </div>
+                <div className="dashboard-card-value">{inadimplentes.length}</div>
+                <div className="dashboard-card-sub">
+                  {formatarValor(totalInadimplenteValor)} em atraso
+                </div>
+              </div>
+            </div>
+
+            <div className="dashboard-quick-grid">
+              {atalhosFinanceiro.map((item) => (
+                <button
+                  key={item.label}
+                  type="button"
+                  className="dashboard-quick-card"
+                  onClick={() => handleAbaChange(item.goTo)}
+                >
+                  <span className="dashboard-quick-icon">{item.icon}</span>
+                  <div>
+                    <strong>{item.label}</strong>
+                    <span>{item.sub}</span>
+                  </div>
+                  <span className="dashboard-quick-badge">{item.badge}</span>
+                </button>
+              ))}
+            </div>
+
+            <div className="dashboard-panels">
+              <div className="dashboard-panel dashboard-chart-card">
+                <div className="dashboard-panel-header">
+                  <div>
+                    <h3>Visao economica (6 meses)</h3>
+                    <p>Receitas, despesas e saldo por competencia.</p>
+                  </div>
+                  <div className="dashboard-chart-legend">
+                    <span className="legend-item legend-item--receita">Receitas</span>
+                    <span className="legend-item legend-item--despesa">Despesas</span>
+                    <span className="legend-item legend-item--saldo">Saldo</span>
+                  </div>
+                </div>
+                <div className="dashboard-chart-bars">
+                  {resumoMeses.map((mes) => {
+                    const alturaReceita = Math.max(
+                      6,
+                      Math.round((mes.receitas / maxGraficoValor) * 90)
+                    );
+                    const alturaDespesa = Math.max(
+                      6,
+                      Math.round((mes.despesas / maxGraficoValor) * 90)
+                    );
+                    const alturaSaldo = Math.max(
+                      6,
+                      Math.round((Math.abs(mes.saldo) / maxGraficoValor) * 90)
+                    );
+                    return (
+                      <div key={mes.key} className="dashboard-chart-day">
+                        <div className="dashboard-chart-group">
+                          <span
+                            className="dashboard-chart-bar dashboard-chart-bar--receita"
+                            style={{ height: alturaReceita }}
+                            title={`Receitas: ${formatarValor(mes.receitas)}`}
+                          />
+                          <span
+                            className="dashboard-chart-bar dashboard-chart-bar--despesa"
+                            style={{ height: alturaDespesa }}
+                            title={`Despesas: ${formatarValor(mes.despesas)}`}
+                          />
+                          <span
+                            className="dashboard-chart-bar dashboard-chart-bar--saldo"
+                            style={{ height: alturaSaldo }}
+                            title={`Saldo: ${formatarValor(mes.saldo)}`}
+                          />
+                        </div>
+                        <span className="dashboard-chart-label">{mes.label}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="dashboard-panel dashboard-insights-card">
+                <div className="dashboard-panel-header">
+                  <div>
+                    <h3>Insights rapidos</h3>
+                    <p>Indicadores para acao imediata.</p>
+                  </div>
+                </div>
+                <ul className="dashboard-insights">
+                  <li>
+                    <span className="insight-label">Saldo do periodo</span>
+                    <strong>{formatarValor(saldoPeriodo)}</strong>
+                  </li>
+                  <li>
+                    <span className="insight-label">Pago no mes</span>
+                    <strong>{percentualPagoMes}%</strong>
+                  </li>
+                  <li>
+                    <span className="insight-label">Receitas pagas</span>
+                    <strong>{formatarValor(receitasPagas)}</strong>
+                  </li>
+                  <li>
+                    <span className="insight-label">Despesas pagas</span>
+                    <strong>{formatarValor(despesasPagas)}</strong>
+                  </li>
+                  <li>
+                    <span className="insight-label">Inadimplencia</span>
+                    <strong>{formatarValor(totalInadimplenteValor)}</strong>
+                  </li>
+                </ul>
+                <p className="dashboard-insights-note">
+                  Atualize o painel para refletir os ultimos movimentos.
+                </p>
+              </div>
+            </div>
+          </section>
+
+          <section className="finance-map">
           <div className="finance-map-header">
             <div>
               <h3>Mapa financeiro</h3>
@@ -5140,6 +5451,7 @@ export default function FinanceiroView({
             Fluxo visual — regras entram depois. Nenhum dado real e alterado.
           </p>
         </section>
+        </>
       )}
 
       {aba === "contabilidade" && (
