@@ -48,6 +48,7 @@ public class SgiDbContext : DbContext
     public DbSet<UnidadePagamento> UnidadesPagamentos => Set<UnidadePagamento>();
     public DbSet<UnidadeCreditoMovimento> UnidadesCreditos => Set<UnidadeCreditoMovimento>();
     public DbSet<PoliticaCobranca> PoliticasCobranca => Set<PoliticaCobranca>();
+    public DbSet<IndiceEconomico> IndicesEconomicos => Set<IndiceEconomico>();
     public DbSet<AcordoCobranca> AcordosCobranca => Set<AcordoCobranca>();
     public DbSet<AcordoParcela> AcordosParcelas => Set<AcordoParcela>();
     public DbSet<LancamentoPagamento> LancamentosPagamentos => Set<LancamentoPagamento>();
@@ -109,6 +110,7 @@ public class SgiDbContext : DbContext
         modelBuilder.Entity<UnidadePagamento>().ToTable("UnidadesPagamentos");
         modelBuilder.Entity<UnidadeCreditoMovimento>().ToTable("UnidadesCreditos");
         modelBuilder.Entity<PoliticaCobranca>().ToTable("PoliticasCobranca");
+        modelBuilder.Entity<IndiceEconomico>().ToTable("IndicesEconomicos");
         modelBuilder.Entity<AcordoCobranca>().ToTable("AcordosCobranca");
         modelBuilder.Entity<AcordoParcela>().ToTable("AcordosParcelas");
         modelBuilder.Entity<LancamentoPagamento>().ToTable("LancamentosPagamentos");
@@ -160,6 +162,7 @@ public class SgiDbContext : DbContext
         AddSource<UnidadePagamento>(modelBuilder);
         AddSource<UnidadeCreditoMovimento>(modelBuilder);
         AddSource<PoliticaCobranca>(modelBuilder);
+        AddSource<IndiceEconomico>(modelBuilder);
         AddSource<AcordoCobranca>(modelBuilder);
         AddSource<AcordoParcela>(modelBuilder);
         AddSource<LancamentoPagamento>(modelBuilder);

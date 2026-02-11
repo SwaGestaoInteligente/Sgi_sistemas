@@ -125,9 +125,11 @@ builder.Services.AddAuthorization();
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+builder.Services.AddHttpClient();
 
 builder.Services.AddScoped<FinanceiroAccessFilter>();
 builder.Services.AddHostedService<NotificacoesJob>();
+builder.Services.AddHostedService<IndicesEconomicosJob>();
 
 var app = builder.Build();
 

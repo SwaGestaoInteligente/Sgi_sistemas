@@ -100,7 +100,8 @@ public class FinanceiroController : ControllerBase
     private static CobrancaEncargos CalcularEncargos(
         decimal valor,
         DateTime vencimento,
-        PoliticaCobranca politica)
+        PoliticaCobranca politica,
+        decimal correcaoMensalPercentual)
     {
         var hoje = DateTime.UtcNow.Date;
         var diasAtraso = Math.Max(0, (int)(hoje - vencimento.Date).TotalDays);
@@ -112,12 +113,7 @@ public class FinanceiroController : ControllerBase
         var diasAplicados = diasAtraso - politica.DiasCarencia;
         var multa = Math.Round(valor * (politica.MultaPercentual / 100m), 2, MidpointRounding.AwayFromZero);
         var juros = Math.Round(valor * (politica.JurosMensalPercentual / 100m) * (diasAplicados / 30m), 2, MidpointRounding.AwayFromZero);
-        var correcaoPercentual = politica.CorrecaoMensalPercentual;
-        if (string.Equals(politica.CorrecaoTipo, "SEM_CORRECAO", StringComparison.OrdinalIgnoreCase))
-        {
-            correcaoPercentual = 0m;
-        }
-        var correcao = Math.Round(valor * (correcaoPercentual / 100m) * (diasAplicados / 30m), 2, MidpointRounding.AwayFromZero);
+        var correcao = Math.Round(valor * (correcaoMensalPercentual / 100m) * (diasAplicados / 30m), 2, MidpointRounding.AwayFromZero);
         var total = Math.Round(valor + multa + juros + correcao, 2, MidpointRounding.AwayFromZero);
 
         return new CobrancaEncargos(total, multa, juros, correcao, diasAtraso);
@@ -158,6 +154,35 @@ public class FinanceiroController : ControllerBase
             Ativo = true,
             AtualizadoEm = DateTime.UtcNow
         };
+    }
+
+    private async Task<decimal> ObterCorrecaoPercentualAsync(
+        PoliticaCobranca politica,
+        DateTime referencia)
+    {
+        var tipo = NormalizarCorrecaoTipo(politica.CorrecaoTipo);
+        if (string.Equals(tipo, "SEM_CORRECAO", StringComparison.OrdinalIgnoreCase))
+        {
+            return 0m;
+        }
+
+        if (string.Equals(tipo, "PERCENTUAL_FIXO", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(tipo, "OUTRO", StringComparison.OrdinalIgnoreCase))
+        {
+            return politica.CorrecaoMensalPercentual;
+        }
+
+        var ano = referencia.Year;
+        var mes = referencia.Month;
+
+        var indice = await _db.IndicesEconomicos.AsNoTracking()
+            .Where(i => i.Tipo == tipo && (i.Ano < ano || (i.Ano == ano && i.Mes <= mes)))
+            .OrderByDescending(i => i.Ano)
+            .ThenByDescending(i => i.Mes)
+            .Select(i => (decimal?)i.ValorPercentual)
+            .FirstOrDefaultAsync();
+
+        return indice ?? politica.CorrecaoMensalPercentual;
     }
 
     private async Task AplicarCreditoAutomaticoAsync(UnidadeCobranca cobranca)
@@ -3704,11 +3729,18 @@ public class FinanceiroController : ControllerBase
             .ToListAsync();
 
         var politica = await ObterPoliticaCobrancaAsync(unidade.OrganizacaoId);
+        var correcaoPercentual = await ObterCorrecaoPercentualAsync(
+            politica,
+            DateTime.UtcNow);
         var creditoDisponivel = await ObterCreditoDisponivelAsync(unidadeId);
 
         var resposta = itens.Select(c =>
         {
-            var encargos = CalcularEncargos(c.Valor, c.Vencimento, politica);
+            var encargos = CalcularEncargos(
+                c.Valor,
+                c.Vencimento,
+                politica,
+                correcaoPercentual);
             return new CobrancaUnidadeDto(
                 c.Id,
                 c.OrganizacaoId,
@@ -3779,11 +3811,18 @@ public class FinanceiroController : ControllerBase
 
         var unidadesMap = unidades.ToDictionary(u => u.Id, u => u);
         var politica = await ObterPoliticaCobrancaAsync(organizacaoId);
+        var correcaoPercentual = await ObterCorrecaoPercentualAsync(
+            politica,
+            DateTime.UtcNow);
 
         var resposta = cobrancas.Select(c =>
         {
             var unidadeInfo = unidadesMap.GetValueOrDefault(c.UnidadeOrganizacionalId);
-            var encargos = CalcularEncargos(c.Valor, c.Vencimento, politica);
+            var encargos = CalcularEncargos(
+                c.Valor,
+                c.Vencimento,
+                politica,
+                correcaoPercentual);
             return new CobrancaOrganizacaoDto(
                 c.Id,
                 c.OrganizacaoId,

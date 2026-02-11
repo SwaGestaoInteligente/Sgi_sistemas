@@ -8730,7 +8730,7 @@ export default function FinanceiroView({
                     <input
                       value={politicaCorrecao}
                       onChange={(e) => setPoliticaCorrecao(e.target.value)}
-                      placeholder="Ex.: 0,5"
+                      placeholder="Ex.: 0,5 (fallback)"
                       disabled={politicaCorrecaoTipo === "SEM_CORRECAO"}
                     />
                   </label>
