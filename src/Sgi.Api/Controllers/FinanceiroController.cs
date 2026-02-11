@@ -90,6 +90,102 @@ public class FinanceiroController : ControllerBase
         return CorrecaoTiposValidos.Contains(normalizado) ? normalizado : CorrecaoTipoPadrao;
     }
 
+    private static string GerarIdentificadorExternoFicticio(Guid id)
+        => $"TESTE-{id.ToString("N")[..12].ToUpperInvariant()}";
+
+    private static string GerarLinhaDigitavelFicticia(Guid id)
+    {
+        var digitos = GerarDigitosBase(id, 47);
+        return $"{digitos[..5]}.{digitos.Substring(5, 5)} " +
+               $"{digitos.Substring(10, 5)}.{digitos.Substring(15, 6)} " +
+               $"{digitos.Substring(21, 5)}.{digitos.Substring(26, 6)} " +
+               $"{digitos[32]} {digitos.Substring(33, 14)}";
+    }
+
+    private static string GerarQrCodePixFicticio(Guid id, decimal valor)
+    {
+        var chave = $"TESTE-{id.ToString("N")[..25].ToUpperInvariant()}";
+        var merchantName = "SGI TESTE";
+        var merchantCity = "TESTE";
+        var txId = $"T{id.ToString("N")[..8].ToUpperInvariant()}";
+        var valorTexto = Math.Max(0m, valor).ToString("0.00", CultureInfo.InvariantCulture);
+
+        var payloadSemCrc = string.Concat(
+            "000201",
+            "010212",
+            MontarCampo("26", MontarCampo("00", "BR.GOV.BCB.PIX") + MontarCampo("01", chave)),
+            MontarCampo("52", "0000"),
+            MontarCampo("53", "986"),
+            MontarCampo("54", valorTexto),
+            MontarCampo("58", "BR"),
+            MontarCampo("59", merchantName),
+            MontarCampo("60", merchantCity),
+            MontarCampo("62", MontarCampo("05", txId)),
+            "6304");
+
+        var crc = CalcularCrc16(payloadSemCrc);
+        return payloadSemCrc + crc;
+    }
+
+    private static string GerarUrlPagamentoFicticia(string tipo, Guid id)
+        => $"https://pagamento.teste.local/{tipo}/{id.ToString("N")}";
+
+    private static string MontarCampo(string id, string valor)
+        => $"{id}{valor.Length:00}{valor}";
+
+    private static string GerarDigitosBase(Guid id, int tamanho)
+    {
+        var raw = id.ToString("N");
+        var sb = new StringBuilder(tamanho);
+        foreach (var ch in raw)
+        {
+            if (char.IsDigit(ch))
+            {
+                sb.Append(ch);
+            }
+            else
+            {
+                sb.Append(((int)ch % 10).ToString(CultureInfo.InvariantCulture));
+            }
+        }
+
+        while (sb.Length < tamanho)
+        {
+            sb.Append((sb.Length % 10).ToString(CultureInfo.InvariantCulture));
+        }
+
+        if (sb.Length > tamanho)
+        {
+            sb.Length = tamanho;
+        }
+
+        return sb.ToString();
+    }
+
+    private static string CalcularCrc16(string payload)
+    {
+        const ushort polinomio = 0x1021;
+        ushort resultado = 0xFFFF;
+
+        foreach (var ch in payload)
+        {
+            resultado ^= (ushort)(ch << 8);
+            for (var i = 0; i < 8; i++)
+            {
+                if ((resultado & 0x8000) != 0)
+                {
+                    resultado = (ushort)((resultado << 1) ^ polinomio);
+                }
+                else
+                {
+                    resultado <<= 1;
+                }
+            }
+        }
+
+        return resultado.ToString("X4", CultureInfo.InvariantCulture);
+    }
+
     private record CobrancaEncargos(
         decimal ValorAtualizado,
         decimal Multa,
@@ -1553,22 +1649,51 @@ public class FinanceiroController : ControllerBase
             ? "paga"
             : (dataVencimento < DateTime.UtcNow.Date ? "vencida" : "emitida");
 
+        var faturaId = Guid.NewGuid();
+        var tipo = string.IsNullOrWhiteSpace(request.Tipo)
+            ? "boleto"
+            : request.Tipo.Trim().ToLowerInvariant();
+        var identificador = string.IsNullOrWhiteSpace(request.IdentificadorExterno)
+            ? GerarIdentificadorExternoFicticio(faturaId)
+            : request.IdentificadorExterno.Trim();
+        var linhaDigitavel = string.IsNullOrWhiteSpace(request.LinhaDigitavel)
+            ? null
+            : request.LinhaDigitavel.Trim();
+        var qrCode = string.IsNullOrWhiteSpace(request.QrCode)
+            ? null
+            : request.QrCode.Trim();
+        var urlPagamento = string.IsNullOrWhiteSpace(request.UrlPagamento)
+            ? null
+            : request.UrlPagamento.Trim();
+
+        if (string.IsNullOrWhiteSpace(linhaDigitavel) &&
+            (string.Equals(tipo, "boleto", StringComparison.OrdinalIgnoreCase) ||
+             string.Equals(tipo, "pix", StringComparison.OrdinalIgnoreCase)))
+        {
+            linhaDigitavel = GerarLinhaDigitavelFicticia(faturaId);
+        }
+
+        if (string.IsNullOrWhiteSpace(qrCode) &&
+            string.Equals(tipo, "pix", StringComparison.OrdinalIgnoreCase))
+        {
+            qrCode = GerarQrCodePixFicticio(faturaId, lancamento.Valor);
+        }
+
+        if (string.IsNullOrWhiteSpace(urlPagamento))
+        {
+            urlPagamento = GerarUrlPagamentoFicticia(tipo, faturaId);
+        }
+
         var fatura = new DocumentoCobranca
         {
-            Id = Guid.NewGuid(),
+            Id = faturaId,
             OrganizacaoId = request.OrganizacaoId,
             LancamentoFinanceiroId = request.LancamentoFinanceiroId,
-            Tipo = string.IsNullOrWhiteSpace(request.Tipo) ? "boleto" : request.Tipo.Trim().ToLowerInvariant(),
-            IdentificadorExterno = string.IsNullOrWhiteSpace(request.IdentificadorExterno)
-                ? null
-                : request.IdentificadorExterno.Trim(),
-            LinhaDigitavel = string.IsNullOrWhiteSpace(request.LinhaDigitavel)
-                ? null
-                : request.LinhaDigitavel.Trim(),
-            QrCode = string.IsNullOrWhiteSpace(request.QrCode) ? null : request.QrCode.Trim(),
-            UrlPagamento = string.IsNullOrWhiteSpace(request.UrlPagamento)
-                ? null
-                : request.UrlPagamento.Trim(),
+            Tipo = tipo,
+            IdentificadorExterno = identificador,
+            LinhaDigitavel = linhaDigitavel,
+            QrCode = qrCode,
+            UrlPagamento = urlPagamento,
             Status = statusInicial,
             DataEmissao = DateTime.UtcNow,
             DataVencimento = dataVencimento,
