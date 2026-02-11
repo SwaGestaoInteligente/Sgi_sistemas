@@ -149,8 +149,8 @@ export default function PortariaView({ organizacao, readOnly }: PortariaViewProp
   useEffect(() => {
     if (typeof window === "undefined") return;
     const raw = window.localStorage.getItem(storeKey);
-    setHasStorage(Boolean(raw));
     if (!raw) {
+      setHasStorage(false);
       setAcessos([]);
       setAutorizacoes([]);
       setEntregas([]);
@@ -158,10 +158,19 @@ export default function PortariaView({ organizacao, readOnly }: PortariaViewProp
     }
     try {
       const parsed = JSON.parse(raw) as Partial<PortariaStore>;
-      setAcessos(Array.isArray(parsed.acessos) ? parsed.acessos : []);
-      setAutorizacoes(Array.isArray(parsed.autorizacoes) ? parsed.autorizacoes : []);
-      setEntregas(Array.isArray(parsed.entregas) ? parsed.entregas : []);
+      const acessosRaw = Array.isArray(parsed.acessos) ? parsed.acessos : [];
+      const autorizacoesRaw = Array.isArray(parsed.autorizacoes)
+        ? parsed.autorizacoes
+        : [];
+      const entregasRaw = Array.isArray(parsed.entregas) ? parsed.entregas : [];
+      setAcessos(acessosRaw);
+      setAutorizacoes(autorizacoesRaw);
+      setEntregas(entregasRaw);
+      setHasStorage(
+        acessosRaw.length > 0 || autorizacoesRaw.length > 0 || entregasRaw.length > 0
+      );
     } catch {
+      setHasStorage(false);
       setAcessos([]);
       setAutorizacoes([]);
       setEntregas([]);
