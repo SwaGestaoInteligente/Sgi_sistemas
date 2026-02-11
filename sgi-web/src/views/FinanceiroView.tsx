@@ -3899,6 +3899,37 @@ export default function FinanceiroView({
     );
     return maximo;
   }, [resumoMeses]);
+  const pessoasPorId = Object.fromEntries(
+    pessoasFinanceiro.map((p) => [p.id, p.nome])
+  );
+  const pessoasPorIdMap = Object.fromEntries(
+    pessoasFinanceiro.map((p) => [p.id, p])
+  );
+  const receitasPorIdMap = Object.fromEntries(receitas.map((r) => [r.id, r]));
+  const unidadesCobrancaMap = Object.fromEntries(
+    cobrancasUnidadeOrg.map((c) => [
+      c.unidadeOrganizacionalId,
+      `${c.unidadeCodigo} - ${c.unidadeNome}`
+    ])
+  );
+  const hojeIso = new Date().toISOString().slice(0, 10);
+  const inadimplentes = receitas
+    .filter(
+      (r) =>
+        !isSituacaoPaga(r.situacao) &&
+        !!r.dataVencimento &&
+        r.dataVencimento.slice(0, 10) < hojeIso
+    )
+    .sort((a, b) =>
+      (a.dataVencimento ?? "").localeCompare(b.dataVencimento ?? "")
+    );
+  const totalInadimplenteValor = inadimplentes.reduce(
+    (sum, item) => sum + item.valor,
+    0
+  );
+  const percentualPagoMes = totalAPagarMes
+    ? Math.round((totalPagoMes / totalAPagarMes) * 100)
+    : 0;
   const atalhosFinanceiro = useMemo(
     () => [
       {
@@ -3960,37 +3991,6 @@ export default function FinanceiroView({
     ],
     [despesas.length, faturas.length, inadimplentes.length, itensCobrados.length, receitas.length]
   );
-  const pessoasPorId = Object.fromEntries(
-    pessoasFinanceiro.map((p) => [p.id, p.nome])
-  );
-  const pessoasPorIdMap = Object.fromEntries(
-    pessoasFinanceiro.map((p) => [p.id, p])
-  );
-  const receitasPorIdMap = Object.fromEntries(receitas.map((r) => [r.id, r]));
-  const unidadesCobrancaMap = Object.fromEntries(
-    cobrancasUnidadeOrg.map((c) => [
-      c.unidadeOrganizacionalId,
-      `${c.unidadeCodigo} - ${c.unidadeNome}`
-    ])
-  );
-  const hojeIso = new Date().toISOString().slice(0, 10);
-  const inadimplentes = receitas
-    .filter(
-      (r) =>
-        !isSituacaoPaga(r.situacao) &&
-        !!r.dataVencimento &&
-        r.dataVencimento.slice(0, 10) < hojeIso
-    )
-    .sort((a, b) =>
-      (a.dataVencimento ?? "").localeCompare(b.dataVencimento ?? "")
-    );
-  const totalInadimplenteValor = inadimplentes.reduce(
-    (sum, item) => sum + item.valor,
-    0
-  );
-  const percentualPagoMes = totalAPagarMes
-    ? Math.round((totalPagoMes / totalAPagarMes) * 100)
-    : 0;
   const filtroInadimplencia = inadimplenciaBusca.trim().toLowerCase();
   const inadimplentesFiltrados = !filtroInadimplencia
     ? inadimplentes
