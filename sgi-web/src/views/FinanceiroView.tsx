@@ -1,5 +1,5 @@
 ﻿import React, { useEffect, useState } from "react";
-import { useCallback, useRef } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import * as XLSX from "xlsx";
@@ -3827,10 +3827,23 @@ export default function FinanceiroView({
           pessoa.toLowerCase().includes(filtroInadimplencia)
         );
       });
+  const faturasImprimiveisPorLancamento = useMemo(() => {
+    const map = new Map<string, DocumentoCobranca>();
+    faturas.forEach((fatura) => {
+      if (fatura.tipo !== "boleto" && fatura.tipo !== "pix") return;
+      map.set(fatura.lancamentoFinanceiroId, fatura);
+    });
+    return map;
+  }, [faturas]);
+  const exibeAcoesInadimplencia =
+    canWrite || faturasImprimiveisPorLancamento.size > 0;
   const totalInadimplencia = inadimplentesFiltrados.reduce(
     (sum, item) => sum + item.valor,
     0
   );
+  const exibeAcoesFaturas =
+    canWrite ||
+    faturas.some((fat) => fat.tipo === "boleto" || fat.tipo === "pix");
   const normalizarDataIso = (data?: string) => (data ? data.slice(0, 10) : "");
   const dentroPeriodoLivro = (data?: string) => {
     const iso = normalizarDataIso(data);
@@ -7612,7 +7625,7 @@ export default function FinanceiroView({
                   <th className="finance-value-header">Realizado</th>
                   <th className="finance-value-header">Desvio</th>
                   <th>Obs.</th>
-                  {canWrite && <th>Acoes</th>}
+                  {exibeAcoesInadimplencia && <th>Acoes</th>}
                 </tr>
               </thead>
               <tbody>
@@ -9123,7 +9136,7 @@ export default function FinanceiroView({
                   <th>Emissao</th>
                   <th>Vencimento</th>
                   <th>Status</th>
-                  {canWrite && <th>Ações</th>}
+                  {exibeAcoesFaturas && <th>Ações</th>}
                 </tr>
               </thead>
               <tbody>
@@ -9142,60 +9155,64 @@ export default function FinanceiroView({
                       <td>{formatarData(fat.dataEmissao)}</td>
                       <td>{formatarData(fat.dataVencimento)}</td>
                       <td>{fat.status}</td>
-                      {canWrite && (
+                      {exibeAcoesFaturas && (
                         <td>
                           <div className="table-actions">
-                            <button
-                              type="button"
-                              className="action-primary"
-                              disabled={loading || fat.status === "paga"}
-                              onClick={() => void atualizarStatusFatura(fat, "paga")}
-                            >
-                              Dar baixa
-                            </button>
-                            <details className="action-menu">
-                              <summary title="Mais acoes" aria-label="Mais acoes">
-                                ⋮
-                              </summary>
-                              <div className="action-menu-panel">
-                                {vencida && (
-                                  <button
-                                    type="button"
-                                    className="action-secondary"
-                                    disabled={loading}
-                                    onClick={() => irParaInadimplencia(fat)}
-                                  >
-                                    Ir para inadimplencia
-                                  </button>
-                                )}
-                                {(fat.tipo === "boleto" || fat.tipo === "pix") && (
-                                  <button
-                                    type="button"
-                                    className="action-secondary"
-                                    disabled={loading}
-                                    onClick={() => void gerarBoletoPdf(fat)}
-                                  >
-                                    Baixar boleto
-                                  </button>
-                                )}
+                            {(fat.tipo === "boleto" || fat.tipo === "pix") && (
+                              <button
+                                type="button"
+                                className="action-primary"
+                                disabled={loading}
+                                onClick={() => void gerarBoletoPdf(fat)}
+                              >
+                                Imprimir 2a via
+                              </button>
+                            )}
+                            {canWrite && (
+                              <>
                                 <button
                                   type="button"
-                                  className="action-secondary"
-                                  disabled={loading || fat.status === "cancelada"}
-                                  onClick={() => void atualizarStatusFatura(fat, "cancelada")}
+                                  className="action-primary"
+                                  disabled={loading || fat.status === "paga"}
+                                  onClick={() => void atualizarStatusFatura(fat, "paga")}
                                 >
-                                  Cancelar
+                                  Dar baixa
                                 </button>
-                                <button
-                                  type="button"
-                                  className="action-secondary"
-                                  disabled={loading || fat.status === "emitida"}
-                                  onClick={() => void atualizarStatusFatura(fat, "emitida")}
-                                >
-                                  Reabrir
-                                </button>
-                              </div>
-                            </details>
+                                <details className="action-menu">
+                                  <summary title="Mais acoes" aria-label="Mais acoes">
+                                    ⋮
+                                  </summary>
+                                  <div className="action-menu-panel">
+                                    {vencida && (
+                                      <button
+                                        type="button"
+                                        className="action-secondary"
+                                        disabled={loading}
+                                        onClick={() => irParaInadimplencia(fat)}
+                                      >
+                                        Ir para inadimplencia
+                                      </button>
+                                    )}
+                                    <button
+                                      type="button"
+                                      className="action-secondary"
+                                      disabled={loading || fat.status === "cancelada"}
+                                      onClick={() => void atualizarStatusFatura(fat, "cancelada")}
+                                    >
+                                      Cancelar
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="action-secondary"
+                                      disabled={loading || fat.status === "emitida"}
+                                      onClick={() => void atualizarStatusFatura(fat, "emitida")}
+                                    >
+                                      Reabrir
+                                    </button>
+                                  </div>
+                                </details>
+                              </>
+                            )}
                           </div>
                         </td>
                       )}
@@ -9204,7 +9221,7 @@ export default function FinanceiroView({
                 })}
                 {faturas.length === 0 && (
                   <tr>
-                    <td colSpan={canWrite ? 6 : 5} style={{ textAlign: "center" }}>
+                    <td colSpan={exibeAcoesFaturas ? 6 : 5} style={{ textAlign: "center" }}>
                       Nenhuma fatura emitida ainda.
                     </td>
                   </tr>
@@ -9424,40 +9441,55 @@ export default function FinanceiroView({
                           </div>
                         )}
                       </td>
-                      {canWrite && (
+                      {exibeAcoesInadimplencia && (
                         <td>
                           <div className="table-actions">
-                            <details className="action-menu">
-                              <summary title="Mais acoes" aria-label="Mais acoes">
-                                ⋮
-                              </summary>
-                              <div className="action-menu-panel">
+                            {(() => {
+                              const fatura = faturasImprimiveisPorLancamento.get(lanc.id);
+                              if (!fatura) return null;
+                              return (
                                 <button
                                   type="button"
-                                  className="action-secondary"
-                                  onClick={() => irParaCobrancas(lanc)}
+                                  className="action-primary"
+                                  onClick={() => void gerarBoletoPdf(fatura)}
                                 >
-                                  Ir para cobrancas
+                                  Imprimir 2a via
                                 </button>
-                                {cobranca && (
+                              );
+                            })()}
+                            {canWrite && (
+                              <details className="action-menu">
+                                <summary title="Mais acoes" aria-label="Mais acoes">
+                                  ⋮
+                                </summary>
+                                <div className="action-menu-panel">
                                   <button
                                     type="button"
                                     className="action-secondary"
-                                    onClick={() => void criarAcordoRapido(cobranca)}
-                                    disabled={acordosLoading}
+                                    onClick={() => irParaCobrancas(lanc)}
                                   >
-                                    Criar acordo
+                                    Ir para cobrancas
                                   </button>
-                                )}
-                                <button
-                                  type="button"
-                                  className="action-secondary"
-                                  onClick={() => irParaAcordos(unidadeId)}
-                                >
-                                  Ver acordos
-                                </button>
-                              </div>
-                            </details>
+                                  {cobranca && (
+                                    <button
+                                      type="button"
+                                      className="action-secondary"
+                                      onClick={() => void criarAcordoRapido(cobranca)}
+                                      disabled={acordosLoading}
+                                    >
+                                      Criar acordo
+                                    </button>
+                                  )}
+                                  <button
+                                    type="button"
+                                    className="action-secondary"
+                                    onClick={() => irParaAcordos(unidadeId)}
+                                  >
+                                    Ver acordos
+                                  </button>
+                                </div>
+                              </details>
+                            )}
                           </div>
                         </td>
                       )}
@@ -9466,7 +9498,7 @@ export default function FinanceiroView({
                 })}
                 {inadimplentesFiltrados.length === 0 && (
                   <tr>
-                    <td colSpan={canWrite ? 8 : 7} style={{ textAlign: "center" }}>
+                    <td colSpan={exibeAcoesInadimplencia ? 8 : 7} style={{ textAlign: "center" }}>
                       Nenhum inadimplente encontrado.
                     </td>
                   </tr>

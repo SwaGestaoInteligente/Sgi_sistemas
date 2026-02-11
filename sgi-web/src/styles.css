@@ -1029,6 +1029,17 @@ button:focus-visible {
   overflow-wrap: normal;
 }
 
+.correspondencia-table {
+  min-width: 960px;
+}
+
+.correspondencia-table th,
+.correspondencia-table td {
+  white-space: nowrap;
+  word-break: keep-all;
+  overflow-wrap: normal;
+}
+
 .finance-table th,
 .finance-table td {
   padding: 8px 10px;

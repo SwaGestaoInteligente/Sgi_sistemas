@@ -28,6 +28,7 @@ import UnidadesView from "../views/UnidadesView";
 import VeiculosView from "../views/VeiculosView";
 import PetsView from "../views/PetsView";
 import PortariaView from "../views/PortariaView";
+import CorrespondenciaView from "../views/CorrespondenciaView";
 import ConfiguracoesView, {
   ConfiguracoesTab,
   menuConfiguracoes
@@ -179,7 +180,6 @@ const viewMeta: Record<AppView, { title: string; subtitle: string }> = {
 };
 
 const comingSoonViews = new Set<AppView>([
-  "correspondencia",
   "comunicados",
   "documentos",
   "relatorios"
@@ -2921,6 +2921,13 @@ const InnerApp: React.FC = () => {
 
           {viewPermitido && view === "portaria" && (
             <PortariaView
+              organizacao={organizacaoSelecionada}
+              readOnly={!podeCriarOperacao}
+            />
+          )}
+
+          {viewPermitido && view === "correspondencia" && (
+            <CorrespondenciaView
               organizacao={organizacaoSelecionada}
               readOnly={!podeCriarOperacao}
             />
