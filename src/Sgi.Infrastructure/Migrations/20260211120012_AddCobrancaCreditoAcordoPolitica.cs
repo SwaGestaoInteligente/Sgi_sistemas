@@ -11,41 +11,15 @@ namespace Sgi.Infrastructure.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropIndex(
-                name: "IX_PrevisoesOrcamentarias_OrganizacaoId_PlanoContasId_Ano_Mes_Tipo",
-                table: "PrevisoesOrcamentarias");
-
-            migrationBuilder.DropIndex(
-                name: "IX_MedidoresConsumo_OrganizacaoId",
-                table: "MedidoresConsumo");
-
-            migrationBuilder.DropIndex(
-                name: "IX_MedidoresConsumo_UnidadeOrganizacionalId",
-                table: "MedidoresConsumo");
-
-            migrationBuilder.DropIndex(
-                name: "IX_LeiturasConsumo_MedidorId",
-                table: "LeiturasConsumo");
-
-            migrationBuilder.DropIndex(
-                name: "IX_LeiturasConsumo_OrganizacaoId",
-                table: "LeiturasConsumo");
-
-            migrationBuilder.DropIndex(
-                name: "IX_LancamentosPagamentos_LancamentoFinanceiroId",
-                table: "LancamentosPagamentos");
-
-            migrationBuilder.DropIndex(
-                name: "IX_LancamentosPagamentos_OrganizacaoId",
-                table: "LancamentosPagamentos");
-
-            migrationBuilder.DropIndex(
-                name: "IX_AbonosFinanceiros_LancamentoFinanceiroId",
-                table: "AbonosFinanceiros");
-
-            migrationBuilder.DropIndex(
-                name: "IX_AbonosFinanceiros_OrganizacaoId",
-                table: "AbonosFinanceiros");
+            migrationBuilder.Sql(@"DROP INDEX IF EXISTS ""IX_PrevisoesOrcamentarias_OrganizacaoId_PlanoContasId_Ano_Mes_Tipo"";");
+            migrationBuilder.Sql(@"DROP INDEX IF EXISTS ""IX_MedidoresConsumo_OrganizacaoId"";");
+            migrationBuilder.Sql(@"DROP INDEX IF EXISTS ""IX_MedidoresConsumo_UnidadeOrganizacionalId"";");
+            migrationBuilder.Sql(@"DROP INDEX IF EXISTS ""IX_LeiturasConsumo_MedidorId"";");
+            migrationBuilder.Sql(@"DROP INDEX IF EXISTS ""IX_LeiturasConsumo_OrganizacaoId"";");
+            migrationBuilder.Sql(@"DROP INDEX IF EXISTS ""IX_LancamentosPagamentos_LancamentoFinanceiroId"";");
+            migrationBuilder.Sql(@"DROP INDEX IF EXISTS ""IX_LancamentosPagamentos_OrganizacaoId"";");
+            migrationBuilder.Sql(@"DROP INDEX IF EXISTS ""IX_AbonosFinanceiros_LancamentoFinanceiroId"";");
+            migrationBuilder.Sql(@"DROP INDEX IF EXISTS ""IX_AbonosFinanceiros_OrganizacaoId"";");
 
             migrationBuilder.AddColumn<Guid>(
                 name: "AcordoId",
