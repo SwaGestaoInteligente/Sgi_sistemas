@@ -8026,72 +8026,74 @@ export default function FinanceiroView({
               </div>
             </div>
 
-            <table className="table" style={{ marginTop: 12 }}>
-              <thead>
-                <tr>
-                  <th>Mes</th>
-                  <th>Categoria</th>
-                  <th className="finance-value-header">Previsto</th>
-                  <th className="finance-value-header">Realizado</th>
-                  <th className="finance-value-header">Desvio</th>
-                  <th>Obs.</th>
-                  {exibeAcoesInadimplencia && <th>Acoes</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {previsoesOrdenadas.map((item) => {
-                  const key = `${item.planoContasId}-${item.mes}`;
-                  const realizado = realizadosPorCategoriaMes[key] ?? 0;
-                  const desvio = realizado - item.valorPrevisto;
-                  return (
-                    <tr key={item.id}>
-                      <td>{mesesLabel[item.mes - 1] ?? item.mes}</td>
-                      <td>
-                        {categoriasPrevisaoPorId[item.planoContasId] ??
-                          item.planoContasId}
-                      </td>
-                      <td className="finance-value-cell">
-                        {formatarValor(item.valorPrevisto)}
-                      </td>
-                      <td className="finance-value-cell">
-                        {formatarValor(realizado)}
-                      </td>
-                      <td className="finance-value-cell">
-                        {formatarValor(desvio)}
-                      </td>
-                      <td>{item.observacao ?? "-"}</td>
-                      {canWrite && (
-                        <td>
-                          <div className="finance-table-actions">
-                            <button
-                              type="button"
-                              className="action-secondary"
-                              onClick={() => void atualizarPrevisaoOrcamentaria(item)}
-                            >
-                              Editar
-                            </button>
-                            <button
-                              type="button"
-                              className="action-secondary"
-                              onClick={() => void removerPrevisaoOrcamentaria(item)}
-                            >
-                              Remover
-                            </button>
-                          </div>
-                        </td>
-                      )}
-                    </tr>
-                  );
-                })}
-                {previsoesOrdenadas.length === 0 && (
+            <div className="finance-table-scroll finance-table-scroll--wide">
+              <table className="table" style={{ marginTop: 12 }}>
+                <thead>
                   <tr>
-                    <td colSpan={canWrite ? 7 : 6} style={{ textAlign: "center" }}>
-                      Nenhuma previsao cadastrada ainda.
-                    </td>
+                    <th>Mes</th>
+                    <th>Categoria</th>
+                    <th className="finance-value-header">Previsto</th>
+                    <th className="finance-value-header">Realizado</th>
+                    <th className="finance-value-header">Desvio</th>
+                    <th>Obs.</th>
+                    {exibeAcoesInadimplencia && <th>Acoes</th>}
                   </tr>
-                )}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {previsoesOrdenadas.map((item) => {
+                    const key = `${item.planoContasId}-${item.mes}`;
+                    const realizado = realizadosPorCategoriaMes[key] ?? 0;
+                    const desvio = realizado - item.valorPrevisto;
+                    return (
+                      <tr key={item.id}>
+                        <td>{mesesLabel[item.mes - 1] ?? item.mes}</td>
+                        <td>
+                          {categoriasPrevisaoPorId[item.planoContasId] ??
+                            item.planoContasId}
+                        </td>
+                        <td className="finance-value-cell">
+                          {formatarValor(item.valorPrevisto)}
+                        </td>
+                        <td className="finance-value-cell">
+                          {formatarValor(realizado)}
+                        </td>
+                        <td className="finance-value-cell">
+                          {formatarValor(desvio)}
+                        </td>
+                        <td>{item.observacao ?? "-"}</td>
+                        {canWrite && (
+                          <td>
+                            <div className="finance-table-actions">
+                              <button
+                                type="button"
+                                className="action-secondary"
+                                onClick={() => void atualizarPrevisaoOrcamentaria(item)}
+                              >
+                                Editar
+                              </button>
+                              <button
+                                type="button"
+                                className="action-secondary"
+                                onClick={() => void removerPrevisaoOrcamentaria(item)}
+                              >
+                                Remover
+                              </button>
+                            </div>
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })}
+                  {previsoesOrdenadas.length === 0 && (
+                    <tr>
+                      <td colSpan={canWrite ? 7 : 6} style={{ textAlign: "center" }}>
+                        Nenhuma previsao cadastrada ainda.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
 
             {abonoSelecionadoId && (
               <section className="finance-form-card" style={{ marginTop: 12 }}>
@@ -8250,126 +8252,128 @@ export default function FinanceiroView({
               </button>
             </div>
 
-            <table className="table" style={{ marginTop: 12 }}>
-              <thead>
-                <tr>
-                  <th>Lancamento</th>
-                  <th>Tipo</th>
-                  <th className="finance-value-header">Valor</th>
-                  <th>Motivo</th>
-                  <th>Status</th>
-                  <th>Solicitado</th>
-                  {exibeAcoesInadimplencia && <th>Acoes</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {abonosOrdenados.map((abono) => {
-                  const statusInfo = statusAbonoMeta(abono.status);
-                  return (
-                    <tr key={abono.id}>
-                      <td>
-                        {receitasLabelPorId[abono.lancamentoFinanceiroId] ??
-                          abono.lancamentoFinanceiroId}
-                      </td>
-                      <td>
-                        {abono.tipo === "percentual"
-                          ? `Percentual${abono.percentual ? ` (${abono.percentual}%)` : ""}`
-                          : "Valor"}
-                      </td>
-                      <td className="finance-value-cell">
-                        {formatarValor(abono.valor)}
-                      </td>
-                      <td>{abono.motivo}</td>
-                      <td>
-                        <span className={`badge-status ${statusInfo.className}`}>
-                          {statusInfo.label}
-                        </span>
-                      </td>
-                      <td>{formatarData(abono.dataSolicitacao)}</td>
-                      {canWrite && (
-                        <td>
-                          <div className="finance-table-actions">
-                            {abono.status === "pendente" && (
-                              <>
-                                <button
-                                  type="button"
-                                  className="action-secondary"
-                                  onClick={() =>
-                                    void atualizarStatusAbono(abono, "em_analise")
-                                  }
-                                  disabled={abonoLoading}
-                                >
-                                  Enviar para analise
-                                </button>
-                                <button
-                                  type="button"
-                                  className="action-secondary"
-                                  onClick={() =>
-                                    void atualizarStatusAbono(abono, "cancelado")
-                                  }
-                                  disabled={abonoLoading}
-                                >
-                                  Cancelar
-                                </button>
-                              </>
-                            )}
-                            {abono.status === "em_analise" && (
-                              <>
-                                <button
-                                  type="button"
-                                  className="action-secondary"
-                                  onClick={() =>
-                                    void atualizarStatusAbono(abono, "aprovado")
-                                  }
-                                  disabled={abonoLoading}
-                                >
-                                  Aprovar
-                                </button>
-                                <button
-                                  type="button"
-                                  className="action-secondary"
-                                  onClick={() =>
-                                    void atualizarStatusAbono(abono, "cancelado")
-                                  }
-                                  disabled={abonoLoading}
-                                >
-                                  Cancelar
-                                </button>
-                              </>
-                            )}
-                            <button
-                              type="button"
-                              className="action-secondary"
-                              onClick={() => void removerAbono(abono)}
-                              disabled={abono.status === "aprovado" || abonoLoading}
-                            >
-                              Remover
-                            </button>
-                            <button
-                              type="button"
-                              className="button-secondary"
-                              onClick={() => {
-                                setAbonoSelecionadoId(abono.id);
-                                setAutoOpenAbonoAnexoId(abono.id);
-                              }}
-                            >
-                              Anexos
-                            </button>
-                          </div>
-                        </td>
-                      )}
-                    </tr>
-                  );
-                })}
-                {abonosOrdenados.length === 0 && (
+            <div className="finance-table-scroll finance-table-scroll--wide">
+              <table className="table" style={{ marginTop: 12 }}>
+                <thead>
                   <tr>
-                    <td colSpan={canWrite ? 7 : 6} style={{ textAlign: "center" }}>
-                      Nenhum abono cadastrado ainda.
-                    </td>
+                    <th>Lancamento</th>
+                    <th>Tipo</th>
+                    <th className="finance-value-header">Valor</th>
+                    <th>Motivo</th>
+                    <th>Status</th>
+                    <th>Solicitado</th>
+                    {exibeAcoesInadimplencia && <th>Acoes</th>}
                   </tr>
-                )}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {abonosOrdenados.map((abono) => {
+                    const statusInfo = statusAbonoMeta(abono.status);
+                    return (
+                      <tr key={abono.id}>
+                        <td>
+                          {receitasLabelPorId[abono.lancamentoFinanceiroId] ??
+                            abono.lancamentoFinanceiroId}
+                        </td>
+                        <td>
+                          {abono.tipo === "percentual"
+                            ? `Percentual${abono.percentual ? ` (${abono.percentual}%)` : ""}`
+                            : "Valor"}
+                        </td>
+                        <td className="finance-value-cell">
+                          {formatarValor(abono.valor)}
+                        </td>
+                        <td>{abono.motivo}</td>
+                        <td>
+                          <span className={`badge-status ${statusInfo.className}`}>
+                            {statusInfo.label}
+                          </span>
+                        </td>
+                        <td>{formatarData(abono.dataSolicitacao)}</td>
+                        {canWrite && (
+                          <td>
+                            <div className="finance-table-actions">
+                              {abono.status === "pendente" && (
+                                <>
+                                  <button
+                                    type="button"
+                                    className="action-secondary"
+                                    onClick={() =>
+                                      void atualizarStatusAbono(abono, "em_analise")
+                                    }
+                                    disabled={abonoLoading}
+                                  >
+                                    Enviar para analise
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="action-secondary"
+                                    onClick={() =>
+                                      void atualizarStatusAbono(abono, "cancelado")
+                                    }
+                                    disabled={abonoLoading}
+                                  >
+                                    Cancelar
+                                  </button>
+                                </>
+                              )}
+                              {abono.status === "em_analise" && (
+                                <>
+                                  <button
+                                    type="button"
+                                    className="action-secondary"
+                                    onClick={() =>
+                                      void atualizarStatusAbono(abono, "aprovado")
+                                    }
+                                    disabled={abonoLoading}
+                                  >
+                                    Aprovar
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="action-secondary"
+                                    onClick={() =>
+                                      void atualizarStatusAbono(abono, "cancelado")
+                                    }
+                                    disabled={abonoLoading}
+                                  >
+                                    Cancelar
+                                  </button>
+                                </>
+                              )}
+                              <button
+                                type="button"
+                                className="action-secondary"
+                                onClick={() => void removerAbono(abono)}
+                                disabled={abono.status === "aprovado" || abonoLoading}
+                              >
+                                Remover
+                              </button>
+                              <button
+                                type="button"
+                                className="button-secondary"
+                                onClick={() => {
+                                  setAbonoSelecionadoId(abono.id);
+                                  setAutoOpenAbonoAnexoId(abono.id);
+                                }}
+                              >
+                                Anexos
+                              </button>
+                            </div>
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })}
+                  {abonosOrdenados.length === 0 && (
+                    <tr>
+                      <td colSpan={canWrite ? 7 : 6} style={{ textAlign: "center" }}>
+                        Nenhum abono cadastrado ainda.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </section>
         </div>
       )}
@@ -9546,106 +9550,108 @@ export default function FinanceiroView({
 
             {erro && <p className="error">{erro}</p>}
 
-            <table className="table finance-table">
-              <thead>
-                <tr>
-                  <th>Tipo</th>
-                  <th>Lancamento</th>
-                  <th>Emissao</th>
-                  <th>Vencimento</th>
-                  <th>Status</th>
-                  {exibeAcoesFaturas && <th>Ações</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {faturasFiltradas.map((fat) => {
-                  const vencida =
-                    fat.status === "vencida" ||
-                    (fat.status !== "paga" &&
-                      new Date(fat.dataVencimento).getTime() < Date.now());
-                  return (
-                    <tr key={fat.id}>
-                      <td>{fat.tipo}</td>
-                      <td>
-                        {receitasPorId[fat.lancamentoFinanceiroId]?.descricao ??
-                          fat.lancamentoFinanceiroId}
-                      </td>
-                      <td>{formatarData(fat.dataEmissao)}</td>
-                      <td>{formatarData(fat.dataVencimento)}</td>
-                      <td>{fat.status}</td>
-                      {exibeAcoesFaturas && (
+            <div className="finance-table-scroll finance-table-scroll--wide">
+              <table className="table finance-table">
+                <thead>
+                  <tr>
+                    <th>Tipo</th>
+                    <th>Lancamento</th>
+                    <th>Emissao</th>
+                    <th>Vencimento</th>
+                    <th>Status</th>
+                    {exibeAcoesFaturas && <th>Ações</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {faturasFiltradas.map((fat) => {
+                    const vencida =
+                      fat.status === "vencida" ||
+                      (fat.status !== "paga" &&
+                        new Date(fat.dataVencimento).getTime() < Date.now());
+                    return (
+                      <tr key={fat.id}>
+                        <td>{fat.tipo}</td>
                         <td>
-                          <div className="table-actions">
-                            {(fat.tipo === "boleto" || fat.tipo === "pix") && (
-                              <button
-                                type="button"
-                                className="action-primary"
-                                disabled={loading}
-                                onClick={() => void gerarBoletoPdf(fat)}
-                              >
-                                Imprimir 2a via
-                              </button>
-                            )}
-                            {canWrite && (
-                              <>
+                          {receitasPorId[fat.lancamentoFinanceiroId]?.descricao ??
+                            fat.lancamentoFinanceiroId}
+                        </td>
+                        <td>{formatarData(fat.dataEmissao)}</td>
+                        <td>{formatarData(fat.dataVencimento)}</td>
+                        <td>{fat.status}</td>
+                        {exibeAcoesFaturas && (
+                          <td>
+                            <div className="table-actions">
+                              {(fat.tipo === "boleto" || fat.tipo === "pix") && (
                                 <button
                                   type="button"
                                   className="action-primary"
-                                  disabled={loading || fat.status === "paga"}
-                                  onClick={() => void atualizarStatusFatura(fat, "paga")}
+                                  disabled={loading}
+                                  onClick={() => void gerarBoletoPdf(fat)}
                                 >
-                                  Dar baixa
+                                  Imprimir 2a via
                                 </button>
-                                <details className="action-menu">
-                                  <summary title="Mais acoes" aria-label="Mais acoes">
-                                    ⋮
-                                  </summary>
-                                  <div className="action-menu-panel">
-                                    {vencida && (
+                              )}
+                              {canWrite && (
+                                <>
+                                  <button
+                                    type="button"
+                                    className="action-primary"
+                                    disabled={loading || fat.status === "paga"}
+                                    onClick={() => void atualizarStatusFatura(fat, "paga")}
+                                  >
+                                    Dar baixa
+                                  </button>
+                                  <details className="action-menu">
+                                    <summary title="Mais acoes" aria-label="Mais acoes">
+                                      ⋮
+                                    </summary>
+                                    <div className="action-menu-panel">
+                                      {vencida && (
+                                        <button
+                                          type="button"
+                                          className="action-secondary"
+                                          disabled={loading}
+                                          onClick={() => irParaInadimplencia(fat)}
+                                        >
+                                          Ir para inadimplencia
+                                        </button>
+                                      )}
                                       <button
                                         type="button"
                                         className="action-secondary"
-                                        disabled={loading}
-                                        onClick={() => irParaInadimplencia(fat)}
+                                        disabled={loading || fat.status === "cancelada"}
+                                        onClick={() => void atualizarStatusFatura(fat, "cancelada")}
                                       >
-                                        Ir para inadimplencia
+                                        Cancelar
                                       </button>
-                                    )}
-                                    <button
-                                      type="button"
-                                      className="action-secondary"
-                                      disabled={loading || fat.status === "cancelada"}
-                                      onClick={() => void atualizarStatusFatura(fat, "cancelada")}
-                                    >
-                                      Cancelar
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="action-secondary"
-                                      disabled={loading || fat.status === "emitida"}
-                                      onClick={() => void atualizarStatusFatura(fat, "emitida")}
-                                    >
-                                      Reabrir
-                                    </button>
-                                  </div>
-                                </details>
-                              </>
-                            )}
-                          </div>
-                        </td>
-                      )}
+                                      <button
+                                        type="button"
+                                        className="action-secondary"
+                                        disabled={loading || fat.status === "emitida"}
+                                        onClick={() => void atualizarStatusFatura(fat, "emitida")}
+                                      >
+                                        Reabrir
+                                      </button>
+                                    </div>
+                                  </details>
+                                </>
+                              )}
+                            </div>
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })}
+                  {faturasFiltradas.length === 0 && (
+                    <tr>
+                      <td colSpan={exibeAcoesFaturas ? 6 : 5} style={{ textAlign: "center" }}>
+                        Nenhuma fatura encontrada.
+                      </td>
                     </tr>
-                  );
-                })}
-                {faturasFiltradas.length === 0 && (
-                  <tr>
-                    <td colSpan={exibeAcoesFaturas ? 6 : 5} style={{ textAlign: "center" }}>
-                      Nenhuma fatura encontrada.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </section>
         </div>
       )}
@@ -9799,130 +9805,132 @@ export default function FinanceiroView({
               </div>
             </div>
 
-            <table className="table finance-table">
-              <thead>
-                <tr>
-                  <th>Morador</th>
-                  <th>Unidade</th>
-                  <th>Descricao</th>
-                  <th>Vencimento</th>
-                  <th>Dias atraso</th>
-                  <th className="finance-value-header">Valor</th>
-                  <th>Status</th>
-                  {canWrite && <th>Acoes</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {inadimplentesFiltrados.map((lanc) => {
-                  const venc = lanc.dataVencimento
-                    ? new Date(lanc.dataVencimento)
-                    : null;
-                  const vencTime = venc?.getTime();
-                  const diasAtraso =
-                    vencTime && Number.isFinite(vencTime)
-                      ? Math.max(
-                          0,
-                          Math.floor((Date.now() - vencTime) / 86400000)
-                        )
-                      : 0;
-                  const pessoaInfo = pessoasPorIdMap[lanc.pessoaId];
-                  const unidadeId = pessoaInfo?.unidadeOrganizacionalId;
-                  const acordo = unidadeId ? acordoPorUnidade.get(unidadeId) : null;
-                  const cobranca = unidadeId ? cobrancaPorUnidade.get(unidadeId) : null;
-                  const unidadeLabel = unidadeId
-                    ? unidadesCobrancaMap[unidadeId] ??
-                      pessoaInfo?.unidadeCodigo ??
-                      unidadeId
-                    : pessoaInfo?.unidadeCodigo ?? "-";
-                  return (
-                    <tr key={lanc.id}>
-                      <td>{pessoasPorId[lanc.pessoaId] ?? "-"}</td>
-                      <td>{unidadeLabel}</td>
-                      <td>{lanc.descricao}</td>
-                      <td>
-                        {lanc.dataVencimento
-                          ? new Date(lanc.dataVencimento).toLocaleDateString("pt-BR")
-                          : "-"}
-                      </td>
-                      <td>{diasAtraso}</td>
-                      <td className="finance-value-cell">
-                        {lanc.valor.toLocaleString("pt-BR", {
-                          style: "currency",
-                          currency: "BRL"
-                        })}
-                      </td>
-                      <td>
-                        <div>{statusMeta(lanc.situacao).label}</div>
-                        {acordo && (
-                          <div className="finance-item-sub">
-                            Acordo: {acordo.status}
-                          </div>
-                        )}
-                      </td>
-                      {exibeAcoesInadimplencia && (
+            <div className="finance-table-scroll finance-table-scroll--wide">
+              <table className="table finance-table">
+                <thead>
+                  <tr>
+                    <th>Morador</th>
+                    <th>Unidade</th>
+                    <th>Descricao</th>
+                    <th>Vencimento</th>
+                    <th>Dias atraso</th>
+                    <th className="finance-value-header">Valor</th>
+                    <th>Status</th>
+                    {canWrite && <th>Acoes</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {inadimplentesFiltrados.map((lanc) => {
+                    const venc = lanc.dataVencimento
+                      ? new Date(lanc.dataVencimento)
+                      : null;
+                    const vencTime = venc?.getTime();
+                    const diasAtraso =
+                      vencTime && Number.isFinite(vencTime)
+                        ? Math.max(
+                            0,
+                            Math.floor((Date.now() - vencTime) / 86400000)
+                          )
+                        : 0;
+                    const pessoaInfo = pessoasPorIdMap[lanc.pessoaId];
+                    const unidadeId = pessoaInfo?.unidadeOrganizacionalId;
+                    const acordo = unidadeId ? acordoPorUnidade.get(unidadeId) : null;
+                    const cobranca = unidadeId ? cobrancaPorUnidade.get(unidadeId) : null;
+                    const unidadeLabel = unidadeId
+                      ? unidadesCobrancaMap[unidadeId] ??
+                        pessoaInfo?.unidadeCodigo ??
+                        unidadeId
+                      : pessoaInfo?.unidadeCodigo ?? "-";
+                    return (
+                      <tr key={lanc.id}>
+                        <td>{pessoasPorId[lanc.pessoaId] ?? "-"}</td>
+                        <td>{unidadeLabel}</td>
+                        <td>{lanc.descricao}</td>
                         <td>
-                          <div className="table-actions">
-                            {(() => {
-                              const fatura = faturasImprimiveisPorLancamento.get(lanc.id);
-                              if (!fatura) return null;
-                              return (
-                                <button
-                                  type="button"
-                                  className="action-primary"
-                                  onClick={() => void gerarBoletoPdf(fatura)}
-                                >
-                                  Imprimir 2a via
-                                </button>
-                              );
-                            })()}
-                            {canWrite && (
-                              <details className="action-menu">
-                                <summary title="Mais acoes" aria-label="Mais acoes">
-                                  ⋮
-                                </summary>
-                                <div className="action-menu-panel">
+                          {lanc.dataVencimento
+                            ? new Date(lanc.dataVencimento).toLocaleDateString("pt-BR")
+                            : "-"}
+                        </td>
+                        <td>{diasAtraso}</td>
+                        <td className="finance-value-cell">
+                          {lanc.valor.toLocaleString("pt-BR", {
+                            style: "currency",
+                            currency: "BRL"
+                          })}
+                        </td>
+                        <td>
+                          <div>{statusMeta(lanc.situacao).label}</div>
+                          {acordo && (
+                            <div className="finance-item-sub">
+                              Acordo: {acordo.status}
+                            </div>
+                          )}
+                        </td>
+                        {exibeAcoesInadimplencia && (
+                          <td>
+                            <div className="table-actions">
+                              {(() => {
+                                const fatura = faturasImprimiveisPorLancamento.get(lanc.id);
+                                if (!fatura) return null;
+                                return (
                                   <button
                                     type="button"
-                                    className="action-secondary"
-                                    onClick={() => irParaCobrancas(lanc)}
+                                    className="action-primary"
+                                    onClick={() => void gerarBoletoPdf(fatura)}
                                   >
-                                    Ir para cobrancas
+                                    Imprimir 2a via
                                   </button>
-                                  {cobranca && (
+                                );
+                              })()}
+                              {canWrite && (
+                                <details className="action-menu">
+                                  <summary title="Mais acoes" aria-label="Mais acoes">
+                                    ⋮
+                                  </summary>
+                                  <div className="action-menu-panel">
                                     <button
                                       type="button"
                                       className="action-secondary"
-                                      onClick={() => void criarAcordoRapido(cobranca)}
-                                      disabled={acordosLoading}
+                                      onClick={() => irParaCobrancas(lanc)}
                                     >
-                                      Criar acordo
+                                      Ir para cobrancas
                                     </button>
-                                  )}
-                                  <button
-                                    type="button"
-                                    className="action-secondary"
-                                    onClick={() => irParaAcordos(unidadeId)}
-                                  >
-                                    Ver acordos
-                                  </button>
-                                </div>
-                              </details>
-                            )}
-                          </div>
-                        </td>
-                      )}
+                                    {cobranca && (
+                                      <button
+                                        type="button"
+                                        className="action-secondary"
+                                        onClick={() => void criarAcordoRapido(cobranca)}
+                                        disabled={acordosLoading}
+                                      >
+                                        Criar acordo
+                                      </button>
+                                    )}
+                                    <button
+                                      type="button"
+                                      className="action-secondary"
+                                      onClick={() => irParaAcordos(unidadeId)}
+                                    >
+                                      Ver acordos
+                                    </button>
+                                  </div>
+                                </details>
+                              )}
+                            </div>
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })}
+                  {inadimplentesFiltrados.length === 0 && (
+                    <tr>
+                      <td colSpan={exibeAcoesInadimplencia ? 8 : 7} style={{ textAlign: "center" }}>
+                        Nenhum inadimplente encontrado.
+                      </td>
                     </tr>
-                  );
-                })}
-                {inadimplentesFiltrados.length === 0 && (
-                  <tr>
-                    <td colSpan={exibeAcoesInadimplencia ? 8 : 7} style={{ textAlign: "center" }}>
-                      Nenhum inadimplente encontrado.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </section>
 
           <section className="finance-table-card" ref={cobrancasRef}>
@@ -9965,73 +9973,75 @@ export default function FinanceiroView({
               <p className="error">{cobrancasUnidadeErro}</p>
             )}
 
-            <table className="table finance-table">
-              <thead>
-                <tr>
-                  <th>Unidade</th>
-                  <th>Descricao</th>
-                  <th>Vencimento</th>
-                  <th>Dias atraso</th>
-                  <th className="finance-value-header">Valor</th>
-                  <th className="finance-value-header">Atualizado</th>
-                  <th className="finance-value-header">Credito</th>
-                  <th className="finance-value-header">Saldo</th>
-                  <th>Status</th>
-                  {canWrite && <th>Acoes</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {cobrancasUnidadeFiltradas.map((cobranca) => {
-                  const valorAtualizado = cobranca.valorAtualizado ?? cobranca.valor;
-                  const credito = Math.max(0, cobranca.creditoDisponivel ?? 0);
-                  const saldo = Math.max(0, valorAtualizado - credito);
-                  return (
-                    <tr key={cobranca.id}>
-                      <td>
-                        {cobranca.unidadeCodigo} - {cobranca.unidadeNome}
-                      </td>
-                      <td>{cobranca.descricao}</td>
-                      <td>{formatarData(cobranca.vencimento)}</td>
-                      <td>{cobranca.diasAtraso ?? 0}</td>
-                      <td className="finance-value-cell">
-                        {formatarValor(cobranca.valor)}
-                      </td>
-                      <td className="finance-value-cell">
-                        {formatarValor(valorAtualizado)}
-                      </td>
-                      <td className="finance-value-cell">
-                        {credito > 0 ? formatarValor(credito) : "-"}
-                      </td>
-                      <td className="finance-value-cell">
-                        {formatarValor(saldo)}
-                      </td>
-                      <td>{cobranca.status}</td>
-                      {canWrite && (
-                        <td>
-                          <div className="finance-table-actions">
-                            <button
-                              type="button"
-                              className="action-secondary"
-                              onClick={() => void criarAcordoRapido(cobranca)}
-                              disabled={acordosLoading}
-                            >
-                              Criar acordo
-                            </button>
-                          </div>
-                        </td>
-                      )}
-                    </tr>
-                  );
-                })}
-                {cobrancasUnidadeFiltradas.length === 0 && (
+            <div className="finance-table-scroll finance-table-scroll--wide">
+              <table className="table finance-table">
+                <thead>
                   <tr>
-                    <td colSpan={canWrite ? 10 : 9} style={{ textAlign: "center" }}>
-                      Nenhuma cobranca pendente encontrada.
-                    </td>
+                    <th>Unidade</th>
+                    <th>Descricao</th>
+                    <th>Vencimento</th>
+                    <th>Dias atraso</th>
+                    <th className="finance-value-header">Valor</th>
+                    <th className="finance-value-header">Atualizado</th>
+                    <th className="finance-value-header">Credito</th>
+                    <th className="finance-value-header">Saldo</th>
+                    <th>Status</th>
+                    {canWrite && <th>Acoes</th>}
                   </tr>
-                )}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {cobrancasUnidadeFiltradas.map((cobranca) => {
+                    const valorAtualizado = cobranca.valorAtualizado ?? cobranca.valor;
+                    const credito = Math.max(0, cobranca.creditoDisponivel ?? 0);
+                    const saldo = Math.max(0, valorAtualizado - credito);
+                    return (
+                      <tr key={cobranca.id}>
+                        <td>
+                          {cobranca.unidadeCodigo} - {cobranca.unidadeNome}
+                        </td>
+                        <td>{cobranca.descricao}</td>
+                        <td>{formatarData(cobranca.vencimento)}</td>
+                        <td>{cobranca.diasAtraso ?? 0}</td>
+                        <td className="finance-value-cell">
+                          {formatarValor(cobranca.valor)}
+                        </td>
+                        <td className="finance-value-cell">
+                          {formatarValor(valorAtualizado)}
+                        </td>
+                        <td className="finance-value-cell">
+                          {credito > 0 ? formatarValor(credito) : "-"}
+                        </td>
+                        <td className="finance-value-cell">
+                          {formatarValor(saldo)}
+                        </td>
+                        <td>{cobranca.status}</td>
+                        {canWrite && (
+                          <td>
+                            <div className="finance-table-actions">
+                              <button
+                                type="button"
+                                className="action-secondary"
+                                onClick={() => void criarAcordoRapido(cobranca)}
+                                disabled={acordosLoading}
+                              >
+                                Criar acordo
+                              </button>
+                            </div>
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })}
+                  {cobrancasUnidadeFiltradas.length === 0 && (
+                    <tr>
+                      <td colSpan={canWrite ? 10 : 9} style={{ textAlign: "center" }}>
+                        Nenhuma cobranca pendente encontrada.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </section>
 
           <section className="finance-table-card" ref={acordosRef}>
@@ -10068,59 +10078,61 @@ export default function FinanceiroView({
             {acordosErro && <p className="error">{acordosErro}</p>}
             {acordosAviso && <p className="finance-form-sub">{acordosAviso}</p>}
 
-            <table className="table finance-table">
-              <thead>
-                <tr>
-                  <th>Unidade</th>
-                  <th>Parcelas</th>
-                  <th className="finance-value-header">Total</th>
-                  <th className="finance-value-header">Desconto</th>
-                  <th>Status</th>
-                  {canWrite && <th>Acoes</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {acordosFiltrados.map((acordo) => (
-                  <tr key={acordo.id}>
-                    <td>
-                      {unidadesCobrancaMap[acordo.unidadeOrganizacionalId] ??
-                        acordo.unidadeOrganizacionalId}
-                    </td>
-                    <td>{acordo.numeroParcelas}</td>
-                    <td className="finance-value-cell">
-                      {formatarValor(acordo.totalAcordo)}
-                    </td>
-                    <td className="finance-value-cell">
-                      {formatarValor(acordo.desconto)}
-                    </td>
-                    <td>{acordo.status}</td>
-                    {canWrite && (
-                      <td>
-                        <div className="finance-table-actions">
-                          <button
-                            type="button"
-                            className="action-secondary"
-                            onClick={() => void gerarBoletosAcordo(acordo)}
-                            disabled={acordosGerandoId === acordo.id}
-                          >
-                            {acordosGerandoId === acordo.id
-                              ? "Gerando..."
-                              : "Gerar boletos"}
-                          </button>
-                        </div>
-                      </td>
-                    )}
-                  </tr>
-                ))}
-                {acordosFiltrados.length === 0 && (
+            <div className="finance-table-scroll finance-table-scroll--wide">
+              <table className="table finance-table">
+                <thead>
                   <tr>
-                    <td colSpan={canWrite ? 6 : 5} style={{ textAlign: "center" }}>
-                      Nenhum acordo cadastrado.
-                    </td>
+                    <th>Unidade</th>
+                    <th>Parcelas</th>
+                    <th className="finance-value-header">Total</th>
+                    <th className="finance-value-header">Desconto</th>
+                    <th>Status</th>
+                    {canWrite && <th>Acoes</th>}
                   </tr>
-                )}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {acordosFiltrados.map((acordo) => (
+                    <tr key={acordo.id}>
+                      <td>
+                        {unidadesCobrancaMap[acordo.unidadeOrganizacionalId] ??
+                          acordo.unidadeOrganizacionalId}
+                      </td>
+                      <td>{acordo.numeroParcelas}</td>
+                      <td className="finance-value-cell">
+                        {formatarValor(acordo.totalAcordo)}
+                      </td>
+                      <td className="finance-value-cell">
+                        {formatarValor(acordo.desconto)}
+                      </td>
+                      <td>{acordo.status}</td>
+                      {canWrite && (
+                        <td>
+                          <div className="finance-table-actions">
+                            <button
+                              type="button"
+                              className="action-secondary"
+                              onClick={() => void gerarBoletosAcordo(acordo)}
+                              disabled={acordosGerandoId === acordo.id}
+                            >
+                              {acordosGerandoId === acordo.id
+                                ? "Gerando..."
+                                : "Gerar boletos"}
+                            </button>
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                  {acordosFiltrados.length === 0 && (
+                    <tr>
+                      <td colSpan={canWrite ? 6 : 5} style={{ textAlign: "center" }}>
+                        Nenhum acordo cadastrado.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </section>
 
           <section className="finance-table-card">

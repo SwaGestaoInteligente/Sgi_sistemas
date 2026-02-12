@@ -196,6 +196,14 @@ public class RelatoriosController : ControllerBase
             return File(Encoding.UTF8.GetBytes(csv), "text/csv", "relatorio-veiculos.csv");
         }
 
+        if (string.Equals(formato, "pdf", StringComparison.OrdinalIgnoreCase))
+        {
+            var linhas = itens.Select(v =>
+                $"{v.Placa} | {v.Marca} {v.Modelo} | {v.Cor} | {v.Status}");
+            var pdf = BuildPdf("Relatorio de veiculos", linhas);
+            return File(pdf, "application/pdf", "relatorio-veiculos.pdf");
+        }
+
         return Ok(itens);
     }
 
@@ -235,6 +243,14 @@ public class RelatoriosController : ControllerBase
                     p.Status
                 }));
             return File(Encoding.UTF8.GetBytes(csv), "text/csv", "relatorio-pets.csv");
+        }
+
+        if (string.Equals(formato, "pdf", StringComparison.OrdinalIgnoreCase))
+        {
+            var linhas = itens.Select(p =>
+                $"{p.Nome} | {p.Especie} | {p.Porte} | {p.Status}");
+            var pdf = BuildPdf("Relatorio de pets", linhas);
+            return File(pdf, "application/pdf", "relatorio-pets.pdf");
         }
 
         return Ok(itens);

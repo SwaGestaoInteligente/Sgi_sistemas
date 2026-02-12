@@ -38,6 +38,7 @@ import VeiculosView from "../views/VeiculosView";
 import PetsView from "../views/PetsView";
 import PortariaView from "../views/PortariaView";
 import CorrespondenciaView from "../views/CorrespondenciaView";
+import ComunicadosView from "../views/ComunicadosView";
 import DocumentosView from "../views/DocumentosView";
 import RelatoriosView from "../views/RelatoriosView";
 import CartaoPontoView from "../views/CartaoPontoView";
@@ -217,9 +218,100 @@ const viewMeta: Record<AppView, { title: string; subtitle: string }> = {
   }
 };
 
-const comingSoonViews = new Set<AppView>([
-  "comunicados"
-]);
+const comingSoonViews = new Set<AppView>([]);
+
+const autoAjudaPassos: Record<AppView, string[]> = {
+  dashboard: [
+    "Revise os indicadores de saldo, contas e alertas do dia.",
+    "Use os atalhos para abrir o modulo de trabalho rapidamente.",
+    "Atualize os dados antes de iniciar o expediente."
+  ],
+  pessoas: [
+    "Cadastre nome, papel e contato principal.",
+    "Use o filtro por papel para localizar moradores e fornecedores.",
+    "Clique na pessoa para editar ou remover."
+  ],
+  unidades: [
+    "Cadastre a estrutura em ordem: bloco e depois unidade.",
+    "Mantenha codigo interno unico para evitar duplicidade.",
+    "Arquive unidade inativa em vez de remover historico."
+  ],
+  financeiro: [
+    "Confira contas a pagar e receber da competencia.",
+    "Registre pagamento/baixa com conta financeira correta.",
+    "Feche pendencias de inadimplencia e conciliacao."
+  ],
+  configuracoes: [
+    "Ajuste cadastros base antes de operar o financeiro.",
+    "Valide plano de contas e categorias da operacao.",
+    "Evite hardcode: mantenha tudo configuravel."
+  ],
+  funcionarios: [
+    "Cadastre dados essenciais do colaborador.",
+    "Vincule telefone e papel para rastreio operacional.",
+    "Use busca por nome para manutencao rapida."
+  ],
+  fornecedores: [
+    "Cadastre fornecedor com telefone e documento.",
+    "Padronize categoria para relatorios e filtros.",
+    "Mantenha somente fornecedores ativos na operacao."
+  ],
+  veiculos: [
+    "Cadastre placa e dados basicos do veiculo.",
+    "Vincule o veiculo ao responsavel correto.",
+    "Revise status periodicamente."
+  ],
+  pets: [
+    "Cadastre nome, especie, porte e status.",
+    "Relacione pet a unidade/pessoa quando necessario.",
+    "Use filtros para consultas rapidas."
+  ],
+  chamados: [
+    "Abra chamado com titulo claro e prioridade.",
+    "Registre atualizacoes no historico do atendimento.",
+    "Conclua com status resolvido/encerrado."
+  ],
+  reservas: [
+    "Selecione recurso e periodo de uso.",
+    "Confirme janela de horario antes de salvar.",
+    "Acompanhe status: pendente, aprovada, concluida."
+  ],
+  portaria: [
+    "Cadastre entradas, autorizacoes e entregas.",
+    "Valide documento e unidade no ato do acesso.",
+    "Finalize a movimentacao para manter trilha correta."
+  ],
+  cartaoPonto: [
+    "Selecione colaborador e competencia da apuracao.",
+    "Registre marcacoes na sequencia correta do dia.",
+    "Use ajustes com justificativa para trilha de auditoria."
+  ],
+  correspondencia: [
+    "Cadastre recebimento com unidade e remetente.",
+    "Atualize status para entregue quando finalizado.",
+    "Use busca por unidade para retirada rapida."
+  ],
+  comunicados: [
+    "Publique aviso com titulo objetivo e texto direto.",
+    "Escolha escopo geral ou unidade especifica.",
+    "Arquive comunicados antigos para manter painel limpo."
+  ],
+  documentos: [
+    "Classifique por categoria e visibilidade.",
+    "Use tags para facilitar busca por tema.",
+    "Arquive versoes antigas mantendo historico."
+  ],
+  relatorios: [
+    "Escolha modulo e periodo antes de exportar.",
+    "Prefira PDF para envio ao cliente final.",
+    "Consulte historico para rastrear arquivos gerados."
+  ],
+  minhaUnidade: [
+    "Revise cobrancas em aberto e historico de pagamento.",
+    "Use atalhos para 2a via e inadimplencia.",
+    "Acompanhe credito e comprovantes da unidade."
+  ]
+};
 
 const financeiroSiglas: Record<FinanceiroTab, string> = {
   mapaFinanceiro: "MF",
@@ -1019,7 +1111,7 @@ const MinhaUnidadeView: React.FC<{
 
   return (
     <div className="finance-layout">
-      <div className="finance-side-column">
+      <div className="finance-main-column">
         <section className="finance-table-card">
           <div className="finance-table-header">
             <div>
@@ -1141,7 +1233,7 @@ const MinhaUnidadeView: React.FC<{
           </div>
         </div>
         <div className="unit-table-scroll">
-          <table className="table finance-table table--fixed table--chamados">
+          <table className="table finance-table table--fixed unit-vehicles-table">
             <thead>
               <tr>
                 <th>Placa</th>
@@ -2086,7 +2178,7 @@ const ChamadosView: React.FC<{
               Atualizar
             </button>
           </div>
-          <div className="chamados-scroll">
+          <div className="chamados-scroll finance-table-scroll finance-table-scroll--wide">
             <table className="table finance-table chamados-table table--chamados">
               <thead>
                 <tr>
@@ -2423,6 +2515,18 @@ const ReservasView: React.FC<{
     null
   );
 
+  const formatarDataHoraBrasil = (valor: string) => {
+    if (!valor) return "-";
+    const data = new Date(valor);
+    if (Number.isNaN(data.getTime())) return "-";
+    const hora = data.toLocaleTimeString("pt-BR", {
+      hour: "2-digit",
+      minute: "2-digit"
+    });
+    const dia = data.toLocaleDateString("pt-BR");
+    return `${hora} ${dia}`;
+  };
+
   const canCriar = IGNORAR_PERFIS || can(session, organizacao.id, "operacao.create");
   const canGerenciar =
     IGNORAR_PERFIS || can(session, organizacao.id, "operacao.manage");
@@ -2563,6 +2667,9 @@ const ReservasView: React.FC<{
               value={dataInicio}
               onChange={(e) => setDataInicio(e.target.value)}
             />
+            <span className="inline-edit-hint">
+              Padrao BR: {formatarDataHoraBrasil(dataInicio)}
+            </span>
           </label>
           <label>
             Data fim
@@ -2571,6 +2678,9 @@ const ReservasView: React.FC<{
               value={dataFim}
               onChange={(e) => setDataFim(e.target.value)}
             />
+            <span className="inline-edit-hint">
+              Padrao BR: {formatarDataHoraBrasil(dataFim)}
+            </span>
           </label>
           <label>
             Status
@@ -3000,6 +3110,7 @@ const InnerApp: React.FC = () => {
 
   const viewPermitido = canView(view);
   const isComingSoon = comingSoonViews.has(view);
+  const ajudaPassos = autoAjudaPassos[view] ?? [];
 
   const activePathname = useMemo(() => {
     if (!token || !session) return "/login";
@@ -3915,6 +4026,17 @@ const InnerApp: React.FC = () => {
           {erro && <p className="error">{erro}</p>}
           {mensagemDemo && <p className="success">{mensagemDemo}</p>}
 
+          {viewPermitido && ajudaPassos.length > 0 && (
+            <details className="quick-help-card">
+              <summary>Autoajuda desta tela</summary>
+              <ol className="quick-help-list">
+                {ajudaPassos.map((item, index) => (
+                  <li key={`${view}-ajuda-${index}`}>{item}</li>
+                ))}
+              </ol>
+            </details>
+          )}
+
           {!viewPermitido && (
             <NoAccessPage mensagem="Acesso restrito." />
           )}
@@ -4039,6 +4161,13 @@ const InnerApp: React.FC = () => {
 
           {viewPermitido && view === "correspondencia" && (
             <CorrespondenciaView
+              organizacao={organizacaoSelecionada}
+              readOnly={!podeCriarOperacao}
+            />
+          )}
+
+          {viewPermitido && view === "comunicados" && (
+            <ComunicadosView
               organizacao={organizacaoSelecionada}
               readOnly={!podeCriarOperacao}
             />

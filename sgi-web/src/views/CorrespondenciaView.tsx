@@ -510,104 +510,106 @@ export default function CorrespondenciaView({
 
         {erro && <p className="error">{erro}</p>}
 
-        <table className="table correspondencia-table">
-          <thead>
-            <tr>
-              <th>Tipo</th>
-              <th>Descricao</th>
-              <th>Remetente</th>
-              <th>Unidade</th>
-              <th>Recebido em</th>
-              <th>Retirada</th>
-              <th>Status</th>
-              <th>Acoes</th>
-            </tr>
-          </thead>
-          <tbody>
-            {itensFiltrados.map((item) => {
-              const statusClass =
-                item.status === "pendente"
-                  ? "badge-status--pendente"
-                  : item.status === "entregue"
-                    ? "badge-status--pago"
-                    : "badge-status--cancelado";
-              return (
-                <tr key={item.id}>
-                  <td>
-                    <span className="badge">{tipoLabel[item.tipo]}</span>
-                  </td>
-                  <td>
-                    <div>{item.descricao}</div>
-                    {item.observacao && <span className="unit-muted">{item.observacao}</span>}
-                  </td>
-                  <td>{item.remetente ?? "-"}</td>
-                  <td>{unidadeLabel(item.unidadeId)}</td>
-                  <td>
-                    <div>{formatarDataHora(item.recebidoEm)}</div>
-                    <span className="unit-muted">
-                      {pessoaLabel(item.recebidoPorId)}
-                    </span>
-                  </td>
-                  <td>
-                    {item.retiradaEm ? (
-                      <>
-                        <div>{formatarDataHora(item.retiradaEm)}</div>
-                        <span className="unit-muted">
-                          {item.retiradoPor ?? "Sem recebedor"}
-                        </span>
-                      </>
-                    ) : (
-                      "-"
-                    )}
-                  </td>
-                  <td>
-                    <span className={`badge-status ${statusClass}`}>
-                      {statusLabel[item.status]}
-                    </span>
-                  </td>
-                  <td className="finance-actions-cell">
-                    <div className="table-actions">
-                      {!readOnly && item.status === "pendente" && (
-                        <button
-                          type="button"
-                          className="action-primary"
-                          onClick={() => registrarRetirada(item.id)}
-                        >
-                          Registrar retirada
-                        </button>
+        <div className="finance-table-scroll finance-table-scroll--wide">
+          <table className="table correspondencia-table">
+            <thead>
+              <tr>
+                <th>Tipo</th>
+                <th>Descricao</th>
+                <th>Remetente</th>
+                <th>Unidade</th>
+                <th>Recebido em</th>
+                <th>Retirada</th>
+                <th>Status</th>
+                <th>Acoes</th>
+              </tr>
+            </thead>
+            <tbody>
+              {itensFiltrados.map((item) => {
+                const statusClass =
+                  item.status === "pendente"
+                    ? "badge-status--pendente"
+                    : item.status === "entregue"
+                      ? "badge-status--pago"
+                      : "badge-status--cancelado";
+                return (
+                  <tr key={item.id}>
+                    <td>
+                      <span className="badge">{tipoLabel[item.tipo]}</span>
+                    </td>
+                    <td>
+                      <div>{item.descricao}</div>
+                      {item.observacao && <span className="unit-muted">{item.observacao}</span>}
+                    </td>
+                    <td>{item.remetente ?? "-"}</td>
+                    <td>{unidadeLabel(item.unidadeId)}</td>
+                    <td>
+                      <div>{formatarDataHora(item.recebidoEm)}</div>
+                      <span className="unit-muted">
+                        {pessoaLabel(item.recebidoPorId)}
+                      </span>
+                    </td>
+                    <td>
+                      {item.retiradaEm ? (
+                        <>
+                          <div>{formatarDataHora(item.retiradaEm)}</div>
+                          <span className="unit-muted">
+                            {item.retiradoPor ?? "Sem recebedor"}
+                          </span>
+                        </>
+                      ) : (
+                        "-"
                       )}
-                      {!readOnly && item.status === "pendente" && (
-                        <button
-                          type="button"
-                          className="action-secondary"
-                          onClick={() => marcarRetornado(item.id)}
-                        >
-                          Retornar
-                        </button>
-                      )}
-                      {!readOnly && (
-                        <button
-                          type="button"
-                          className="action-secondary"
-                          onClick={() => removerItem(item.id)}
-                        >
-                          Remover
-                        </button>
-                      )}
-                    </div>
+                    </td>
+                    <td>
+                      <span className={`badge-status ${statusClass}`}>
+                        {statusLabel[item.status]}
+                      </span>
+                    </td>
+                    <td className="finance-actions-cell">
+                      <div className="table-actions">
+                        {!readOnly && item.status === "pendente" && (
+                          <button
+                            type="button"
+                            className="action-primary"
+                            onClick={() => registrarRetirada(item.id)}
+                          >
+                            Registrar retirada
+                          </button>
+                        )}
+                        {!readOnly && item.status === "pendente" && (
+                          <button
+                            type="button"
+                            className="action-secondary"
+                            onClick={() => marcarRetornado(item.id)}
+                          >
+                            Retornar
+                          </button>
+                        )}
+                        {!readOnly && (
+                          <button
+                            type="button"
+                            className="action-secondary"
+                            onClick={() => removerItem(item.id)}
+                          >
+                            Remover
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              {itensFiltrados.length === 0 && (
+                <tr>
+                  <td colSpan={8} style={{ textAlign: "center" }}>
+                    Nenhuma correspondencia encontrada.
                   </td>
                 </tr>
-              );
-            })}
-            {itensFiltrados.length === 0 && (
-              <tr>
-                <td colSpan={8} style={{ textAlign: "center" }}>
-                  Nenhuma correspondencia encontrada.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+              )}
+            </tbody>
+          </table>
+        </div>
       </section>
     </div>
   );

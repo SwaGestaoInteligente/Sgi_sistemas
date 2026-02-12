@@ -3083,133 +3083,135 @@ export default function ConfiguracoesView(props: ConfiguracoesViewProps) {
 
             {planosErro && <p className="error">{planosErro}</p>}
 
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Codigo</th>
-                  <th>Nome</th>
-                  <th>Tipo</th>
-                  <th>Nivel</th>
-                  <th>Pai</th>
-                  {podeEditar && <th>Acoes</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {planosOrdenados.map((plano) => {
-                  const parent = plano.parentId
-                    ? planosContas.find((p) => p.id === plano.parentId)
-                    : null;
-                  return (
-                    <tr key={plano.id}>
-                      <td>{plano.codigo}</td>
-                      <td style={{ paddingLeft: (plano.nivel - 1) * 12 }}>
-                        {plano.nome}
-                      </td>
-                      <td>{plano.tipo}</td>
-                      <td>{plano.nivel}</td>
-                      <td>{parent ? parent.nome : "-"}</td>
-                      {podeEditar && (
-                        <td>
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              if (!token) return;
-                              const novoNome = window.prompt(
-                                "Novo nome da categoria:",
-                                plano.nome
-                              );
-                              if (!novoNome || !novoNome.trim()) return;
-                              try {
-                                setPlanosErro(null);
-                                setPlanosLoading(true);
-                                const atualizada = await api.atualizarPlanoContas(
-                                  token,
-                                  plano.id,
-                                  {
-                                    codigo: plano.codigo,
-                                    nome: novoNome.trim(),
-                                    tipo: plano.tipo,
-                                    nivel: plano.nivel,
-                                    parentId: plano.parentId
-                                  }
-                                );
-                                setPlanosContas((prev) =>
-                                  prev.map((p) =>
-                                    p.id === atualizada.id ? atualizada : p
-                                  )
-                                );
-                              } catch (e: any) {
-                                setPlanosErro(
-                                  e?.message || "Erro ao atualizar categoria"
-                                );
-                              } finally {
-                                setPlanosLoading(false);
-                              }
-                            }}
-                            style={{
-                              marginRight: 8,
-                              backgroundColor: "#e5e7eb",
-                              color: "#111827"
-                            }}
-                          >
-                            Renomear
-                          </button>
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              if (!token) return;
-                              const possuiFilhos = planosContas.some(
-                                (p) => p.parentId === plano.id
-                              );
-                              if (possuiFilhos) {
-                                window.alert(
-                                  "Remova primeiro as categorias filhas."
-                                );
-                                return;
-                              }
-                              if (
-                                !window.confirm(
-                                  `Remover categoria \"${plano.nome}\"?`
-                                )
-                              ) {
-                                return;
-                              }
-                              try {
-                                setPlanosErro(null);
-                                setPlanosLoading(true);
-                                await api.removerPlanoContas(token, plano.id);
-                                setPlanosContas((prev) =>
-                                  prev.filter((p) => p.id !== plano.id)
-                                );
-                              } catch (e: any) {
-                                setPlanosErro(
-                                  e?.message || "Erro ao remover categoria"
-                                );
-                              } finally {
-                                setPlanosLoading(false);
-                              }
-                            }}
-                            style={{
-                              backgroundColor: "#ef4444",
-                              color: "#ffffff"
-                            }}
-                          >
-                            Remover
-                          </button>
-                        </td>
-                      )}
-                    </tr>
-                  );
-                })}
-                {planosOrdenados.length === 0 && (
+            <div className="table-wrap">
+              <table className="table">
+                <thead>
                   <tr>
-                    <td colSpan={podeEditar ? 6 : 5} style={{ textAlign: "center" }}>
-                      Nenhuma categoria cadastrada ainda.
-                    </td>
+                    <th>Codigo</th>
+                    <th>Nome</th>
+                    <th>Tipo</th>
+                    <th>Nivel</th>
+                    <th>Pai</th>
+                    {podeEditar && <th>Acoes</th>}
                   </tr>
-                )}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {planosOrdenados.map((plano) => {
+                    const parent = plano.parentId
+                      ? planosContas.find((p) => p.id === plano.parentId)
+                      : null;
+                    return (
+                      <tr key={plano.id}>
+                        <td>{plano.codigo}</td>
+                        <td style={{ paddingLeft: (plano.nivel - 1) * 12 }}>
+                          {plano.nome}
+                        </td>
+                        <td>{plano.tipo}</td>
+                        <td>{plano.nivel}</td>
+                        <td>{parent ? parent.nome : "-"}</td>
+                        {podeEditar && (
+                          <td>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                if (!token) return;
+                                const novoNome = window.prompt(
+                                  "Novo nome da categoria:",
+                                  plano.nome
+                                );
+                                if (!novoNome || !novoNome.trim()) return;
+                                try {
+                                  setPlanosErro(null);
+                                  setPlanosLoading(true);
+                                  const atualizada = await api.atualizarPlanoContas(
+                                    token,
+                                    plano.id,
+                                    {
+                                      codigo: plano.codigo,
+                                      nome: novoNome.trim(),
+                                      tipo: plano.tipo,
+                                      nivel: plano.nivel,
+                                      parentId: plano.parentId
+                                    }
+                                  );
+                                  setPlanosContas((prev) =>
+                                    prev.map((p) =>
+                                      p.id === atualizada.id ? atualizada : p
+                                    )
+                                  );
+                                } catch (e: any) {
+                                  setPlanosErro(
+                                    e?.message || "Erro ao atualizar categoria"
+                                  );
+                                } finally {
+                                  setPlanosLoading(false);
+                                }
+                              }}
+                              style={{
+                                marginRight: 8,
+                                backgroundColor: "#e5e7eb",
+                                color: "#111827"
+                              }}
+                            >
+                              Renomear
+                            </button>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                if (!token) return;
+                                const possuiFilhos = planosContas.some(
+                                  (p) => p.parentId === plano.id
+                                );
+                                if (possuiFilhos) {
+                                  window.alert(
+                                    "Remova primeiro as categorias filhas."
+                                  );
+                                  return;
+                                }
+                                if (
+                                  !window.confirm(
+                                    `Remover categoria \"${plano.nome}\"?`
+                                  )
+                                ) {
+                                  return;
+                                }
+                                try {
+                                  setPlanosErro(null);
+                                  setPlanosLoading(true);
+                                  await api.removerPlanoContas(token, plano.id);
+                                  setPlanosContas((prev) =>
+                                    prev.filter((p) => p.id !== plano.id)
+                                  );
+                                } catch (e: any) {
+                                  setPlanosErro(
+                                    e?.message || "Erro ao remover categoria"
+                                  );
+                                } finally {
+                                  setPlanosLoading(false);
+                                }
+                              }}
+                              style={{
+                                backgroundColor: "#ef4444",
+                                color: "#ffffff"
+                              }}
+                            >
+                              Remover
+                            </button>
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })}
+                  {planosOrdenados.length === 0 && (
+                    <tr>
+                      <td colSpan={podeEditar ? 6 : 5} style={{ textAlign: "center" }}>
+                        Nenhuma categoria cadastrada ainda.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </section>
         </div>
       </div>

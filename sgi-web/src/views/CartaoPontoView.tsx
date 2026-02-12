@@ -32,13 +32,12 @@ const formatarDataHora = (valor?: string | null) => {
   if (!valor) return "-";
   const data = new Date(valor);
   if (Number.isNaN(data.getTime())) return "-";
-  return data.toLocaleString("pt-BR", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
+  const hora = data.toLocaleTimeString("pt-BR", {
     hour: "2-digit",
     minute: "2-digit"
   });
+  const dia = data.toLocaleDateString("pt-BR");
+  return `${hora} ${dia}`;
 };
 
 const formatarData = (valor?: string | null) => {

@@ -732,7 +732,8 @@ export default function PortariaView({ organizacao, readOnly }: PortariaViewProp
                 </button>
               </div>
             </div>
-            <table className="table portaria-table">
+            <div className="finance-table-scroll finance-table-scroll--wide">
+              <table className="table portaria-table">
               <thead>
                 <tr>
                   <th>Tipo</th>
@@ -797,7 +798,8 @@ export default function PortariaView({ organizacao, readOnly }: PortariaViewProp
                   </tr>
                 )}
               </tbody>
-            </table>
+              </table>
+            </div>
           </section>
         </div>
       )}
@@ -905,7 +907,8 @@ export default function PortariaView({ organizacao, readOnly }: PortariaViewProp
                 </button>
               </div>
             </div>
-            <table className="table portaria-table">
+            <div className="finance-table-scroll finance-table-scroll--wide">
+              <table className="table portaria-table">
               <thead>
                 <tr>
                   <th>Nome</th>
@@ -970,7 +973,8 @@ export default function PortariaView({ organizacao, readOnly }: PortariaViewProp
                   </tr>
                 )}
               </tbody>
-            </table>
+              </table>
+            </div>
           </section>
         </div>
       )}
@@ -1061,7 +1065,8 @@ export default function PortariaView({ organizacao, readOnly }: PortariaViewProp
                 </button>
               </div>
             </div>
-            <table className="table portaria-table">
+            <div className="finance-table-scroll finance-table-scroll--wide">
+              <table className="table portaria-table">
               <thead>
                 <tr>
                   <th>Descricao</th>
@@ -1135,7 +1140,8 @@ export default function PortariaView({ organizacao, readOnly }: PortariaViewProp
                   </tr>
                 )}
               </tbody>
-            </table>
+              </table>
+            </div>
           </section>
         </div>
       )}

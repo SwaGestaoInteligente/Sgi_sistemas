@@ -1,4 +1,11 @@
-export const API_BASE_URL = "http://localhost:7000/api";
+const normalizeApiBaseUrl = (raw?: string | null) => {
+  const value = (raw ?? "").trim();
+  if (!value) return null;
+  return value.endsWith("/") ? value.slice(0, -1) : value;
+};
+
+const envApiBase = normalizeApiBaseUrl(import.meta.env.VITE_API_BASE_URL as string | undefined);
+export const API_BASE_URL = envApiBase ?? "/api";
 export const AUTH_STORAGE_KEY = "swa_sgi_token";
 export const AUTH_SESSION_KEY = "swa_sgi_session";
 export const AUTH_UNAUTHORIZED_EVENT = "swa:auth-unauthorized";
@@ -2699,7 +2706,7 @@ export const api = {
   async relatorioVeiculos(
     token: string,
     organizacaoId: string,
-    formato: "csv" = "csv"
+    formato: "csv" | "pdf" = "csv"
   ): Promise<Blob> {
     const search = new URLSearchParams({ organizacaoId, formato });
     return requestBlob(`/relatorios/veiculos?${search.toString()}`, token);
@@ -2708,7 +2715,7 @@ export const api = {
   async relatorioPets(
     token: string,
     organizacaoId: string,
-    formato: "csv" = "csv"
+    formato: "csv" | "pdf" = "csv"
   ): Promise<Blob> {
     const search = new URLSearchParams({ organizacaoId, formato });
     return requestBlob(`/relatorios/pets?${search.toString()}`, token);

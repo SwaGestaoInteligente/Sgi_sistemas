@@ -52,8 +52,8 @@ const MODULOS: ModuloConfig[] = [
   {
     id: "veiculos",
     titulo: "Veiculos",
-    descricao: "Exportacao completa em CSV.",
-    suportaPdf: false,
+    descricao: "Exportacao completa em CSV/PDF.",
+    suportaPdf: true,
     usaPeriodo: false,
     usaStatus: false,
     usaRecurso: false
@@ -61,8 +61,8 @@ const MODULOS: ModuloConfig[] = [
   {
     id: "pets",
     titulo: "Pets",
-    descricao: "Exportacao completa em CSV.",
-    suportaPdf: false,
+    descricao: "Exportacao completa em CSV/PDF.",
+    suportaPdf: true,
     usaPeriodo: false,
     usaStatus: false,
     usaRecurso: false
@@ -203,11 +203,9 @@ export default function RelatoriosView({
           formato
         });
       } else if (modulo === "veiculos") {
-        formatoFinal = "csv";
-        blob = await api.relatorioVeiculos(token, organizacao.id, "csv");
+        blob = await api.relatorioVeiculos(token, organizacao.id, formato);
       } else {
-        formatoFinal = "csv";
-        blob = await api.relatorioPets(token, organizacao.id, "csv");
+        blob = await api.relatorioPets(token, organizacao.id, formato);
       }
 
       const nomeArquivo = construirNomeArquivo(modulo, formatoFinal);

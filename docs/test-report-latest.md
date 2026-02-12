@@ -1,6 +1,6 @@
 # Test Report
 
-- Timestamp: 2026-02-11T09:07:38
+- Timestamp: 2026-02-12T18:56:50
 - Pass: 13
 - Fail: 0
 
@@ -10,10 +10,10 @@
 | Web up | PASS | Status 200 |
 | Login admin | PASS | Token recebido |
 | Listar organizacoes | PASS | Total 2 |
-| Criar bloco | PASS | Id ea1723e4-0801-4753-a0ae-f1fa66aec35d |
-| Criar unidade | PASS | Id 7b57a87e-49b8-4cc7-8c51-44259781e50d |
-| Criar pessoa | PASS | Id 1a0a12d5-f65d-4acb-ad6a-d4a27d1fe2f0 |
-| Criar vinculo | PASS | Id 34bf89db-47cf-4b1f-954d-ba411501d9d6 |
+| Criar bloco | PASS | Id e90b3281-88bf-4166-b5e2-463bc52f8314 |
+| Criar unidade | PASS | Id 71ef8462-d6e1-4809-ae07-098cdc33c8e4 |
+| Criar pessoa | PASS | Id 1cbd00bd-f401-4b27-b32a-ad0004564e54 |
+| Criar vinculo | PASS | Id 442cdca2-6749-477e-8e89-7643e5076049 |
 | Listar vinculos por pessoa | PASS | Qtd 2 |
 | Cleanup: remover vinculo | PASS | OK |
 | Cleanup: remover pessoa | PASS | OK |

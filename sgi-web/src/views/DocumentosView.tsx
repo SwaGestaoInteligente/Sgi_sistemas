@@ -557,178 +557,182 @@ export default function DocumentosView({
         </section>
       </div>
 
-      <section className="finance-table-card">
-        <div className="finance-table-header">
-          <div>
-            <h3>Biblioteca</h3>
-            <p className="finance-form-sub">Documentos disponiveis no condominio.</p>
+      <div className="finance-main-column">
+        <section className="finance-table-card">
+          <div className="finance-table-header">
+            <div>
+              <h3>Biblioteca</h3>
+              <p className="finance-form-sub">Documentos disponiveis no condominio.</p>
+            </div>
+            <div className="finance-card-actions">
+              <label>
+                Buscar
+                <input
+                  value={filtroTexto}
+                  onChange={(e) => setFiltroTexto(e.target.value)}
+                  placeholder="Titulo, tag ou unidade"
+                />
+              </label>
+              <label>
+                Categoria
+                <select value={filtroCategoria} onChange={(e) => setFiltroCategoria(e.target.value)}>
+                  <option value="todas">Todas</option>
+                  {Object.entries(categoriaLabel).map(([key, label]) => (
+                    <option key={key} value={key}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Status
+                <select value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value)}>
+                  <option value="todos">Todos</option>
+                  {Object.entries(statusLabel).map(([key, label]) => (
+                    <option key={key} value={key}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Visibilidade
+                <select
+                  value={filtroVisibilidade}
+                  onChange={(e) => setFiltroVisibilidade(e.target.value)}
+                >
+                  <option value="todas">Todas</option>
+                  {Object.entries(visibilidadeLabel).map(([key, label]) => (
+                    <option key={key} value={key}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Unidade
+                <select value={filtroUnidade} onChange={(e) => setFiltroUnidade(e.target.value)}>
+                  <option value="todas">Todas</option>
+                  {unidades.map((unidade) => (
+                    <option key={unidade.id} value={unidade.id}>
+                      {unidade.codigoInterno}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
           </div>
-          <div className="finance-card-actions">
-            <label>
-              Buscar
-              <input
-                value={filtroTexto}
-                onChange={(e) => setFiltroTexto(e.target.value)}
-                placeholder="Titulo, tag ou unidade"
-              />
-            </label>
-            <label>
-              Categoria
-              <select value={filtroCategoria} onChange={(e) => setFiltroCategoria(e.target.value)}>
-                <option value="todas">Todas</option>
-                {Object.entries(categoriaLabel).map(([key, label]) => (
-                  <option key={key} value={key}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Status
-              <select value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value)}>
-                <option value="todos">Todos</option>
-                {Object.entries(statusLabel).map(([key, label]) => (
-                  <option key={key} value={key}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Visibilidade
-              <select
-                value={filtroVisibilidade}
-                onChange={(e) => setFiltroVisibilidade(e.target.value)}
-              >
-                <option value="todas">Todas</option>
-                {Object.entries(visibilidadeLabel).map(([key, label]) => (
-                  <option key={key} value={key}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Unidade
-              <select value={filtroUnidade} onChange={(e) => setFiltroUnidade(e.target.value)}>
-                <option value="todas">Todas</option>
-                {unidades.map((unidade) => (
-                  <option key={unidade.id} value={unidade.id}>
-                    {unidade.codigoInterno}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-        </div>
 
-        {erro && <p className="error">{erro}</p>}
+          {erro && <p className="error">{erro}</p>}
 
-        <table className="table documentos-table">
-          <thead>
-            <tr>
-              <th>Documento</th>
-              <th>Categoria</th>
-              <th>Unidade</th>
-              <th>Atualizado</th>
-              <th>Status</th>
-              <th>Visibilidade</th>
-              <th>Tamanho</th>
-              <th>Acoes</th>
-            </tr>
-          </thead>
-          <tbody>
-            {itensFiltrados.map((doc) => {
-              const unidade = doc.unidadeId ? unidadesPorId[doc.unidadeId] : null;
-              const autor = doc.autorId ? pessoasPorId[doc.autorId] : null;
-              return (
-                <tr key={doc.id}>
-                  <td>
-                    <div>{doc.titulo}</div>
-                    <span className="unit-muted">
-                      {doc.arquivoNome} • {doc.versao}
-                      {autor ? ` • ${autor.nome}` : ""}
-                    </span>
-                    {doc.tags.length > 0 && (
-                      <div className="documentos-tags">
-                        {doc.tags.map((tag) => (
-                          <span key={tag} className="badge">
-                            {tag}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </td>
-                  <td>{categoriaLabel[doc.categoria]}</td>
-                  <td>{unidade ? `${unidade.codigoInterno} - ${unidade.nome}` : "Geral"}</td>
-                  <td>{formatarDataHora(doc.atualizadoEm ?? doc.criadoEm)}</td>
-                  <td>
-                    <span className={`badge-status ${statusClass[doc.status]}`}>
-                      {statusLabel[doc.status]}
-                    </span>
-                  </td>
-                  <td>
-                    <span className="badge">{visibilidadeLabel[doc.visibilidade]}</span>
-                  </td>
-                  <td>{formatarTamanho(doc.tamanho)}</td>
-                  <td>
-                    <div className="table-actions">
-                      <button
-                        type="button"
-                        className="action-secondary"
-                        onClick={() => visualizarDocumento(doc)}
-                      >
-                        Ver
-                      </button>
-                      <button
-                        type="button"
-                        className="action-primary"
-                        onClick={() => baixarDocumento(doc)}
-                      >
-                        Baixar
-                      </button>
-                      {!readOnly && doc.status !== "arquivado" && (
-                        <button
-                          type="button"
-                          className="action-secondary"
-                          onClick={() => alterarStatus(doc.id, "arquivado")}
-                        >
-                          Arquivar
-                        </button>
-                      )}
-                      {!readOnly && doc.status === "arquivado" && (
-                        <button
-                          type="button"
-                          className="action-secondary"
-                          onClick={() => alterarStatus(doc.id, "ativo")}
-                        >
-                          Reabrir
-                        </button>
-                      )}
-                      {!readOnly && (
-                        <button
-                          type="button"
-                          className="action-secondary"
-                          onClick={() => removerDocumento(doc.id)}
-                        >
-                          Remover
-                        </button>
-                      )}
-                    </div>
-                  </td>
+          <div className="table-wrap documentos-table-wrap">
+            <table className="table documentos-table">
+              <thead>
+                <tr>
+                  <th>Documento</th>
+                  <th>Categoria</th>
+                  <th>Unidade</th>
+                  <th>Atualizado</th>
+                  <th>Status</th>
+                  <th>Visibilidade</th>
+                  <th>Tamanho</th>
+                  <th>Acoes</th>
                 </tr>
-              );
-            })}
-            {itensFiltrados.length === 0 && (
-              <tr>
-                <td colSpan={8} style={{ textAlign: "center" }}>
-                  Nenhum documento encontrado.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </section>
+              </thead>
+              <tbody>
+                {itensFiltrados.map((doc) => {
+                  const unidade = doc.unidadeId ? unidadesPorId[doc.unidadeId] : null;
+                  const autor = doc.autorId ? pessoasPorId[doc.autorId] : null;
+                  return (
+                    <tr key={doc.id}>
+                      <td>
+                        <div>{doc.titulo}</div>
+                        <span className="unit-muted">
+                          {doc.arquivoNome} • {doc.versao}
+                          {autor ? ` • ${autor.nome}` : ""}
+                        </span>
+                        {doc.tags.length > 0 && (
+                          <div className="documentos-tags">
+                            {doc.tags.map((tag) => (
+                              <span key={tag} className="badge">
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </td>
+                      <td>{categoriaLabel[doc.categoria]}</td>
+                      <td>{unidade ? `${unidade.codigoInterno} - ${unidade.nome}` : "Geral"}</td>
+                      <td>{formatarDataHora(doc.atualizadoEm ?? doc.criadoEm)}</td>
+                      <td>
+                        <span className={`badge-status ${statusClass[doc.status]}`}>
+                          {statusLabel[doc.status]}
+                        </span>
+                      </td>
+                      <td>
+                        <span className="badge">{visibilidadeLabel[doc.visibilidade]}</span>
+                      </td>
+                      <td>{formatarTamanho(doc.tamanho)}</td>
+                      <td>
+                        <div className="table-actions">
+                          <button
+                            type="button"
+                            className="action-secondary"
+                            onClick={() => visualizarDocumento(doc)}
+                          >
+                            Ver
+                          </button>
+                          <button
+                            type="button"
+                            className="action-primary"
+                            onClick={() => baixarDocumento(doc)}
+                          >
+                            Baixar
+                          </button>
+                          {!readOnly && doc.status !== "arquivado" && (
+                            <button
+                              type="button"
+                              className="action-secondary"
+                              onClick={() => alterarStatus(doc.id, "arquivado")}
+                            >
+                              Arquivar
+                            </button>
+                          )}
+                          {!readOnly && doc.status === "arquivado" && (
+                            <button
+                              type="button"
+                              className="action-secondary"
+                              onClick={() => alterarStatus(doc.id, "ativo")}
+                            >
+                              Reabrir
+                            </button>
+                          )}
+                          {!readOnly && (
+                            <button
+                              type="button"
+                              className="action-secondary"
+                              onClick={() => removerDocumento(doc.id)}
+                            >
+                              Remover
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {itensFiltrados.length === 0 && (
+                  <tr>
+                    <td colSpan={8} style={{ textAlign: "center" }}>
+                      Nenhum documento encontrado.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
     </div>
   );
 }

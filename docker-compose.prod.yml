@@ -1,0 +1,59 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: sgi-postgres-prod
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-sgi}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sgi_change_me}
+      POSTGRES_DB: ${POSTGRES_DB:-sgi}
+    volumes:
+      - sgi_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sgi} -d ${POSTGRES_DB:-sgi}"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  api:
+    build:
+      context: .
+      dockerfile: src/Sgi.Api/Dockerfile
+    container_name: sgi-api-prod
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      Database__Provider: postgres
+      ConnectionStrings__PostgresConnection: Host=postgres;Port=5432;Database=${POSTGRES_DB:-sgi};Username=${POSTGRES_USER:-sgi};Password=${POSTGRES_PASSWORD:-sgi_change_me};Pooling=true;
+      Jwt__Key: ${JWT_KEY:-change_this_in_production}
+      Jwt__Issuer: ${JWT_ISSUER:-SgiSistemas}
+      Jwt__Audience: ${JWT_AUDIENCE:-SgiSistemasUsers}
+    volumes:
+      - sgi_uploads:/app/Uploads
+      - sgi_backups:/app/backups
+    expose:
+      - "8080"
+
+  web:
+    build:
+      context: .
+      dockerfile: sgi-web/Dockerfile
+      args:
+        VITE_API_BASE_URL: /api
+        VITE_BASE_PATH: ${VITE_BASE_PATH:-/}
+    container_name: sgi-web-prod
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "${WEB_PORT:-8080}:80"
+
+volumes:
+  sgi_postgres_data:
+  sgi_uploads:
+  sgi_backups:

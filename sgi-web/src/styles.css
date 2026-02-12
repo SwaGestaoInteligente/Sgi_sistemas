@@ -913,6 +913,30 @@ button:focus-visible {
   background-color: #dfe9ff;
 }
 
+.unit-vehicles-table {
+  min-width: 560px;
+}
+
+.unit-vehicles-table th:nth-child(1),
+.unit-vehicles-table td:nth-child(1) {
+  width: 20%;
+}
+
+.unit-vehicles-table th:nth-child(2),
+.unit-vehicles-table td:nth-child(2) {
+  width: 42%;
+}
+
+.unit-vehicles-table th:nth-child(3),
+.unit-vehicles-table td:nth-child(3) {
+  width: 18%;
+}
+
+.unit-vehicles-table th:nth-child(4),
+.unit-vehicles-table td:nth-child(4) {
+  width: 20%;
+}
+
 .unit-list {
   display: flex;
   flex-direction: column;
@@ -1093,6 +1117,11 @@ button:focus-visible {
   border-radius: 12px;
 }
 
+.chamados-scroll > .table {
+  min-width: 960px;
+  margin-top: 0;
+}
+
 .chamados-filters {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1156,8 +1185,9 @@ button:focus-visible {
   border-bottom: 1px solid var(--divider-strong);
   border-right: 1px solid var(--divider);
   text-align: left;
-  overflow-wrap: anywhere;
-  word-break: break-word;
+  overflow-wrap: normal;
+  word-break: normal;
+  white-space: nowrap;
 }
 
 .table th:last-child,
@@ -1185,6 +1215,12 @@ button:focus-visible {
   background-color: #eef4ff;
 }
 
+.table .table-cell--wrap {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 .portaria-table {
   min-width: 960px;
 }
@@ -1194,6 +1230,18 @@ button:focus-visible {
   white-space: nowrap;
   word-break: keep-all;
   overflow-wrap: normal;
+}
+
+.portaria-table th:nth-child(2),
+.portaria-table td:nth-child(2),
+.portaria-table th:nth-child(6),
+.portaria-table td:nth-child(6) {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.portaria-table td:last-child .table-actions {
+  min-width: 200px;
 }
 
 .correspondencia-table {
@@ -1207,9 +1255,25 @@ button:focus-visible {
   overflow-wrap: normal;
 }
 
+.correspondencia-table th:nth-child(2),
+.correspondencia-table td:nth-child(2) {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.correspondencia-table td:last-child .table-actions {
+  min-width: 220px;
+}
+
 .documentos-table {
   min-width: 1200px;
   table-layout: fixed;
+}
+
+.documentos-table-wrap {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 4px;
 }
 
 .documentos-tags {
@@ -1277,6 +1341,10 @@ button:focus-visible {
 .documentos-table th:nth-child(8),
 .documentos-table td:nth-child(8) {
   width: 140px;
+}
+
+.documentos-table td:last-child .table-actions {
+  min-width: 240px;
 }
 
 .finance-table th,
@@ -2922,6 +2990,25 @@ button:focus-visible {
   font-size: 13px;
   color: #6b7280;
   margin-top: 4px;
+}
+
+.config-page .finance-table-card {
+  max-height: none;
+  overflow: visible;
+}
+
+.config-page .finance-table-card .finance-table-header,
+.config-page .finance-table-card .config-filters {
+  position: static;
+  margin: 0 0 8px;
+  padding: 0 0 8px;
+  box-shadow: none;
+  border-bottom: 1px solid var(--divider);
+  background: transparent;
+}
+
+.config-page .finance-table-card .table thead th {
+  position: static;
 }
 
 .config-actions {
@@ -4762,6 +4849,36 @@ button:focus-visible {
   gap: 8px;
 }
 
+.quick-help-card {
+  margin: 0 0 12px;
+  border: 1px solid var(--divider-strong);
+  border-radius: 12px;
+  background: #f6f9ff;
+  padding: 10px 12px;
+}
+
+.quick-help-card > summary {
+  cursor: pointer;
+  list-style: none;
+  font-size: 13px;
+  font-weight: 700;
+  color: #1f3b73;
+}
+
+.quick-help-card > summary::-webkit-details-marker {
+  display: none;
+}
+
+.quick-help-list {
+  margin: 8px 0 0 18px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: #334155;
+  font-size: 13px;
+}
+
 .dashboard,
 .people-page,
 .finance-page {
@@ -5651,4 +5768,278 @@ button:focus-visible {
 .muted-text {
   color: var(--muted);
   margin-bottom: 10px;
+}
+
+/* ==============================
+   Responsive hardening (Parte 9)
+   ============================== */
+.config-page .finance-table-card .table {
+  min-width: max(100%, 900px);
+}
+
+.dashboard-card,
+.dashboard-card--primary {
+  overflow: hidden;
+}
+
+.dashboard-card-value {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+@media (max-width: 960px) {
+  .finance-table-card {
+    max-height: none;
+    overflow: visible;
+  }
+
+  .finance-table-card .finance-table-header,
+  .finance-table-card .config-filters {
+    position: static;
+    margin: 0 0 8px;
+    padding: 0 0 8px;
+    box-shadow: none;
+    border-bottom: 1px solid var(--divider);
+    background: transparent;
+  }
+
+  .finance-table-card .table thead th {
+    position: static;
+  }
+
+  .finance-table-card .table,
+  .finance-table-card .table--fixed,
+  .config-page .finance-table-card .table,
+  .unit-table-scroll .table {
+    min-width: 760px;
+  }
+
+  .unit-table-scroll {
+    max-height: none;
+  }
+}
+
+/* ==============================
+   Visual sweep: Resumo/Pessoas/Financeiro
+   ============================== */
+.dashboard {
+  gap: 14px;
+}
+
+.dashboard-header-row {
+  padding: 0 2px;
+}
+
+.dashboard-grid {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  align-items: stretch;
+}
+
+.dashboard-card,
+.dashboard-card--primary {
+  min-height: 132px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.dashboard-panels {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: 14px;
+  align-items: stretch;
+}
+
+.dashboard-chart-card,
+.dashboard-insights-card {
+  min-width: 0;
+  width: 100%;
+}
+
+.dashboard-chart-bars {
+  min-height: 86px;
+}
+
+.dashboard-insights li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 12px;
+}
+
+.dashboard-insight-value {
+  justify-self: end;
+  min-width: 42px;
+}
+
+.dashboard-alerts ul {
+  max-height: min(38vh, 360px);
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.people-list-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.people-search-row {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) 220px auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.people-table {
+  display: block;
+  max-height: none;
+  overflow: visible;
+}
+
+.people-table-head {
+  position: static;
+}
+
+.people-table-body {
+  overflow: visible;
+  max-height: none;
+}
+
+.people-table-row {
+  grid-template-columns: minmax(0, 2.2fr) minmax(120px, 0.9fr) minmax(180px, 1.1fr) minmax(0, 1.7fr);
+  min-height: 56px;
+}
+
+.people-table-name,
+.people-table-contact,
+.people-table-address {
+  min-width: 0;
+}
+
+.people-table-address {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.comunicados-message {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #475569;
+}
+
+.comunicados-priority,
+.comunicados-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  border: 1px solid transparent;
+}
+
+.comunicados-priority--normal {
+  background: #e8f0ff;
+  border-color: #bdd3ff;
+  color: #1e3a8a;
+}
+
+.comunicados-priority--alta {
+  background: #fff3d6;
+  border-color: #f7d58c;
+  color: #8a5b00;
+}
+
+.comunicados-priority--urgente {
+  background: #ffe3e3;
+  border-color: #f8b6b6;
+  color: #991b1b;
+}
+
+.comunicados-status--ativo {
+  background: #e3f9e5;
+  border-color: #b7ebbe;
+  color: #166534;
+}
+
+.comunicados-status--arquivado {
+  background: #eef2f7;
+  border-color: #d7dfe9;
+  color: #475569;
+}
+
+.finance-table-scroll {
+  margin-top: 10px;
+  max-height: min(62vh, 560px);
+  overflow: auto;
+  border: 1px solid var(--divider-strong);
+  border-radius: 12px;
+  background: #f8fbff;
+}
+
+.finance-table-scroll > .table {
+  margin-top: 0 !important;
+  border: 0;
+  border-radius: 0;
+  min-width: 980px;
+}
+
+.finance-table-scroll--wide > .table {
+  min-width: 1120px;
+}
+
+.finance-page .finance-table-card .finance-table-header,
+.finance-page .finance-table-card .config-filters {
+  position: static;
+  margin: 0 0 8px;
+  padding: 0 0 8px;
+  box-shadow: none;
+  border-bottom: 1px solid var(--divider);
+  background: transparent;
+}
+
+.finance-page .finance-table-card .table thead th {
+  position: static;
+}
+
+.finance-page .finance-table-scroll .table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background-color: #dfe9ff;
+}
+
+.finance-table-scroll .table-actions,
+.finance-table-scroll .finance-table-actions {
+  min-width: 190px;
+  justify-content: flex-start;
+  white-space: nowrap;
+}
+
+@media (max-width: 960px) {
+  .dashboard-panels {
+    grid-template-columns: 1fr;
+  }
+
+  .people-search-row {
+    grid-template-columns: 1fr;
+  }
+
+  .people-table {
+    max-height: none;
+  }
+
+  .finance-table-scroll {
+    max-height: none;
+  }
+
+  .finance-table-scroll > .table,
+  .finance-table-scroll--wide > .table {
+    min-width: 760px;
+  }
 }
