@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Sgi.Infrastructure.Data;
 
@@ -10,9 +11,11 @@ using Sgi.Infrastructure.Data;
 namespace Sgi.Infrastructure.Migrations
 {
     [DbContext(typeof(SgiDbContext))]
-    partial class SgiDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260212153853_AddCartaoPonto")]
+    partial class AddCartaoPonto
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "8.0.0");
@@ -1829,99 +1832,6 @@ namespace Sgi.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("ChamadoHistoricos", (string)null);
-                });
-
-            modelBuilder.Entity("Sgi.Domain.Operacao.PontoAjuste", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime?>("AprovadoEm")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid?>("AprovadoPorPessoaId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime>("DataHoraSugerida")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Justificativa")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid?>("MarcacaoGeradaId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid?>("MarcacaoOriginalId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("MotivoDecisao")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("OrganizacaoId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("PessoaId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime>("SolicitadoEm")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("SolicitadoPorPessoaId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Source")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("TipoMarcacaoSugerida")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("TipoSolicitacao")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid?>("UnidadeOrganizacionalId")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("PontoAjustes", (string)null);
-                });
-
-            modelBuilder.Entity("Sgi.Domain.Operacao.PontoFechamentoCompetencia", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Competencia")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime>("FechadoEm")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid?>("FechadoPorPessoaId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("OrganizacaoId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("PessoaId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Source")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("PontoFechamentos", (string)null);
                 });
 
             modelBuilder.Entity("Sgi.Domain.Operacao.PontoMarcacao", b =>

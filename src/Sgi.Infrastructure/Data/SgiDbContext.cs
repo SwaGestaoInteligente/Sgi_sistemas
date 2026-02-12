@@ -64,6 +64,9 @@ public class SgiDbContext : DbContext
     public DbSet<ChamadoHistorico> ChamadosHistorico => Set<ChamadoHistorico>();
     public DbSet<RecursoReservavel> RecursosReservaveis => Set<RecursoReservavel>();
     public DbSet<Reserva> Reservas => Set<Reserva>();
+    public DbSet<PontoMarcacao> PontoMarcacoes => Set<PontoMarcacao>();
+    public DbSet<PontoAjuste> PontoAjustes => Set<PontoAjuste>();
+    public DbSet<PontoFechamentoCompetencia> PontoFechamentos => Set<PontoFechamentoCompetencia>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -126,6 +129,9 @@ public class SgiDbContext : DbContext
         modelBuilder.Entity<ChamadoHistorico>().ToTable("ChamadoHistoricos");
         modelBuilder.Entity<RecursoReservavel>().ToTable("RecursosReservaveis");
         modelBuilder.Entity<Reserva>().ToTable("Reservas");
+        modelBuilder.Entity<PontoMarcacao>().ToTable("PontoMarcacoes");
+        modelBuilder.Entity<PontoAjuste>().ToTable("PontoAjustes");
+        modelBuilder.Entity<PontoFechamentoCompetencia>().ToTable("PontoFechamentos");
 
         ConfigureDemoSource(modelBuilder);
     }
@@ -178,6 +184,9 @@ public class SgiDbContext : DbContext
         AddSource<ChamadoHistorico>(modelBuilder);
         AddSource<RecursoReservavel>(modelBuilder);
         AddSource<Reserva>(modelBuilder);
+        AddSource<PontoMarcacao>(modelBuilder);
+        AddSource<PontoAjuste>(modelBuilder);
+        AddSource<PontoFechamentoCompetencia>(modelBuilder);
     }
 
     private static void AddSource<TEntity>(ModelBuilder modelBuilder) where TEntity : class

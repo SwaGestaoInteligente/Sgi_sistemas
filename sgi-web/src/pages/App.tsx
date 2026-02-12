@@ -40,6 +40,7 @@ import PortariaView from "../views/PortariaView";
 import CorrespondenciaView from "../views/CorrespondenciaView";
 import DocumentosView from "../views/DocumentosView";
 import RelatoriosView from "../views/RelatoriosView";
+import CartaoPontoView from "../views/CartaoPontoView";
 import ConfiguracoesView, {
   ConfiguracoesTab,
   menuConfiguracoes
@@ -56,6 +57,7 @@ import {
   Car,
   ChevronDown,
   ChevronRight,
+  Clock3,
   DoorOpen,
   FolderOpen,
   Home,
@@ -85,6 +87,7 @@ type AppView =
   | "chamados"
   | "reservas"
   | "portaria"
+  | "cartaoPonto"
   | "correspondencia"
   | "comunicados"
   | "documentos"
@@ -187,6 +190,10 @@ const viewMeta: Record<AppView, { title: string; subtitle: string }> = {
   portaria: {
     title: "Portaria",
     subtitle: "Visitantes, prestadores, ocorrencias e turnos."
+  },
+  cartaoPonto: {
+    title: "Cartao de ponto",
+    subtitle: "Marcacoes de jornada, espelho e comprovantes."
   },
   correspondencia: {
     title: "Correspondencia",
@@ -2948,6 +2955,8 @@ const InnerApp: React.FC = () => {
     can(session, orgId, "operacao.manage");
   const podeCriarOperacao =
     IGNORAR_PERFIS || can(session, orgId, "operacao.create");
+  const podeCartaoPonto =
+    IGNORAR_PERFIS || can(session, orgId, "operacao.manage");
   const podeMinhaUnidade =
     IGNORAR_PERFIS || can(session, orgId, "minha_unidade.read");
 
@@ -2963,6 +2972,7 @@ const InnerApp: React.FC = () => {
     chamados: "operacao.read",
     reservas: "operacao.read",
     portaria: "operacao.read",
+    cartaoPonto: "operacao.manage",
     correspondencia: "operacao.read",
     comunicados: "operacao.read",
     documentos: "operacao.read",
@@ -3630,6 +3640,8 @@ const InnerApp: React.FC = () => {
                 {renderSidebarItem("chamados", "Chamados", <Wrench size={14} />)}
                 {renderSidebarItem("reservas", "Reservas", <CalendarDays size={14} />)}
                 {renderSidebarItem("portaria", "Portaria", <DoorOpen size={14} />)}
+                {podeCartaoPonto &&
+                  renderSidebarItem("cartaoPonto", "Cartao de ponto", <Clock3 size={14} />)}
                 {renderSidebarItem(
                   "correspondencia",
                   "Correspondencia",
@@ -4013,6 +4025,15 @@ const InnerApp: React.FC = () => {
             <PortariaView
               organizacao={organizacaoSelecionada}
               readOnly={!podeCriarOperacao}
+            />
+          )}
+
+          {viewPermitido && view === "cartaoPonto" && (
+            <CartaoPontoView
+              organizacao={organizacaoSelecionada}
+              readOnly={!podeCriarOperacao}
+              allowManageAll={roleAtual === "PLATFORM_ADMIN" || roleAtual === "CONDO_ADMIN"}
+              pessoaLogadaId={session?.pessoaId ?? null}
             />
           )}
 

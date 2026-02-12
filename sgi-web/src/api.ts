@@ -323,6 +323,79 @@ export interface ChamadoHistorico {
   responsavelPessoaId?: string | null;
 }
 
+export interface PontoMarcacao {
+  id: string;
+  organizacaoId: string;
+  pessoaId: string;
+  unidadeOrganizacionalId?: string | null;
+  nsr: number;
+  dataHoraMarcacao: string;
+  tipo: "ENTRADA" | "INICIO_INTERVALO" | "FIM_INTERVALO" | "SAIDA";
+  origem: string;
+  observacao?: string | null;
+  hashComprovante: string;
+  criadoEm: string;
+}
+
+export interface ComprovanteMarcacao {
+  id: string;
+  organizacaoId: string;
+  pessoaId: string;
+  unidadeOrganizacionalId?: string | null;
+  nsr: number;
+  tipo: string;
+  origem: string;
+  hashComprovante: string;
+  dataHoraMarcacao: string;
+  criadoEm: string;
+}
+
+export interface EspelhoPontoDia {
+  data: string;
+  entrada?: string | null;
+  inicioIntervalo?: string | null;
+  fimIntervalo?: string | null;
+  saida?: string | null;
+  horasTrabalhadas: number;
+  totalMarcacoes: number;
+}
+
+export interface EspelhoPonto {
+  organizacaoId: string;
+  pessoaId: string;
+  competencia: string;
+  totalHoras: number;
+  dias: EspelhoPontoDia[];
+}
+
+export interface PontoAjuste {
+  id: string;
+  organizacaoId: string;
+  pessoaId: string;
+  unidadeOrganizacionalId?: string | null;
+  marcacaoOriginalId?: string | null;
+  tipoSolicitacao: "INCLUSAO" | "CORRECAO";
+  dataHoraSugerida: string;
+  tipoMarcacaoSugerida: "ENTRADA" | "INICIO_INTERVALO" | "FIM_INTERVALO" | "SAIDA";
+  justificativa: string;
+  status: "PENDENTE" | "APROVADO" | "REPROVADO" | "CANCELADO";
+  solicitadoPorPessoaId: string;
+  solicitadoEm: string;
+  aprovadoPorPessoaId?: string | null;
+  aprovadoEm?: string | null;
+  motivoDecisao?: string | null;
+  marcacaoGeradaId?: string | null;
+}
+
+export interface PontoFechamento {
+  id: string;
+  organizacaoId: string;
+  pessoaId: string;
+  competencia: string;
+  fechadoEm: string;
+  fechadoPorPessoaId?: string | null;
+}
+
 export interface Veiculo {
   id: string;
   organizacaoId: string;
@@ -1286,6 +1359,187 @@ export const api = {
       },
       token
     );
+  },
+
+  async listarPontoMarcacoes(
+    token: string,
+    params: {
+      organizacaoId: string;
+      pessoaId?: string;
+      de?: string;
+      ate?: string;
+    }
+  ): Promise<PontoMarcacao[]> {
+    const search = new URLSearchParams();
+    search.set("organizacaoId", params.organizacaoId);
+    if (params.pessoaId) search.set("pessoaId", params.pessoaId);
+    if (params.de) search.set("de", params.de);
+    if (params.ate) search.set("ate", params.ate);
+    return request<PontoMarcacao[]>(`/ponto/marcacoes?${search.toString()}`, {}, token);
+  },
+
+  async registrarPontoMarcacao(
+    token: string,
+    payload: {
+      organizacaoId: string;
+      pessoaId?: string;
+      unidadeOrganizacionalId?: string | null;
+      tipo: "ENTRADA" | "INICIO_INTERVALO" | "FIM_INTERVALO" | "SAIDA";
+      origem?: string;
+      observacao?: string;
+    }
+  ): Promise<PontoMarcacao> {
+    return request<PontoMarcacao>(
+      "/ponto/marcacoes",
+      {
+        method: "POST",
+        body: JSON.stringify(payload)
+      },
+      token
+    );
+  },
+
+  async obterComprovanteMarcacao(
+    token: string,
+    id: string
+  ): Promise<ComprovanteMarcacao> {
+    return request<ComprovanteMarcacao>(
+      `/ponto/comprovante/${encodeURIComponent(id)}`,
+      {},
+      token
+    );
+  },
+
+  async obterEspelhoPonto(
+    token: string,
+    params: {
+      organizacaoId: string;
+      pessoaId?: string;
+      competencia?: string;
+    }
+  ): Promise<EspelhoPonto> {
+    const search = new URLSearchParams();
+    search.set("organizacaoId", params.organizacaoId);
+    if (params.pessoaId) search.set("pessoaId", params.pessoaId);
+    if (params.competencia) search.set("competencia", params.competencia);
+    return request<EspelhoPonto>(`/ponto/espelho?${search.toString()}`, {}, token);
+  },
+
+  async listarPontoAjustes(
+    token: string,
+    params: {
+      organizacaoId: string;
+      pessoaId?: string;
+      status?: string;
+    }
+  ): Promise<PontoAjuste[]> {
+    const search = new URLSearchParams();
+    search.set("organizacaoId", params.organizacaoId);
+    if (params.pessoaId) search.set("pessoaId", params.pessoaId);
+    if (params.status) search.set("status", params.status);
+    return request<PontoAjuste[]>(`/ponto/ajustes?${search.toString()}`, {}, token);
+  },
+
+  async solicitarPontoAjuste(
+    token: string,
+    payload: {
+      organizacaoId: string;
+      pessoaId?: string;
+      marcacaoOriginalId?: string | null;
+      tipoSolicitacao?: "INCLUSAO" | "CORRECAO";
+      dataHoraSugerida: string;
+      tipoMarcacaoSugerida: "ENTRADA" | "INICIO_INTERVALO" | "FIM_INTERVALO" | "SAIDA";
+      justificativa: string;
+    }
+  ): Promise<PontoAjuste> {
+    return request<PontoAjuste>(
+      "/ponto/ajustes",
+      {
+        method: "POST",
+        body: JSON.stringify(payload)
+      },
+      token
+    );
+  },
+
+  async decidirPontoAjuste(
+    token: string,
+    ajusteId: string,
+    payload: { aprovar: boolean; motivoDecisao?: string }
+  ): Promise<PontoAjuste> {
+    return request<PontoAjuste>(
+      `/ponto/ajustes/${encodeURIComponent(ajusteId)}/decisao`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(payload)
+      },
+      token
+    );
+  },
+
+  async listarPontoFechamentos(
+    token: string,
+    params: {
+      organizacaoId: string;
+      pessoaId?: string;
+      competencia?: string;
+    }
+  ): Promise<PontoFechamento[]> {
+    const search = new URLSearchParams();
+    search.set("organizacaoId", params.organizacaoId);
+    if (params.pessoaId) search.set("pessoaId", params.pessoaId);
+    if (params.competencia) search.set("competencia", params.competencia);
+    return request<PontoFechamento[]>(`/ponto/fechamentos?${search.toString()}`, {}, token);
+  },
+
+  async fecharPontoCompetencia(
+    token: string,
+    payload: {
+      organizacaoId: string;
+      pessoaId?: string;
+      competencia: string;
+    }
+  ): Promise<{ competencia: string; fechados: number }> {
+    return request<{ competencia: string; fechados: number }>(
+      "/ponto/fechamentos",
+      {
+        method: "POST",
+        body: JSON.stringify(payload)
+      },
+      token
+    );
+  },
+
+  async exportarPontoAfd(
+    token: string,
+    params: {
+      organizacaoId: string;
+      pessoaId?: string;
+      de?: string;
+      ate?: string;
+    }
+  ): Promise<Blob> {
+    const search = new URLSearchParams();
+    search.set("organizacaoId", params.organizacaoId);
+    if (params.pessoaId) search.set("pessoaId", params.pessoaId);
+    if (params.de) search.set("de", params.de);
+    if (params.ate) search.set("ate", params.ate);
+    return requestBlob(`/ponto/export/afd?${search.toString()}`, token);
+  },
+
+  async exportarPontoAej(
+    token: string,
+    params: {
+      organizacaoId: string;
+      pessoaId?: string;
+      competencia?: string;
+    }
+  ): Promise<Blob> {
+    const search = new URLSearchParams();
+    search.set("organizacaoId", params.organizacaoId);
+    if (params.pessoaId) search.set("pessoaId", params.pessoaId);
+    if (params.competencia) search.set("competencia", params.competencia);
+    return requestBlob(`/ponto/export/aej?${search.toString()}`, token);
   },
 
   async listarVeiculos(
