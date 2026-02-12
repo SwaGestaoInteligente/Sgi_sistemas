@@ -128,6 +128,7 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddHttpClient();
 
 builder.Services.AddScoped<FinanceiroAccessFilter>();
+builder.Services.AddScoped<NotificacoesProcessor>();
 builder.Services.AddHostedService<NotificacoesJob>();
 builder.Services.AddHostedService<IndicesEconomicosJob>();
 

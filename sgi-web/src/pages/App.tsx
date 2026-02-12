@@ -1,6 +1,15 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AuthProvider, useAuth } from "../hooks/useAuth";
-import { can, getActiveMembership, PermissionKey } from "../authz";
+import {
+  can,
+  getActiveMembership,
+  getActivePermissions,
+  getActiveRole,
+  getRoleLabel,
+  getRoleShortCode,
+  permissionLabels,
+  PermissionKey
+} from "../authz";
 import {
   api,
   Anexo,
@@ -30,6 +39,7 @@ import PetsView from "../views/PetsView";
 import PortariaView from "../views/PortariaView";
 import CorrespondenciaView from "../views/CorrespondenciaView";
 import DocumentosView from "../views/DocumentosView";
+import RelatoriosView from "../views/RelatoriosView";
 import ConfiguracoesView, {
   ConfiguracoesTab,
   menuConfiguracoes
@@ -39,8 +49,28 @@ import FinanceiroView, {
   menuFinanceiro
 } from "../views/FinanceiroView";
 import AnexosPanel from "../components/AnexosPanel";
+import {
+  BarChart3,
+  Building2,
+  CalendarDays,
+  Car,
+  ChevronDown,
+  ChevronRight,
+  DoorOpen,
+  FolderOpen,
+  Home,
+  LayoutDashboard,
+  Mail,
+  Menu,
+  Megaphone,
+  PawPrint,
+  Settings,
+  Users,
+  Wallet,
+  Wrench
+} from "lucide-react";
 
-const IGNORAR_PERFIS = true;
+const IGNORAR_PERFIS = false;
 
 type AppView =
   | "dashboard"
@@ -181,8 +211,7 @@ const viewMeta: Record<AppView, { title: string; subtitle: string }> = {
 };
 
 const comingSoonViews = new Set<AppView>([
-  "comunicados",
-  "relatorios"
+  "comunicados"
 ]);
 
 const financeiroSiglas: Record<FinanceiroTab, string> = {
@@ -214,6 +243,67 @@ const configuracoesSiglas: Record<ConfiguracoesTab, string> = {
   "financeiro-base": "FC"
 };
 
+const financeiroGrupos: Array<{
+  id: string;
+  label: string;
+  itens: FinanceiroTab[];
+}> = [
+  {
+    id: "base",
+    label: "Base financeira",
+    itens: ["mapaFinanceiro", "contabilidade", "categorias", "contas", "gruposRateio"]
+  },
+  {
+    id: "operacao",
+    label: "Operacao",
+    itens: [
+      "consumos",
+      "receitasDespesas",
+      "transferencias",
+      "abonos",
+      "baixasManuais",
+      "conciliacaoBancaria"
+    ]
+  },
+  {
+    id: "cobranca",
+    label: "Cobrancas",
+    itens: ["contasPagar", "contasReceber", "itensCobrados", "faturas", "inadimplentes"]
+  },
+  {
+    id: "planejamento",
+    label: "Planejamento",
+    itens: ["previsaoOrcamentaria"]
+  },
+  {
+    id: "relatorios",
+    label: "Relatorios",
+    itens: ["livroPrestacaoContas", "relatorios"]
+  }
+];
+
+const configuracoesGrupos: Array<{
+  id: string;
+  label: string;
+  itens: ConfiguracoesTab[];
+}> = [
+  {
+    id: "cadastros",
+    label: "Cadastros",
+    itens: ["cadastros-base", "pessoas-papeis"]
+  },
+  {
+    id: "estrutura",
+    label: "Estrutura",
+    itens: ["estrutura-condominio"]
+  },
+  {
+    id: "financeiro",
+    label: "Financeiro",
+    itens: ["financeiro-base"]
+  }
+];
+
 const normalizeText = (value?: string | null) =>
   (value ?? "")
     .normalize("NFD")
@@ -232,7 +322,8 @@ const ComingSoonView: React.FC = () => (
 const Dashboard: React.FC<{
   organizacao: Organizacao | null;
   mostrarFinanceiro?: boolean;
-}> = ({ organizacao, mostrarFinanceiro = true }) => {
+  onAbrirDestino?: (destino: AppView, abaFinanceiro?: FinanceiroTab) => void;
+}> = ({ organizacao, mostrarFinanceiro = true, onAbrirDestino }) => {
   const { token } = useAuth();
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -299,9 +390,16 @@ const Dashboard: React.FC<{
     (sum, conta) => sum + (conta.saldoInicial ?? 0),
     0
   );
-  const contasAtivas = contas.filter(
-    (conta) => (conta.status ?? "").toLowerCase() === "ativo"
-  ).length;
+  const formatarMoeda = (valor?: number | null) =>
+    (valor ?? 0).toLocaleString("pt-BR", {
+      style: "currency",
+      currency: "BRL"
+    });
+  const isContaAtiva = (status?: string | null) => {
+    const normalized = (status ?? "ativo").toLowerCase();
+    return normalized === "ativo" || normalized === "ativa";
+  };
+  const contasAtivas = contas.filter((conta) => isContaAtiva(conta.status)).length;
   const normalizeStatus = (value?: string | null) => normalizeText(value);
   const isChamadoFechado = (value?: string | null) => {
     const status = normalizeStatus(value);
@@ -363,21 +461,110 @@ const Dashboard: React.FC<{
     ...serieAlertas
   );
   const chartLabels = ["D-6", "D-5", "D-4", "D-3", "D-2", "D-1", "Hoje"];
+  const resolverDestinoAlerta = (alerta: NotificacaoEvento) => {
+    const texto = normalizeText(
+      `${alerta.tipo ?? ""} ${alerta.titulo ?? ""} ${alerta.mensagem ?? ""}`
+    );
+    if (texto.includes("inadimpl")) {
+      return { view: "financeiro" as AppView, aba: "inadimplentes" as FinanceiroTab };
+    }
+    if (texto.includes("cobranca") || texto.includes("cobrança")) {
+      return { view: "financeiro" as AppView, aba: "itensCobrados" as FinanceiroTab };
+    }
+    if (texto.includes("conta a pagar") || texto.includes("pagar")) {
+      return { view: "financeiro" as AppView, aba: "contasPagar" as FinanceiroTab };
+    }
+    if (texto.includes("conta a receber") || texto.includes("receber")) {
+      return {
+        view: "financeiro" as AppView,
+        aba: "contasReceber" as FinanceiroTab
+      };
+    }
+    if (texto.includes("chamado")) {
+      return { view: "chamados" as AppView };
+    }
+    if (texto.includes("reserva")) {
+      return { view: "reservas" as AppView };
+    }
+    if (texto.includes("documento")) {
+      return { view: "documentos" as AppView };
+    }
+    if (texto.includes("comunicado")) {
+      return { view: "comunicados" as AppView };
+    }
+    if (texto.includes("portaria")) {
+      return { view: "portaria" as AppView };
+    }
+    return null;
+  };
+
+  const resumoExecutivo: Array<{
+    id: string;
+    label: string;
+    valor: number;
+    destino?: { view: AppView; aba?: FinanceiroTab };
+  }> = [
+    { id: "chamados", label: "Chamados abertos", valor: chamadosAbertos, destino: { view: "chamados" } },
+    { id: "reservas", label: "Reservas pendentes", valor: reservasPendentes, destino: { view: "reservas" } },
+    { id: "alertas", label: "Alertas nao lidos", valor: alertasNaoLidos },
+    {
+      id: "contas",
+      label: "Contas ativas",
+      valor: contasAtivas,
+      destino: mostrarFinanceiro ? { view: "financeiro", aba: "contas" } : undefined
+    }
+  ];
 
   return (
     <div className="dashboard">
       <div className="dashboard-header-row">
-        <p className="dashboard-caption">
-          Painel executivo com os principais indicadores da operacao.
-        </p>
-        <button
-          type="button"
-          onClick={carregar}
-          disabled={loading}
-          className="dashboard-refresh"
-        >
+        <div>
+          <p className="dashboard-caption">Indicadores consolidados da operacao.</p>
+          <h2>Painel executivo</h2>
+        </div>
+        <button type="button" className="dashboard-refresh" onClick={carregar} disabled={loading}>
           {loading ? "Atualizando..." : "Atualizar dados"}
         </button>
+      </div>
+
+      <div className="dashboard-grid">
+        <div className="dashboard-card dashboard-card--primary">
+          <div className="dashboard-card-label">
+            <span className="dashboard-card-icon">R$</span>
+            Saldo consolidado
+          </div>
+          <div className="dashboard-card-value">
+            {mostrarFinanceiro ? formatarMoeda(saldoInicialTotal) : "Sem acesso"}
+          </div>
+          <div className="dashboard-card-sub">Base consolidada das contas financeiras.</div>
+        </div>
+
+        <div className="dashboard-card">
+          <div className="dashboard-card-label">
+            <span className="dashboard-card-icon">CF</span>
+            Contas ativas
+          </div>
+          <div className="dashboard-card-value">{contasAtivas}</div>
+          <div className="dashboard-card-sub">Contas financeiras habilitadas</div>
+        </div>
+
+        <div className="dashboard-card">
+          <div className="dashboard-card-label">
+            <span className="dashboard-card-icon">CH</span>
+            Chamados abertos
+          </div>
+          <div className="dashboard-card-value">{chamadosAbertos}</div>
+          <div className="dashboard-card-sub">Chamados pendentes na operacao</div>
+        </div>
+
+        <div className="dashboard-card">
+          <div className="dashboard-card-label">
+            <span className="dashboard-card-icon">AL</span>
+            Alertas nao lidos
+          </div>
+          <div className="dashboard-card-value">{alertasNaoLidos}</div>
+          <div className="dashboard-card-sub">Alertas aguardando visualizacao</div>
+        </div>
       </div>
 
       <div className="dashboard-panels">
@@ -398,7 +585,7 @@ const Dashboard: React.FC<{
               const chamadosValue = serieChamados[index] ?? 0;
               const reservasValue = serieReservas[index] ?? 0;
               const alertasValue = serieAlertas[index] ?? 0;
-              const scale = 90;
+                const scale = 52;
               const heightFor = (value: number) => {
                 if (!value) return 6;
                 return Math.max(12, Math.round((value / serieMax) * scale));
@@ -430,99 +617,88 @@ const Dashboard: React.FC<{
         </div>
 
         <div className="dashboard-panel dashboard-insights-card">
-          <h3>Prioridades da semana</h3>
+          <div className="dashboard-panel-header">
+            <div>
+              <h3>Resumo executivo</h3>
+              <p>Indicadores para decisao rapida.</p>
+            </div>
+          </div>
           <ul className="dashboard-insights">
-            <li>
-              <span className="insight-label">Chamados abertos</span>
-              <strong>{chamadosAbertos}</strong>
-            </li>
-            <li>
-              <span className="insight-label">Reservas pendentes</span>
-              <strong>{reservasPendentes}</strong>
-            </li>
-            <li>
-              <span className="insight-label">Alertas nao lidos</span>
-              <strong>{alertasNaoLidos}</strong>
-            </li>
-            <li>
-              <span className="insight-label">Contas ativas</span>
-              <strong>{contasAtivas}</strong>
-            </li>
+            {resumoExecutivo.map((item) => {
+              const podeAbrir = Boolean(item.destino && onAbrirDestino);
+              return (
+                <li
+                  key={item.id}
+                  className={
+                    "dashboard-insight-row" +
+                    (podeAbrir ? " dashboard-insight-row--actionable" : "")
+                  }
+                  role={podeAbrir ? "button" : undefined}
+                  tabIndex={podeAbrir ? 0 : undefined}
+                  onClick={() => {
+                    if (!podeAbrir || !item.destino) return;
+                    onAbrirDestino?.(item.destino.view, item.destino.aba);
+                  }}
+                  onKeyDown={(event) => {
+                    if (!podeAbrir || !item.destino) return;
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      onAbrirDestino?.(item.destino.view, item.destino.aba);
+                    }
+                  }}
+                >
+                  <span className="insight-label">{item.label}</span>
+                  <strong className="dashboard-insight-value">{item.valor}</strong>
+                </li>
+              );
+            })}
           </ul>
           <p className="dashboard-insights-note">
-            Organize a fila com base nas pendencias acima.
+            Ultima atualizacao: {new Date().toLocaleDateString("pt-BR")}
           </p>
-        </div>
-      </div>
-
-      <div className="dashboard-grid">
-        <div className="dashboard-card dashboard-card--primary">
-          <div className="dashboard-card-label">
-            <span className="dashboard-card-icon">$</span>
-            <span>Saldo inicial total</span>
-          </div>
-          <div className="dashboard-card-value">
-            {mostrarFinanceiro ? `R$ ${saldoInicialTotal.toFixed(2)}` : "Sem acesso"}
-          </div>
-          <div className="dashboard-card-sub">
-            Base consolidada das contas financeiras.
-          </div>
-        </div>
-
-        <div className="dashboard-card">
-          <div className="dashboard-card-label">
-            <span className="dashboard-card-icon">CF</span>
-            <span>Contas financeiras ativas</span>
-          </div>
-          <div className="dashboard-card-value">{contasAtivas}</div>
-        </div>
-
-        <div className="dashboard-card">
-          <div className="dashboard-card-label">
-            <span className="dashboard-card-icon">CH</span>
-            <span>Chamados registrados</span>
-          </div>
-          <div className="dashboard-card-value">{chamados.length}</div>
-        </div>
-
-        <div className="dashboard-card">
-          <div className="dashboard-card-label">
-            <span className="dashboard-card-icon">RS</span>
-            <span>Reservas de areas comuns</span>
-          </div>
-          <div className="dashboard-card-value">{reservas.length}</div>
-        </div>
-
-        <div className="dashboard-card">
-          <div className="dashboard-card-label">
-            <span className="dashboard-card-icon">AL</span>
-            <span>Alertas recentes</span>
-          </div>
-          <div className="dashboard-card-value">{alertas.length}</div>
-          <div className="dashboard-card-sub">
-            {alertas[0]?.titulo ?? "Sem alertas no momento."}
-          </div>
         </div>
       </div>
 
       {alertas.length > 0 && (
         <div className="dashboard-alerts">
-          <h4>Alertas</h4>
+          <h4>Alertas recentes</h4>
           <ul>
-            {alertas.map((alerta) => (
-              <li key={alerta.id}>
-                <strong>{alerta.titulo}</strong>
-                <span>{alerta.mensagem}</span>
-              </li>
-            ))}
+            {alertas.map((alerta) => {
+              const destino = resolverDestinoAlerta(alerta);
+              const podeAbrir = Boolean(destino && onAbrirDestino);
+              return (
+                <li
+                  key={alerta.id}
+                  className={
+                    "dashboard-alert-item" +
+                    (podeAbrir ? " dashboard-alert-item--actionable" : "")
+                  }
+                  role={podeAbrir ? "button" : undefined}
+                  tabIndex={podeAbrir ? 0 : undefined}
+                  onClick={() => {
+                    if (podeAbrir && destino) {
+                      onAbrirDestino?.(destino.view, destino.aba);
+                    }
+                  }}
+                  onKeyDown={(event) => {
+                    if (!podeAbrir || !destino) return;
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      onAbrirDestino?.(destino.view, destino.aba);
+                    }
+                  }}
+                >
+                  <strong className="dashboard-alert-title">{alerta.titulo}</strong>
+                  <span>{alerta.mensagem}</span>
+                  {podeAbrir && <span className="dashboard-alert-action">Clique para abrir</span>}
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}
-      {erro && (
-        <p className="error" style={{ marginTop: 8 }}>
-          {erro}
-        </p>
-      )}
+
+      {erro && <p className="error">{erro}</p>}
     </div>
   );
 };
@@ -2601,18 +2777,50 @@ const InnerApp: React.FC = () => {
   const [novoNomeOrg, setNovoNomeOrg] = useState("");
   const [criandoOrg, setCriandoOrg] = useState(false);
   const [sidebarCompact, setSidebarCompact] = useState(false);
+  const [sidebarMobileOpen, setSidebarMobileOpen] = useState(false);
   const [view, setView] = useState<AppView>("dashboard");
   const [financeiroAba, setFinanceiroAba] =
     useState<FinanceiroTab>("mapaFinanceiro");
   const [financeiroFiltro, setFinanceiroFiltro] =
     useState<MinhaUnidadeFinanceiroFiltro | null>(null);
   const [sidebarFinanceiroOpen, setSidebarFinanceiroOpen] = useState(false);
+  const [sidebarFinanceiroGroupsOpen, setSidebarFinanceiroGroupsOpen] = useState<
+    Record<string, boolean>
+  >({
+    base: true,
+    operacao: true,
+    cobranca: true,
+    planejamento: false,
+    relatorios: false
+  });
   const [configuracoesAba, setConfiguracoesAba] =
     useState<ConfiguracoesTab>("cadastros-base");
   const [sidebarConfiguracoesOpen, setSidebarConfiguracoesOpen] = useState(false);
+  const [sidebarConfiguracoesGroupsOpen, setSidebarConfiguracoesGroupsOpen] =
+    useState<Record<string, boolean>>({
+      cadastros: true,
+      estrutura: true,
+      financeiro: true
+    });
   const contentRef = useRef<HTMLElement | null>(null);
   const [gerandoDemo, setGerandoDemo] = useState(false);
   const [mensagemDemo, setMensagemDemo] = useState<string | null>(null);
+
+  const financeiroGrupoPorAba = useMemo(() => {
+    const map = new Map<FinanceiroTab, string>();
+    financeiroGrupos.forEach((grupo) => {
+      grupo.itens.forEach((item) => map.set(item, grupo.id));
+    });
+    return map;
+  }, []);
+
+  const configuracoesGrupoPorAba = useMemo(() => {
+    const map = new Map<ConfiguracoesTab, string>();
+    configuracoesGrupos.forEach((grupo) => {
+      grupo.itens.forEach((item) => map.set(item, grupo.id));
+    });
+    return map;
+  }, []);
 
   const carregarOrganizacoes = useCallback(async () => {
     try {
@@ -2719,6 +2927,13 @@ const InnerApp: React.FC = () => {
   const orgId = organizacaoSelecionada?.id ?? null;
 
   const membershipAtual = getActiveMembership(session?.memberships, orgId);
+  const roleAtual = getActiveRole(session, orgId);
+  const perfilLabel = getRoleLabel(roleAtual);
+  const perfilSigla = getRoleShortCode(roleAtual);
+  const permissoesAtivas = getActivePermissions(session, orgId);
+  const resumoPermissoes = permissoesAtivas
+    .slice(0, 3)
+    .map((key) => permissionLabels[key]);
 
   const podeFinanceiro = IGNORAR_PERFIS || can(session, orgId, "financeiro.read");
   const podeFinanceiroEscrita =
@@ -2727,7 +2942,10 @@ const InnerApp: React.FC = () => {
   const podeEditarCadastros =
     IGNORAR_PERFIS || can(session, orgId, "cadastros.write");
   const podeOperacao = IGNORAR_PERFIS || can(session, orgId, "operacao.read");
-  const podeRelatorios = podeFinanceiro || podeOperacao;
+  const podeRelatorios =
+    IGNORAR_PERFIS ||
+    can(session, orgId, "financeiro.read") ||
+    can(session, orgId, "operacao.manage");
   const podeCriarOperacao =
     IGNORAR_PERFIS || can(session, orgId, "operacao.create");
   const podeMinhaUnidade =
@@ -2748,12 +2966,15 @@ const InnerApp: React.FC = () => {
     correspondencia: "operacao.read",
     comunicados: "operacao.read",
     documentos: "operacao.read",
-    relatorios: "operacao.read",
+    relatorios: "financeiro.read",
     minhaUnidade: "minha_unidade.read"
   };
 
   const canView = (target: AppView) => {
     if (IGNORAR_PERFIS) return true;
+    if (target === "relatorios") {
+      return podeRelatorios;
+    }
     const perm = viewPermissions[target];
     return perm ? can(session, orgId, perm) : true;
   };
@@ -2920,14 +3141,62 @@ const InnerApp: React.FC = () => {
   }, [sidebarFinanceiroOpen, view]);
 
   useEffect(() => {
+    if (view === "financeiro" && !sidebarFinanceiroOpen) {
+      setSidebarFinanceiroOpen(true);
+    }
+  }, [sidebarFinanceiroOpen, view]);
+
+  useEffect(() => {
+    if (view === "financeiro") {
+      const grupoAtivo = financeiroGrupoPorAba.get(financeiroAba);
+      if (grupoAtivo) {
+        setSidebarFinanceiroGroupsOpen((prev) => ({
+          ...prev,
+          [grupoAtivo]: true
+        }));
+      }
+    }
+  }, [financeiroAba, financeiroGrupoPorAba, view]);
+
+  useEffect(() => {
     if (view !== "configuracoes" && sidebarConfiguracoesOpen) {
       setSidebarConfiguracoesOpen(false);
     }
   }, [sidebarConfiguracoesOpen, view]);
 
+  useEffect(() => {
+    if (view === "configuracoes" && !sidebarConfiguracoesOpen) {
+      setSidebarConfiguracoesOpen(true);
+    }
+  }, [sidebarConfiguracoesOpen, view]);
+
+  useEffect(() => {
+    if (view === "configuracoes") {
+      const grupoAtivo = configuracoesGrupoPorAba.get(configuracoesAba);
+      if (grupoAtivo) {
+        setSidebarConfiguracoesGroupsOpen((prev) => ({
+          ...prev,
+          [grupoAtivo]: true
+        }));
+      }
+    }
+  }, [configuracoesAba, configuracoesGrupoPorAba, view]);
+
+  useEffect(() => {
+    setSidebarMobileOpen(false);
+  }, [view]);
+
   const topBar = (
     <header className="app-header">
       <div className="app-header-left">
+        <button
+          type="button"
+          className="app-header-menu-toggle"
+          onClick={() => setSidebarMobileOpen((prev) => !prev)}
+          aria-label="Alternar menu"
+        >
+          <Menu size={18} />
+        </button>
         <img
           src={`${import.meta.env.BASE_URL}swa1.jpeg`}
           alt="Logo SWA"
@@ -3020,17 +3289,37 @@ const InnerApp: React.FC = () => {
 
         <details className="app-user-menu">
           <summary className="app-user-trigger">
-            <span className="app-user-avatar">AD</span>
-            <span className="app-user-name">Usuario</span>
+            <span className="app-user-avatar">{perfilSigla}</span>
+            <span className="app-user-name">{perfilLabel}</span>
           </summary>
           <div className="app-user-dropdown">
-            <button
-              type="button"
-              className="app-user-option"
-              onClick={() => setErro("Tela de perfil sera liberada em breve.")}
-            >
-              Perfil
-            </button>
+            <div className="app-user-profile-card">
+              <strong>{perfilLabel}</strong>
+              <span>
+                {isPlatformAdmin
+                  ? "Acesso completo da plataforma."
+                  : organizacaoSelecionada
+                    ? `Condominio: ${organizacaoSelecionada.nome}`
+                    : "Selecione um condominio para aplicar permissoes."}
+              </span>
+              {resumoPermissoes.length > 0 && (
+                <span className="app-user-profile-summary">
+                  {resumoPermissoes.join(" • ")}
+                </span>
+              )}
+            </div>
+            <div className="app-user-permissions">
+              {permissoesAtivas.map((permissao) => (
+                <span key={permissao} className="app-user-permission-pill">
+                  {permissionLabels[permissao]}
+                </span>
+              ))}
+              {!permissoesAtivas.length && (
+                <span className="app-user-permission-pill">
+                  Sem permissao para esta organizacao
+                </span>
+              )}
+            </div>
             <button
               type="button"
               className="app-user-option app-user-option--danger"
@@ -3260,13 +3549,14 @@ const InnerApp: React.FC = () => {
   const renderSidebarItem = (
     target: AppView,
     label: string,
-    icon: string
+    icon: React.ReactNode
   ) => (
     <button
       key={target}
       type="button"
       onClick={() => {
         setViewIfAllowed(target);
+        setSidebarMobileOpen(false);
       }}
       className={"sidebar-item" + (view === target ? " sidebar-item--active" : "")}
       title={label}
@@ -3280,7 +3570,19 @@ const InnerApp: React.FC = () => {
     <>
       {topBar}
       <div className={"app-shell" + (sidebarCompact ? " app-shell--compact" : "")}>
-        <aside className={"sidebar" + (sidebarCompact ? " sidebar--compact" : "")}>
+        <div
+          className={
+            "sidebar-backdrop" + (sidebarMobileOpen ? " sidebar-backdrop--open" : "")
+          }
+          onClick={() => setSidebarMobileOpen(false)}
+        />
+        <aside
+          className={
+            "sidebar" +
+            (sidebarCompact ? " sidebar--compact" : "") +
+            (sidebarMobileOpen ? " sidebar--mobile-open" : "")
+          }
+        >
           <div className="sidebar-header">
             <div className="sidebar-title-row">
               <div className="sidebar-title">{organizacaoSelecionada.nome}</div>
@@ -3314,27 +3616,35 @@ const InnerApp: React.FC = () => {
           <nav className="sidebar-menu">
             <div className="sidebar-section">
               <p className="sidebar-section-title">Resumo</p>
-              {renderSidebarItem("dashboard", "Resumo geral", "\u{1F4CA}")}
+              {renderSidebarItem(
+                "dashboard",
+                "Resumo geral",
+                <LayoutDashboard size={14} />
+              )}
               {podeMinhaUnidade &&
-                renderSidebarItem("minhaUnidade", "Minha unidade", "\u{1F3E0}")}
+                renderSidebarItem("minhaUnidade", "Minha unidade", <Home size={14} />)}
             </div>
             {podeOperacao && (
               <div className="sidebar-section">
                 <p className="sidebar-section-title">Operacao diaria</p>
-                {renderSidebarItem("chamados", "Chamados", "\u{1F6E0}")}
-                {renderSidebarItem("reservas", "Reservas", "\u{1F4C5}")}
-                {renderSidebarItem("portaria", "Portaria", "\u{1F6AA}")}
-                {renderSidebarItem("correspondencia", "Correspondencia", "\u{1F4EC}")}
+                {renderSidebarItem("chamados", "Chamados", <Wrench size={14} />)}
+                {renderSidebarItem("reservas", "Reservas", <CalendarDays size={14} />)}
+                {renderSidebarItem("portaria", "Portaria", <DoorOpen size={14} />)}
+                {renderSidebarItem(
+                  "correspondencia",
+                  "Correspondencia",
+                  <Mail size={14} />
+                )}
               </div>
             )}
 
             {podeVerCadastros && (
               <div className="sidebar-section">
                 <p className="sidebar-section-title">Cadastros</p>
-                {renderSidebarItem("pessoas", "Pessoas", "\u{1F465}")}
-                {renderSidebarItem("unidades", "Unidades", "\u{1F3E2}")}
-                {renderSidebarItem("veiculos", "Veiculos", "\u{1F697}")}
-                {renderSidebarItem("pets", "Pets", "\u{1F43E}")}
+                {renderSidebarItem("pessoas", "Pessoas", <Users size={14} />)}
+                {renderSidebarItem("unidades", "Unidades", <Building2 size={14} />)}
+                {renderSidebarItem("veiculos", "Veiculos", <Car size={14} />)}
+                {renderSidebarItem("pets", "Pets", <PawPrint size={14} />)}
               </div>
             )}
             {podeFinanceiro && (
@@ -3355,8 +3665,17 @@ const InnerApp: React.FC = () => {
                   }
                   title="Financeiro"
                 >
-                  <span className="sidebar-item-icon">{"\u{1F4B0}"}</span>
+                  <span className="sidebar-item-icon">
+                    <Wallet size={14} />
+                  </span>
                   <span className="sidebar-item-label">Financeiro</span>
+                  <span className="sidebar-item-chevron">
+                    {sidebarFinanceiroOpen ? (
+                      <ChevronDown size={14} />
+                    ) : (
+                      <ChevronRight size={14} />
+                    )}
+                  </span>
                 </button>
                 <div
                   className={
@@ -3364,26 +3683,63 @@ const InnerApp: React.FC = () => {
                     (sidebarFinanceiroOpen ? " sidebar-submenu--open" : "")
                   }
                 >
-                  {menuFinanceiro.map((item) => (
-                    <button
-                      key={item.id}
-                      type="button"
-                      className={
-                        "sidebar-subitem" +
-                        (view === "financeiro" && financeiroAba === item.id
-                          ? " sidebar-subitem--active"
-                          : "")
-                      }
-                      onClick={() => {
-                        setViewIfAllowed("financeiro");
-                        setFinanceiroAba(item.id);
-                        setSidebarFinanceiroOpen(true);
-                      }}
-                      title={item.label}
-                    >
-                      <span className="sidebar-subitem-icon">{financeiroSiglas[item.id]}</span>
-                      <span className="sidebar-subitem-label">{item.label}</span>
-                    </button>
+                  {financeiroGrupos.map((grupo) => (
+                    <div key={grupo.id} className="sidebar-subgroup">
+                      <button
+                        type="button"
+                        className="sidebar-subgroup-toggle"
+                        onClick={() =>
+                          setSidebarFinanceiroGroupsOpen((prev) => ({
+                            ...prev,
+                            [grupo.id]: !prev[grupo.id]
+                          }))
+                        }
+                      >
+                        <span>{grupo.label}</span>
+                        {sidebarFinanceiroGroupsOpen[grupo.id] ? (
+                          <ChevronDown size={12} />
+                        ) : (
+                          <ChevronRight size={12} />
+                        )}
+                      </button>
+                      <div
+                        className={
+                          "sidebar-subgroup-items" +
+                          (sidebarFinanceiroGroupsOpen[grupo.id]
+                            ? " sidebar-subgroup-items--open"
+                            : "")
+                        }
+                      >
+                        {grupo.itens.map((itemId) => {
+                          const item = menuFinanceiro.find((i) => i.id === itemId);
+                          if (!item) return null;
+                          return (
+                            <button
+                              key={item.id}
+                              type="button"
+                              className={
+                                "sidebar-subitem sidebar-subitem--nested" +
+                                (view === "financeiro" && financeiroAba === item.id
+                                  ? " sidebar-subitem--active"
+                                  : "")
+                              }
+                              onClick={() => {
+                                setViewIfAllowed("financeiro");
+                                setFinanceiroAba(item.id);
+                                setSidebarFinanceiroOpen(true);
+                                setSidebarMobileOpen(false);
+                              }}
+                              title={item.label}
+                            >
+                              <span className="sidebar-subitem-icon">
+                                {financeiroSiglas[item.id]}
+                              </span>
+                              <span className="sidebar-subitem-label">{item.label}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
                   ))}
                 </div>
               </div>
@@ -3392,15 +3748,15 @@ const InnerApp: React.FC = () => {
               <div className="sidebar-section">
                 <p className="sidebar-section-title">Comunicacao</p>
                 <span className="sidebar-section-subtitle">avisos e documentos</span>
-                {renderSidebarItem("comunicados", "Comunicados", "\u{1F4E2}")}
-                {renderSidebarItem("documentos", "Documentos", "\u{1F4C1}")}
+                {renderSidebarItem("comunicados", "Comunicados", <Megaphone size={14} />)}
+                {renderSidebarItem("documentos", "Documentos", <FolderOpen size={14} />)}
               </div>
             )}
 
             {podeRelatorios && (
               <div className="sidebar-section">
                 <p className="sidebar-section-title">Relatorios</p>
-                {renderSidebarItem("relatorios", "Relatorios", "\u{1F4CA}")}
+                {renderSidebarItem("relatorios", "Relatorios", <BarChart3 size={14} />)}
               </div>
             )}
             {podeEditarCadastros && (
@@ -3422,8 +3778,17 @@ const InnerApp: React.FC = () => {
                   }
                   title="Configuracoes"
                 >
-                  <span className="sidebar-item-icon">{"\u{2699}"}</span>
+                  <span className="sidebar-item-icon">
+                    <Settings size={14} />
+                  </span>
                   <span className="sidebar-item-label">Configuracoes</span>
+                  <span className="sidebar-item-chevron">
+                    {sidebarConfiguracoesOpen ? (
+                      <ChevronDown size={14} />
+                    ) : (
+                      <ChevronRight size={14} />
+                    )}
+                  </span>
                 </button>
                 <div
                   className={
@@ -3431,28 +3796,63 @@ const InnerApp: React.FC = () => {
                     (sidebarConfiguracoesOpen ? " sidebar-submenu--open" : "")
                   }
                 >
-                  {menuConfiguracoes.map((item) => (
-                    <button
-                      key={item.id}
-                      type="button"
-                      className={
-                        "sidebar-subitem" +
-                        (view === "configuracoes" && configuracoesAba === item.id
-                          ? " sidebar-subitem--active"
-                          : "")
-                      }
-                      onClick={() => {
-                        setViewIfAllowed("configuracoes");
-                        setConfiguracoesAba(item.id);
-                        setSidebarConfiguracoesOpen(true);
-                      }}
-                      title={item.label}
-                    >
-                      <span className="sidebar-subitem-icon">
-                        {configuracoesSiglas[item.id]}
-                      </span>
-                      <span className="sidebar-subitem-label">{item.label}</span>
-                    </button>
+                  {configuracoesGrupos.map((grupo) => (
+                    <div key={grupo.id} className="sidebar-subgroup">
+                      <button
+                        type="button"
+                        className="sidebar-subgroup-toggle"
+                        onClick={() =>
+                          setSidebarConfiguracoesGroupsOpen((prev) => ({
+                            ...prev,
+                            [grupo.id]: !prev[grupo.id]
+                          }))
+                        }
+                      >
+                        <span>{grupo.label}</span>
+                        {sidebarConfiguracoesGroupsOpen[grupo.id] ? (
+                          <ChevronDown size={12} />
+                        ) : (
+                          <ChevronRight size={12} />
+                        )}
+                      </button>
+                      <div
+                        className={
+                          "sidebar-subgroup-items" +
+                          (sidebarConfiguracoesGroupsOpen[grupo.id]
+                            ? " sidebar-subgroup-items--open"
+                            : "")
+                        }
+                      >
+                        {grupo.itens.map((itemId) => {
+                          const item = menuConfiguracoes.find((i) => i.id === itemId);
+                          if (!item) return null;
+                          return (
+                            <button
+                              key={item.id}
+                              type="button"
+                              className={
+                                "sidebar-subitem sidebar-subitem--nested" +
+                                (view === "configuracoes" && configuracoesAba === item.id
+                                  ? " sidebar-subitem--active"
+                                  : "")
+                              }
+                              onClick={() => {
+                                setViewIfAllowed("configuracoes");
+                                setConfiguracoesAba(item.id);
+                                setSidebarConfiguracoesOpen(true);
+                                setSidebarMobileOpen(false);
+                              }}
+                              title={item.label}
+                            >
+                              <span className="sidebar-subitem-icon">
+                                {configuracoesSiglas[item.id]}
+                              </span>
+                              <span className="sidebar-subitem-label">{item.label}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
                   ))}
                 </div>
               </div>
@@ -3511,6 +3911,14 @@ const InnerApp: React.FC = () => {
             <Dashboard
               organizacao={organizacaoSelecionada}
               mostrarFinanceiro={podeFinanceiro}
+              onAbrirDestino={(destino, abaFinanceiro) => {
+                setView(destino);
+                if (destino === "financeiro" && abaFinanceiro) {
+                  setFinanceiroAba(abaFinanceiro);
+                  setSidebarFinanceiroOpen(true);
+                }
+                setSidebarMobileOpen(false);
+              }}
             />
           )}
 
@@ -3619,6 +4027,18 @@ const InnerApp: React.FC = () => {
             <DocumentosView
               organizacao={organizacaoSelecionada}
               readOnly={!podeCriarOperacao}
+            />
+          )}
+
+          {viewPermitido && view === "relatorios" && (
+            <RelatoriosView
+              organizacao={organizacaoSelecionada}
+              onAbrirFinanceiroRelatorios={() => {
+                setViewIfAllowed("financeiro");
+                setFinanceiroAba("relatorios");
+                setSidebarFinanceiroOpen(true);
+                setSidebarMobileOpen(false);
+              }}
             />
           )}
 

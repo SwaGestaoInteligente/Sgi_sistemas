@@ -317,6 +317,16 @@ const PessoasView: React.FC<PessoasViewProps> = ({
     ].filter(Boolean);
     return partes.join(", ");
   };
+  const getInitials = (nome: string) => {
+    const partes = nome
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean);
+    if (partes.length === 0) return "-";
+    const first = partes[0]?.[0] ?? "";
+    const last = partes.length > 1 ? partes[partes.length - 1]?.[0] ?? "" : "";
+    return `${first}${last}`.toUpperCase();
+  };
 
   const papeisParaEstaOrganizacao =
     papeisPorTipoOrganizacao[organizacao.tipo ?? ""] ?? papeisPadrao;
@@ -489,7 +499,10 @@ const PessoasView: React.FC<PessoasViewProps> = ({
         {/* Lista */}
         <section className="people-list-card">
           <div className="people-list-header">
-            <h3>Pessoas cadastradas</h3>
+            <div className="people-list-title">
+              <h3>Pessoas cadastradas</h3>
+              <span className="people-count">{pessoasFiltradas.length}</span>
+            </div>
             <div className="people-search-row">
               <input
                 placeholder="Buscar por nome ou telefone"
@@ -517,35 +530,59 @@ const PessoasView: React.FC<PessoasViewProps> = ({
             </div>
           </div>
 
-          {pessoasFiltradas.length > 0 && (
-            <div className="person-list">
-              {pessoasFiltradas.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  className={
-                    "person-item person-item--compact" +
-                    (pessoaSelecionadaId === p.id ? " person-item--active" : "")
-                  }
-                  onClick={() => selecionarPessoa(p)}
-                >
-                  <div className="person-header">
-                    <span className="person-name">{p.nome}</span>
-                    {p.papel && (
-                      <span className="person-badge">{p.papel}</span>
-                    )}
-                  </div>
-                  {(() => {
-                    const endereco = montarEnderecoResumo(p);
-                    const partes = [p.telefone, endereco].filter(Boolean);
-                    if (partes.length === 0) return null;
-                    return (
-                      <div className="person-meta">{partes.join(" • ")}</div>
-                    );
-                  })()}
-                </button>
-              ))}
+          {pessoasFiltradas.length > 0 ? (
+            <div className="people-table">
+              <div className="people-table-head">
+                <span>Nome</span>
+                <span>Papel</span>
+                <span>Contato</span>
+                <span>Endereco</span>
+              </div>
+              <div className="people-table-body">
+                {pessoasFiltradas.map((p) => {
+                  const endereco = montarEnderecoResumo(p);
+                  const contato = [p.telefone, p.email].filter(Boolean).join(" • ");
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      className={
+                        "people-table-row" +
+                        (pessoaSelecionadaId === p.id
+                          ? " people-table-row--active"
+                          : "")
+                      }
+                      onClick={() => selecionarPessoa(p)}
+                    >
+                      <div className="people-table-name">
+                        <span className="people-avatar">{getInitials(p.nome)}</span>
+                        <div>
+                          <div className="people-name">{p.nome}</div>
+                          <div className="people-subtext">
+                            {contato || "Sem contato"}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="people-table-role">
+                        {p.papel ? (
+                          <span className="person-badge">{p.papel}</span>
+                        ) : (
+                          <span className="people-subtext">-</span>
+                        )}
+                      </div>
+                      <div className="people-table-contact">
+                        <span>{p.telefone ?? "-"}</span>
+                      </div>
+                      <div className="people-table-address">
+                        {endereco || "Sem endereco"}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
+          ) : (
+            <p className="people-empty">Nenhuma pessoa cadastrada.</p>
           )}
 
           {pessoaSelecionada && !readOnly && (

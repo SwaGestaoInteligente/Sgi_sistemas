@@ -246,8 +246,9 @@ export default function UnidadesView({
       <div className={"people-layout" + (formAberto ? "" : " people-layout--single")}>
         <section className="people-list-card">
           <div className="people-header-row">
-            <div>
+            <div className="people-list-title">
               <h2>{tituloExibido}</h2>
+              <span className="people-count">{unidadesFiltradas.length}</span>
             </div>
             <div className="people-header-actions">
               {!readOnly && (
@@ -285,52 +286,67 @@ export default function UnidadesView({
 
           {erro && <p className="error">{erro}</p>}
 
-          <div className="person-list">
-            {unidadesFiltradas.map((unidade) => (
-              <button
-                key={unidade.id}
-                type="button"
-                className={
-                  "person-item person-item--compact" +
-                  (unidadeSelecionadaId === unidade.id ? " person-item--active" : "")
-                }
-                onClick={() => setUnidadeSelecionadaId(unidade.id)}
-              >
-                <div className="person-header">
-                  <span className="person-name">{unidade.nome}</span>
-                </div>
-                <div className="person-meta">
-                  {(() => {
-                    const parent = unidade.parentId
-                      ? parentLookup.get(unidade.parentId)
-                      : null;
-                    const parentLabel = parent
-                      ? ` • Pai: ${parent.codigoInterno}`
-                      : "";
-                    return `${unidade.tipo} • ${unidade.codigoInterno}${parentLabel}`;
-                  })()}
-                </div>
-                {!readOnly && (
-                  <div className="person-actions">
-                    <button
-                      type="button"
-                      className="button-secondary"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        iniciarEdicao(unidade);
-                        setFormAberto(true);
-                      }}
+          {unidadesFiltradas.length > 0 ? (
+            <div className="unit-table">
+              <div className="unit-table-head">
+                <span>Unidade</span>
+                <span>Tipo</span>
+                <span>Vinculo</span>
+                <span>Codigo</span>
+                {!readOnly && <span>Acoes</span>}
+              </div>
+              <div className="unit-table-body">
+                {unidadesFiltradas.map((unidade) => {
+                  const parent = unidade.parentId
+                    ? parentLookup.get(unidade.parentId)
+                    : null;
+                  const parentLabel = parent
+                    ? `${parent.codigoInterno} - ${parent.nome}`
+                    : "Sem vinculo";
+                  return (
+                    <div
+                      key={unidade.id}
+                      className={
+                        "unit-table-row" +
+                        (unidadeSelecionadaId === unidade.id
+                          ? " unit-table-row--active"
+                          : "")
+                      }
+                      onClick={() => setUnidadeSelecionadaId(unidade.id)}
                     >
-                      Editar
-                    </button>
-                  </div>
-                )}
-              </button>
-            ))}
-            {!loading && unidadesFiltradas.length === 0 && (
-              <p className="empty">Nenhuma unidade encontrada.</p>
-            )}
-          </div>
+                      <div className="unit-table-name">
+                        <span className="unit-code">{unidade.codigoInterno}</span>
+                        <div>
+                          <div className="unit-name">{unidade.nome}</div>
+                          <div className="unit-meta">{parentLabel}</div>
+                        </div>
+                      </div>
+                      <div className="unit-table-type">{unidade.tipo}</div>
+                      <div className="unit-table-parent">{parentLabel}</div>
+                      <div className="unit-table-code">{unidade.codigoInterno}</div>
+                      {!readOnly && (
+                        <div className="unit-table-actions">
+                          <button
+                            type="button"
+                            className="button-secondary"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              iniciarEdicao(unidade);
+                              setFormAberto(true);
+                            }}
+                          >
+                            Editar
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : (
+            !loading && <p className="people-empty">Nenhuma unidade encontrada.</p>
+          )}
         </section>
 
         {formAberto && !readOnly && (

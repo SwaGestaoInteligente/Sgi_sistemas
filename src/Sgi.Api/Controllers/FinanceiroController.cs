@@ -90,6 +90,12 @@ public class FinanceiroController : ControllerBase
         return CorrecaoTiposValidos.Contains(normalizado) ? normalizado : CorrecaoTipoPadrao;
     }
 
+    private static bool ContaFinanceiraAtiva(string? status)
+    {
+        var valor = (status ?? "ativo").Trim().ToLowerInvariant();
+        return valor is "ativo" or "ativa";
+    }
+
     private static string GerarIdentificadorExternoFicticio(Guid id)
         => $"TESTE-{id.ToString("N")[..12].ToUpperInvariant()}";
 
@@ -535,8 +541,8 @@ public class FinanceiroController : ControllerBase
             return BadRequest("As contas informadas nao pertencem a organizacao.");
         }
 
-        if (!string.Equals(contaOrigem.Status, "ativo", StringComparison.OrdinalIgnoreCase)
-            || !string.Equals(contaDestino.Status, "ativo", StringComparison.OrdinalIgnoreCase))
+        if (!ContaFinanceiraAtiva(contaOrigem.Status)
+            || !ContaFinanceiraAtiva(contaDestino.Status))
         {
             return BadRequest("Transferencia permitida apenas entre contas ativas.");
         }
@@ -895,7 +901,7 @@ public class FinanceiroController : ControllerBase
                 .AnyAsync(c =>
                     c.Id == request.ContaFinanceiraId.Value &&
                     c.OrganizacaoId == request.OrganizacaoId &&
-                    (c.Status ?? "ativo").ToLowerInvariant() == "ativo");
+                    ContaFinanceiraAtiva(c.Status));
             if (!contaValida)
             {
                 return BadRequest("Conta financeira invalida para esta organizacao.");

@@ -11,6 +11,33 @@ export const LoginPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
+  const perfisDemo = [
+    {
+      id: "admin",
+      label: "Plataforma",
+      email: "admin@teste.com",
+      senha: "Admin@123"
+    },
+    {
+      id: "sindico",
+      label: "Admin condominio",
+      email: "sindico@teste.com",
+      senha: "Sindico@123"
+    },
+    {
+      id: "porteiro",
+      label: "Operacao",
+      email: "porteiro@teste.com",
+      senha: "Porteiro@123"
+    },
+    {
+      id: "morador",
+      label: "Morador",
+      email: "morador@teste.com",
+      senha: "Morador@123"
+    }
+  ] as const;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErro(null);
@@ -46,6 +73,22 @@ export const LoginPage: React.FC = () => {
         </div>
 
         <h1 className="auth-title">Bem-vindo!</h1>
+        <div className="auth-profile-shortcuts">
+          {perfisDemo.map((perfil) => (
+            <button
+              key={perfil.id}
+              type="button"
+              className="auth-profile-chip"
+              onClick={() => {
+                setEmail(perfil.email);
+                setSenha(perfil.senha);
+                setErro(null);
+              }}
+            >
+              {perfil.label}
+            </button>
+          ))}
+        </div>
 
         <form onSubmit={handleSubmit} className="form">
           <label>

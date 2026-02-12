@@ -3,6 +3,8 @@ import {
   api,
   IndiceEconomico,
   NotificacaoConfig,
+  NotificacaoEvento,
+  NotificacaoProcessamentoResumo,
   Organizacao,
   Pessoa,
   PlanoContas,
@@ -1592,7 +1594,15 @@ export default function ConfiguracoesView(props: ConfiguracoesViewProps) {
   const { organizacao, abaSelecionada, readOnly = false } = props;
   const { token } = useAuth();
   const [notificacoes, setNotificacoes] = useState<NotificacaoConfig[]>([]);
+  const [eventosNotificacoes, setEventosNotificacoes] = useState<
+    NotificacaoEvento[]
+  >([]);
   const [loadingNotificacoes, setLoadingNotificacoes] = useState(false);
+  const [loadingEventosNotificacoes, setLoadingEventosNotificacoes] =
+    useState(false);
+  const [processandoNotificacoes, setProcessandoNotificacoes] = useState(false);
+  const [resumoProcessamentoNotificacoes, setResumoProcessamentoNotificacoes] =
+    useState<NotificacaoProcessamentoResumo | null>(null);
   const [erroNotificacoes, setErroNotificacoes] = useState<string | null>(null);
   const [estruturaAba, setEstruturaAba] = useState<EstruturaSubTab>("visao");
   const [cadastrosAba, setCadastrosAba] = useState<CadastrosSubTab>("visao");
@@ -1650,6 +1660,9 @@ export default function ConfiguracoesView(props: ConfiguracoesViewProps) {
   useEffect(() => {
     setCadastrosBase([]);
     setPlanosContas([]);
+    setNotificacoes([]);
+    setEventosNotificacoes([]);
+    setResumoProcessamentoNotificacoes(null);
   }, [organizacao.id]);
 
   const carregarPlanosContas = useCallback(async () => {
@@ -2161,11 +2174,31 @@ export default function ConfiguracoesView(props: ConfiguracoesViewProps) {
     }
   }, [organizacao.id, token]);
 
+  const carregarEventosNotificacoes = useCallback(async () => {
+    if (!token) return;
+    try {
+      setLoadingEventosNotificacoes(true);
+      const eventos = await api.listarNotificacoesEventos(
+        token,
+        organizacao.id,
+        60
+      );
+      setEventosNotificacoes(eventos);
+    } catch (e: any) {
+      setErroNotificacoes(
+        e?.message || "Erro ao carregar eventos de notificacao"
+      );
+    } finally {
+      setLoadingEventosNotificacoes(false);
+    }
+  }, [organizacao.id, token]);
+
   useEffect(() => {
     if (abaAtual === "cadastros-base" && cadastrosAba === "notificacoes") {
       void carregarNotificacoes();
+      void carregarEventosNotificacoes();
     }
-  }, [abaAtual, cadastrosAba, carregarNotificacoes]);
+  }, [abaAtual, cadastrosAba, carregarEventosNotificacoes, carregarNotificacoes]);
 
   useEffect(() => {
     if (abaAtual === "estrutura-condominio") {
@@ -2202,6 +2235,7 @@ export default function ConfiguracoesView(props: ConfiguracoesViewProps) {
     notificacoes.find((n) => n.tipo === tipo && n.canal === canal);
 
   const toggleNotificacao = async (tipo: string, canal: "email" | "app") => {
+    if (readOnly) return;
     if (!token) return;
     const existente = getConfig(tipo, canal);
     try {
@@ -2238,6 +2272,7 @@ export default function ConfiguracoesView(props: ConfiguracoesViewProps) {
     campo: "diasAntesVencimento" | "limiteValor",
     valor: number
   ) => {
+    if (readOnly) return;
     if (!token) return;
     const existente = getConfig(tipo, canal);
     if (!existente) return;
@@ -2254,6 +2289,7 @@ export default function ConfiguracoesView(props: ConfiguracoesViewProps) {
   };
 
   const restaurarPadrao = async () => {
+    if (readOnly) return;
     if (!token) return;
     try {
       setErroNotificacoes(null);
@@ -2269,6 +2305,49 @@ export default function ConfiguracoesView(props: ConfiguracoesViewProps) {
       setErroNotificacoes(e.message || "Erro ao restaurar notificacoes");
     } finally {
       setLoadingNotificacoes(false);
+    }
+  };
+
+  const executarProcessamentoNotificacoesAgora = async () => {
+    if (!token) return;
+    try {
+      setErroNotificacoes(null);
+      setProcessandoNotificacoes(true);
+      const resumo = await api.processarNotificacoesAgora(token, organizacao.id);
+      setResumoProcessamentoNotificacoes(resumo);
+      await carregarEventosNotificacoes();
+    } catch (e: any) {
+      setErroNotificacoes(
+        e?.message || "Erro ao executar processamento de notificacoes"
+      );
+    } finally {
+      setProcessandoNotificacoes(false);
+    }
+  };
+
+  const marcarEventoComoLido = async (eventoId: string) => {
+    if (!token) return;
+    try {
+      const atualizado = await api.marcarNotificacaoEventoLido(token, eventoId);
+      setEventosNotificacoes((prev) =>
+        prev.map((item) => (item.id === atualizado.id ? atualizado : item))
+      );
+    } catch (e: any) {
+      setErroNotificacoes(e?.message || "Erro ao marcar evento como lido");
+    }
+  };
+
+  const marcarTodosEventosComoLidos = async () => {
+    if (!token) return;
+    try {
+      setErroNotificacoes(null);
+      const pendentes = eventosNotificacoes.filter((e) => !e.lidoEm);
+      for (const evento of pendentes) {
+        await api.marcarNotificacaoEventoLido(token, evento.id);
+      }
+      await carregarEventosNotificacoes();
+    } catch (e: any) {
+      setErroNotificacoes(e?.message || "Erro ao marcar eventos como lidos");
     }
   };
 
@@ -2326,6 +2405,14 @@ export default function ConfiguracoesView(props: ConfiguracoesViewProps) {
   }
 
   if (abaAtual === "cadastros-base" && cadastrosAba === "notificacoes") {
+    const eventosNaoLidos = eventosNotificacoes.filter((item) => !item.lidoEm);
+    const eventosUltimas24h = eventosNotificacoes.filter((item) => {
+      const criado = new Date(item.criadoEm).getTime();
+      if (!Number.isFinite(criado)) return false;
+      return Date.now() - criado <= 24 * 60 * 60 * 1000;
+    });
+    const configuracoesAtivas = notificacoes.filter((item) => item.ativo).length;
+
     return (
       <div className="config-page">
         <header className="config-header">
@@ -2345,8 +2432,19 @@ export default function ConfiguracoesView(props: ConfiguracoesViewProps) {
               type="button"
               className="button-secondary"
               onClick={() => void restaurarPadrao()}
+              disabled={readOnly || loadingNotificacoes}
             >
               Restaurar padrao
+            </button>
+            <button
+              type="button"
+              className="button-secondary"
+              onClick={() => void executarProcessamentoNotificacoesAgora()}
+              disabled={processandoNotificacoes}
+            >
+              {processandoNotificacoes
+                ? "Processando..."
+                : "Executar varredura agora"}
             </button>
           </div>
         </header>
@@ -2388,7 +2486,7 @@ export default function ConfiguracoesView(props: ConfiguracoesViewProps) {
                       <input
                         type="checkbox"
                         checked={emailCfg?.ativo ?? false}
-                        disabled={loadingNotificacoes}
+                        disabled={loadingNotificacoes || readOnly}
                         onChange={() => toggleNotificacao(evento.id, "email")}
                       />
                     </td>
@@ -2396,7 +2494,7 @@ export default function ConfiguracoesView(props: ConfiguracoesViewProps) {
                       <input
                         type="checkbox"
                         checked={appCfg?.ativo ?? false}
-                        disabled={loadingNotificacoes}
+                        disabled={loadingNotificacoes || readOnly}
                         onChange={() => toggleNotificacao(evento.id, "app")}
                       />
                     </td>
@@ -2406,6 +2504,7 @@ export default function ConfiguracoesView(props: ConfiguracoesViewProps) {
                           type="number"
                           min={0}
                           value={dias}
+                          disabled={readOnly || loadingNotificacoes}
                           onChange={(e) =>
                             atualizarCampoNotificacao(
                               evento.id,
@@ -2426,6 +2525,7 @@ export default function ConfiguracoesView(props: ConfiguracoesViewProps) {
                           type="number"
                           min={0}
                           value={limite}
+                          disabled={readOnly || loadingNotificacoes}
                           onChange={(e) =>
                             atualizarCampoNotificacao(
                               evento.id,
@@ -2445,6 +2545,123 @@ export default function ConfiguracoesView(props: ConfiguracoesViewProps) {
               })}
             </tbody>
           </table>
+        </section>
+
+        <section className="finance-table-card notificacoes-auto-card">
+          <div className="notificacoes-auto-header">
+            <div>
+              <h3>Automacoes e alertas</h3>
+              <p className="finance-form-sub">
+                Eventos gerados automaticamente pelo job de notificacoes.
+              </p>
+            </div>
+            <div className="inline-actions">
+              <button
+                type="button"
+                className="button-secondary"
+                onClick={() => void carregarEventosNotificacoes()}
+                disabled={loadingEventosNotificacoes}
+              >
+                Atualizar eventos
+              </button>
+              <button
+                type="button"
+                className="button-secondary"
+                onClick={() => void marcarTodosEventosComoLidos()}
+                disabled={!eventosNaoLidos.length || loadingEventosNotificacoes}
+              >
+                Marcar tudo como lido
+              </button>
+            </div>
+          </div>
+
+          <div className="notificacoes-auto-summary">
+            <div className="notificacoes-auto-kpi">
+              <span>Configuracoes ativas</span>
+              <strong>{configuracoesAtivas}</strong>
+            </div>
+            <div className="notificacoes-auto-kpi">
+              <span>Eventos nao lidos</span>
+              <strong>{eventosNaoLidos.length}</strong>
+            </div>
+            <div className="notificacoes-auto-kpi">
+              <span>Eventos em 24h</span>
+              <strong>{eventosUltimas24h.length}</strong>
+            </div>
+            <div className="notificacoes-auto-kpi">
+              <span>Ultima varredura</span>
+              <strong>
+                {resumoProcessamentoNotificacoes?.processadoEmUtc
+                  ? formatarData(resumoProcessamentoNotificacoes.processadoEmUtc)
+                  : "-"}
+              </strong>
+            </div>
+          </div>
+
+          {resumoProcessamentoNotificacoes && (
+            <p className="success" style={{ marginTop: 8 }}>
+              Varredura concluida: {resumoProcessamentoNotificacoes.eventosGerados}{" "}
+              evento(s) gerado(s), {resumoProcessamentoNotificacoes.contasAnalisadas}{" "}
+              conta(s) e {resumoProcessamentoNotificacoes.cobrancasAnalisadas}{" "}
+              cobranca(s) analisadas.
+            </p>
+          )}
+
+          <div className="unit-table-scroll" style={{ marginTop: 10 }}>
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Data</th>
+                  <th>Tipo</th>
+                  <th>Canal</th>
+                  <th>Titulo</th>
+                  <th>Mensagem</th>
+                  <th>Status</th>
+                  <th>Acoes</th>
+                </tr>
+              </thead>
+              <tbody>
+                {eventosNotificacoes.map((evento) => (
+                  <tr key={evento.id}>
+                    <td>{formatarData(evento.criadoEm)}</td>
+                    <td>{evento.tipo}</td>
+                    <td>{evento.canal}</td>
+                    <td>{evento.titulo}</td>
+                    <td>{evento.mensagem}</td>
+                    <td>
+                      {evento.lidoEm ? (
+                        <span className="badge-status badge-status--pago">Lido</span>
+                      ) : (
+                        <span className="badge-status badge-status--alerta">
+                          Nao lido
+                        </span>
+                      )}
+                    </td>
+                    <td>
+                      {!evento.lidoEm ? (
+                        <button
+                          type="button"
+                          className="button-secondary"
+                          onClick={() => void marcarEventoComoLido(evento.id)}
+                        >
+                          Marcar lido
+                        </button>
+                      ) : (
+                        "-"
+                      )}
+                    </td>
+                  </tr>
+                ))}
+                {!eventosNotificacoes.length && (
+                  <tr>
+                    <td colSpan={7} style={{ textAlign: "center" }}>
+                      Nenhum evento encontrado.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </section>
       </div>
     );

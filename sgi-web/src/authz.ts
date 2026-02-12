@@ -91,6 +91,69 @@ const rolePermissions: Record<UserRole, ReadonlySet<PermissionKey>> = {
   ])
 };
 
+export const permissionLabels: Record<PermissionKey, string> = {
+  "cadastros.read": "Cadastros (leitura)",
+  "cadastros.write": "Cadastros (edicao)",
+  "financeiro.read": "Financeiro (leitura)",
+  "financeiro.write": "Financeiro (edicao)",
+  "operacao.read": "Operacao (leitura)",
+  "operacao.create": "Operacao (criacao)",
+  "operacao.manage": "Operacao (gestao)",
+  "anexos.read": "Anexos (leitura)",
+  "anexos.write": "Anexos (upload)",
+  "minha_unidade.read": "Minha unidade"
+};
+
+export const getRoleLabel = (role?: UserRole | null): string => {
+  switch (role) {
+    case "PLATFORM_ADMIN":
+      return "Administrador da plataforma";
+    case "CONDO_ADMIN":
+      return "Administrador do condominio";
+    case "CONDO_STAFF":
+      return "Equipe operacional";
+    case "RESIDENT":
+      return "Morador";
+    default:
+      return "Sem perfil";
+  }
+};
+
+export const getRoleShortCode = (role?: UserRole | null): string => {
+  switch (role) {
+    case "PLATFORM_ADMIN":
+      return "PA";
+    case "CONDO_ADMIN":
+      return "AD";
+    case "CONDO_STAFF":
+      return "OP";
+    case "RESIDENT":
+      return "MU";
+    default:
+      return "--";
+  }
+};
+
+export const listPermissionsForRole = (
+  role: UserRole | null | undefined
+): PermissionKey[] => {
+  if (!role) return [];
+  if (role === "PLATFORM_ADMIN") {
+    return Object.keys(permissionLabels)
+      .filter((key) => key !== "minha_unidade.read")
+      .sort() as PermissionKey[];
+  }
+  return Array.from(rolePermissions[role].values()).sort();
+};
+
+export const getActivePermissions = (
+  session: AuthSession | null | undefined,
+  orgId?: string | null
+): PermissionKey[] => {
+  const role = getActiveRole(session, orgId);
+  return listPermissionsForRole(role);
+};
+
 export const can = (
   session: AuthSession | null | undefined,
   orgId: string | null | undefined,

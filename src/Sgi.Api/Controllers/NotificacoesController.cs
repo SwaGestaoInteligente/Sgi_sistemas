@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Sgi.Api.Auth;
+using Sgi.Api.Services;
 using Sgi.Domain.Core;
 using Sgi.Infrastructure.Data;
 
@@ -13,11 +14,16 @@ namespace Sgi.Api.Controllers;
 public class NotificacoesController : ControllerBase
 {
     private readonly SgiDbContext _db;
+    private readonly NotificacoesProcessor _processor;
     private readonly ILogger<NotificacoesController> _logger;
 
-    public NotificacoesController(SgiDbContext db, ILogger<NotificacoesController> logger)
+    public NotificacoesController(
+        SgiDbContext db,
+        NotificacoesProcessor processor,
+        ILogger<NotificacoesController> logger)
     {
         _db = db;
+        _processor = processor;
         _logger = logger;
     }
 
@@ -213,5 +219,33 @@ public class NotificacoesController : ControllerBase
         evento.LidoEm ??= DateTime.UtcNow;
         await _db.SaveChangesAsync();
         return Ok(evento);
+    }
+
+    public record ProcessarAgoraRequest(Guid OrganizacaoId);
+
+    [HttpPost("processar-agora")]
+    public async Task<ActionResult<NotificacoesProcessamentoResumo>> ProcessarAgora(
+        ProcessarAgoraRequest request,
+        CancellationToken ct)
+    {
+        if (request.OrganizacaoId == Guid.Empty)
+        {
+            return BadRequest("OrganizacaoId e obrigatorio.");
+        }
+
+        var auth = await Guard().RequireOrgAccess(request.OrganizacaoId);
+        if (auth.Error is not null)
+        {
+            return auth.Error;
+        }
+
+        auth.RequireRole(UserRole.CONDO_ADMIN, UserRole.CONDO_STAFF);
+        if (auth.Error is not null)
+        {
+            return auth.Error;
+        }
+
+        var resumo = await _processor.ProcessarAsync(request.OrganizacaoId, ct);
+        return Ok(resumo);
     }
 }

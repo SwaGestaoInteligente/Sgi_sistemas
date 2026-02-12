@@ -3555,6 +3555,7 @@ export default function FinanceiroView({
 
       setDespesas(despesasAtualizadas);
       setReceitas(receitasAtualizadas);
+      await carregarContas();
       setTransferenciaValor("");
       setTransferenciaReferencia("");
       setTransferenciaOrigemId("");
@@ -3774,11 +3775,17 @@ export default function FinanceiroView({
     normalizarSituacao(situacao) === "cancelado";
 
   const totalContas = contas.length;
-  const contasAtivasLista = contas.filter(
-    (c) => (c.status ?? "ativo").toLowerCase() === "ativo"
-  );
+  const isContaAtiva = (status?: string | null) => {
+    const normalized = (status ?? "ativo").toLowerCase();
+    return normalized === "ativo" || normalized === "ativa";
+  };
+  const isContaInativa = (status?: string | null) => {
+    const normalized = (status ?? "").toLowerCase();
+    return normalized === "inativo" || normalized === "inativa";
+  };
+  const contasAtivasLista = contas.filter((c) => isContaAtiva(c.status));
   const contasAtivas = contasAtivasLista.length;
-  const contasInativas = contas.filter((c) => c.status === "inativo").length;
+  const contasInativas = contas.filter((c) => isContaInativa(c.status)).length;
   const contasTransferencia = contasAtivasLista;
   const saldoInicialTotal = contas.reduce(
     (sum, c) => sum + (c.saldoInicial ?? 0),
@@ -4524,6 +4531,7 @@ export default function FinanceiroView({
           <button type="submit" disabled={loading || contasTransferencia.length < 2}>
             {loading ? "Transferindo..." : "Transferir"}
           </button>
+          {erro && <p className="error">{erro}</p>}
           {contasTransferencia.length < 2 && (
             <p className="finance-form-sub">
               Cadastre pelo menos duas contas ativas para transferir.
@@ -5135,15 +5143,15 @@ export default function FinanceiroView({
                   {resumoMeses.map((mes) => {
                     const alturaReceita = Math.max(
                       6,
-                      Math.round((mes.receitas / maxGraficoValor) * 90)
+                      Math.round((mes.receitas / maxGraficoValor) * 52)
                     );
                     const alturaDespesa = Math.max(
                       6,
-                      Math.round((mes.despesas / maxGraficoValor) * 90)
+                      Math.round((mes.despesas / maxGraficoValor) * 52)
                     );
                     const alturaSaldo = Math.max(
                       6,
-                      Math.round((Math.abs(mes.saldo) / maxGraficoValor) * 90)
+                      Math.round((Math.abs(mes.saldo) / maxGraficoValor) * 52)
                     );
                     return (
                       <div key={mes.key} className="dashboard-chart-day">
@@ -8641,7 +8649,7 @@ export default function FinanceiroView({
                 </div>
               </div>
 
-              <div className="finance-form-grid" style={{ marginTop: 8 }}>
+              <div className="config-filters finance-form-grid" style={{ marginTop: 8 }}>
                 <label>
                   Tipo
                   <select

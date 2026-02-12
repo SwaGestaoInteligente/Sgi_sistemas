@@ -473,6 +473,15 @@ export interface NotificacaoEvento {
   destinatariosJson?: string | null;
 }
 
+export interface NotificacaoProcessamentoResumo {
+  organizacaoId?: string | null;
+  configuracoesAtivas: number;
+  contasAnalisadas: number;
+  cobrancasAnalisadas: number;
+  eventosGerados: number;
+  processadoEmUtc: string;
+}
+
 export interface UnidadeCobranca {
   id: string;
   organizacaoId: string;
@@ -2898,6 +2907,20 @@ export const api = {
     return request<NotificacaoEvento>(
       `/config/notificacoes/eventos/${encodeURIComponent(eventoId)}/lido`,
       { method: "PATCH" },
+      token
+    );
+  },
+
+  async processarNotificacoesAgora(
+    token: string,
+    organizacaoId: string
+  ): Promise<NotificacaoProcessamentoResumo> {
+    return request<NotificacaoProcessamentoResumo>(
+      "/config/notificacoes/processar-agora",
+      {
+        method: "POST",
+        body: JSON.stringify({ organizacaoId })
+      },
       token
     );
   },
