@@ -145,8 +145,8 @@ const modulosPorSegmento: Record<string, string> = {
 
 const viewMeta: Record<AppView, { title: string; subtitle: string }> = {
   dashboard: {
-    title: "Resumo geral",
-    subtitle: "Indicadores consolidados da operacao."
+    title: "Resumo financeiro",
+    subtitle: "Visao executiva com indicadores e tendencia do caixa."
   },
   pessoas: {
     title: "Pessoas",
@@ -427,6 +427,7 @@ const Dashboard: React.FC<{
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [contas, setContas] = useState<ContaFinanceira[]>([]);
+  const [lancamentos, setLancamentos] = useState<LancamentoFinanceiro[]>([]);
   const [chamados, setChamados] = useState<any[]>([]);
   const [reservas, setReservas] = useState<any[]>([]);
   const [alertas, setAlertas] = useState<NotificacaoEvento[]>([]);
@@ -436,42 +437,38 @@ const Dashboard: React.FC<{
     try {
       setErro(null);
       setLoading(true);
-      const promises: Promise<any>[] = [];
-      if (mostrarFinanceiro) {
-        promises.push(api.listarContas(token, organizacao.id));
-        promises.push(api.listarNotificacoesEventos(token, organizacao.id, 5));
-      } else {
-        promises.push(Promise.resolve([]));
-        promises.push(Promise.resolve([]));
-      }
-      promises.push(api.listarChamados(token, organizacao.id));
-      promises.push(api.listarReservas(token, organizacao.id));
+      const [contasRes, alertasRes, lancamentosRes, chamadosRes, reservasRes] =
+        await Promise.allSettled([
+          mostrarFinanceiro
+            ? api.listarContas(token, organizacao.id)
+            : Promise.resolve([]),
+          mostrarFinanceiro
+            ? api.listarNotificacoesEventos(token, organizacao.id, 5)
+            : Promise.resolve([]),
+          mostrarFinanceiro
+            ? api.listarLancamentos(token, organizacao.id)
+            : Promise.resolve([]),
+          api.listarChamados(token, organizacao.id),
+          api.listarReservas(token, organizacao.id)
+        ]);
 
-      const [contasRes, alertasRes, chamadosRes, reservasRes] =
-        await Promise.allSettled(promises);
+      setContas(contasRes.status === "fulfilled" ? contasRes.value : []);
+      setAlertas(alertasRes.status === "fulfilled" ? alertasRes.value : []);
+      setLancamentos(
+        lancamentosRes.status === "fulfilled" ? lancamentosRes.value : []
+      );
+      setChamados(chamadosRes.status === "fulfilled" ? chamadosRes.value : []);
+      setReservas(reservasRes.status === "fulfilled" ? reservasRes.value : []);
 
-      if (contasRes.status === "fulfilled") {
-        setContas(contasRes.value);
-      } else {
-        throw contasRes.reason;
-      }
-
-      if (alertasRes.status === "fulfilled") {
-        setAlertas(alertasRes.value);
-      } else {
-        setAlertas([]);
-      }
-
-      if (chamadosRes.status === "fulfilled") {
-        setChamados(chamadosRes.value);
-      } else {
-        setChamados([]);
-      }
-
-      if (reservasRes.status === "fulfilled") {
-        setReservas(reservasRes.value);
-      } else {
-        setReservas([]);
+      const erros = [
+        contasRes.status === "rejected" ? "contas" : null,
+        alertasRes.status === "rejected" ? "alertas" : null,
+        lancamentosRes.status === "rejected" ? "lancamentos" : null,
+        chamadosRes.status === "rejected" ? "chamados" : null,
+        reservasRes.status === "rejected" ? "reservas" : null
+      ].filter(Boolean) as string[];
+      if (erros.length > 0) {
+        setErro(`Nao foi possivel carregar: ${erros.join(", ")}`);
       }
     } catch (e: any) {
       const msg = e?.message || "Erro ao carregar dados do dashboard";
@@ -559,6 +556,158 @@ const Dashboard: React.FC<{
     ...serieReservas,
     ...serieAlertas
   );
+  const parseDateSafe = (raw?: string | null) => {
+    if (!raw) return null;
+    const parsed = new Date(raw);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return parsed;
+  };
+  const isLiquidado = (situacao?: string | null) => {
+    const status = normalizeStatus(situacao);
+    return (
+      status.includes("pago") ||
+      status.includes("pagamento") ||
+      status.includes("concili") ||
+      status.includes("baixad") ||
+      status.includes("fechad") ||
+      status.includes("quitad")
+    );
+  };
+  const getCompetenciaDate = (lancamento: LancamentoFinanceiro) =>
+    parseDateSafe(lancamento.dataCompetencia) ??
+    parseDateSafe(lancamento.dataVencimento) ??
+    parseDateSafe(lancamento.dataPagamento);
+  const sumBy = (
+    items: LancamentoFinanceiro[],
+    predicate: (item: LancamentoFinanceiro) => boolean
+  ) =>
+    items.reduce((sum, item) => (predicate(item) ? sum + (item.valor ?? 0) : sum), 0);
+  const isMes = (date: Date | null, ano: number, mes: number) =>
+    Boolean(date && date.getFullYear() === ano && date.getMonth() === mes);
+  const variacaoPercentual = (atual: number, anterior: number) => {
+    if (anterior === 0) {
+      if (atual === 0) return 0;
+      return null;
+    }
+    return ((atual - anterior) / Math.abs(anterior)) * 100;
+  };
+  const formatarVariacao = (value: number | null) => {
+    if (value === null) return "novo";
+    const sinal = value > 0 ? "+" : "";
+    return `${sinal}${value.toFixed(1)}%`;
+  };
+  const variacaoClasse = (value: number | null, invertido = false) => {
+    if (value === null || value === 0) return "neutral";
+    const positivo = value > 0;
+    if (invertido) return positivo ? "down" : "up";
+    return positivo ? "up" : "down";
+  };
+
+  const hoje = new Date();
+  const mesAtual = hoje.getMonth();
+  const anoAtual = hoje.getFullYear();
+  const mesAnteriorDate = new Date(anoAtual, mesAtual - 1, 1);
+  const mesAnterior = mesAnteriorDate.getMonth();
+  const anoMesAnterior = mesAnteriorDate.getFullYear();
+
+  const receitasMesAtual = sumBy(
+    lancamentos,
+    (l) => l.tipo === "receber" && isMes(getCompetenciaDate(l), anoAtual, mesAtual)
+  );
+  const receitasMesAnterior = sumBy(
+    lancamentos,
+    (l) =>
+      l.tipo === "receber" &&
+      isMes(getCompetenciaDate(l), anoMesAnterior, mesAnterior)
+  );
+  const despesasMesAtual = sumBy(
+    lancamentos,
+    (l) => l.tipo === "pagar" && isMes(getCompetenciaDate(l), anoAtual, mesAtual)
+  );
+  const despesasMesAnterior = sumBy(
+    lancamentos,
+    (l) =>
+      l.tipo === "pagar" &&
+      isMes(getCompetenciaDate(l), anoMesAnterior, mesAnterior)
+  );
+  const saldoMesAtual = receitasMesAtual - despesasMesAtual;
+  const saldoMesAnterior = receitasMesAnterior - despesasMesAnterior;
+  const variacaoReceitas = variacaoPercentual(receitasMesAtual, receitasMesAnterior);
+  const variacaoDespesas = variacaoPercentual(despesasMesAtual, despesasMesAnterior);
+  const variacaoSaldo = variacaoPercentual(saldoMesAtual, saldoMesAnterior);
+
+  const vencidosReceber = lancamentos.filter((l) => {
+    if (l.tipo !== "receber" || isLiquidado(l.situacao)) return false;
+    const vencimento = parseDateSafe(l.dataVencimento);
+    if (!vencimento) return false;
+    return vencimento < hoje;
+  });
+  const valorInadimplencia = vencidosReceber.reduce(
+    (sum, l) => sum + (l.valor ?? 0),
+    0
+  );
+  const recebiveisEmAberto = lancamentos.filter(
+    (l) => l.tipo === "receber" && !isLiquidado(l.situacao)
+  );
+  const valorRecebiveisEmAberto = recebiveisEmAberto.reduce(
+    (sum, l) => sum + (l.valor ?? 0),
+    0
+  );
+  const taxaInadimplencia =
+    valorRecebiveisEmAberto > 0
+      ? (valorInadimplencia / valorRecebiveisEmAberto) * 100
+      : 0;
+  const monthKey = (date: Date) =>
+    `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+  const saldosMes = new Map<string, number>();
+  lancamentos.forEach((l) => {
+    const date = getCompetenciaDate(l);
+    if (!date) return;
+    const key = monthKey(date);
+    const valorAtual = saldosMes.get(key) ?? 0;
+    const delta = l.tipo === "receber" ? l.valor ?? 0 : -(l.valor ?? 0);
+    saldosMes.set(key, valorAtual + delta);
+  });
+  const ultimos3Meses = [0, 1, 2].map((offset) => {
+    const date = new Date(anoAtual, mesAtual - offset, 1);
+    return saldosMes.get(monthKey(date)) ?? 0;
+  });
+  const mediaSaldo3Meses =
+    ultimos3Meses.reduce((sum, valor) => sum + valor, 0) / ultimos3Meses.length;
+  const projecaoSaldoProximoMes = saldoInicialTotal + mediaSaldo3Meses;
+
+  const alertasEstrategicos: Array<{
+    id: string;
+    nivel: "ok" | "atencao" | "critico";
+    titulo: string;
+    detalhe: string;
+    destino?: { view: AppView; aba?: FinanceiroTab };
+  }> = [];
+  if (mostrarFinanceiro && valorInadimplencia > 0) {
+    alertasEstrategicos.push({
+      id: "inadimplencia",
+      nivel: taxaInadimplencia >= 15 ? "critico" : "atencao",
+      titulo: "Inadimplencia ativa",
+      detalhe: `${formatarMoeda(valorInadimplencia)} em aberto (${taxaInadimplencia.toFixed(1)}% dos recebiveis)`,
+      destino: { view: "financeiro", aba: "inadimplentes" }
+    });
+  }
+  if (mostrarFinanceiro && saldoMesAtual < 0) {
+    alertasEstrategicos.push({
+      id: "saldo-negativo",
+      nivel: saldoMesAtual < saldoMesAnterior ? "critico" : "atencao",
+      titulo: "Saldo mensal pressionado",
+      detalhe: `Saldo do mes: ${formatarMoeda(saldoMesAtual)}`
+    });
+  }
+  if (alertasEstrategicos.length === 0) {
+    alertasEstrategicos.push({
+      id: "saude",
+      nivel: "ok",
+      titulo: "Saude financeira estavel",
+      detalhe: "Sem alertas criticos no fechamento parcial do mes."
+    });
+  }
   const chartLabels = ["D-6", "D-5", "D-4", "D-3", "D-2", "D-1", "Hoje"];
   const resolverDestinoAlerta = (alerta: NotificacaoEvento) => {
     const texto = normalizeText(
@@ -613,13 +762,39 @@ const Dashboard: React.FC<{
       destino: mostrarFinanceiro ? { view: "financeiro", aba: "contas" } : undefined
     }
   ];
+  const formatarDataCurta = (raw?: string | null) => {
+    const date = parseDateSafe(raw);
+    if (!date) return "-";
+    return date.toLocaleDateString("pt-BR");
+  };
+  const chamadosRecentes = [...chamados]
+    .sort((a, b) => {
+      const dataA = parseDateSafe(a.dataAbertura)?.getTime() ?? 0;
+      const dataB = parseDateSafe(b.dataAbertura)?.getTime() ?? 0;
+      return dataB - dataA;
+    })
+    .slice(0, 6);
+  const toneStatusChamado = (status?: string | null) => {
+    const value = normalizeStatus(status);
+    if (value.includes("aberto") || value.includes("atendimento")) return "atencao";
+    if (value.includes("resol") || value.includes("fechado") || value.includes("encerrado")) {
+      return "ok";
+    }
+    return "neutro";
+  };
+  const tonePrioridadeChamado = (prioridade?: string | null) => {
+    const value = normalizeStatus(prioridade);
+    if (value.includes("urgente") || value.includes("alta")) return "critico";
+    if (value.includes("media")) return "atencao";
+    return "ok";
+  };
 
   return (
     <div className="dashboard">
       <div className="dashboard-header-row">
         <div>
-          <p className="dashboard-caption">Indicadores consolidados da operacao.</p>
-          <h2>Painel executivo</h2>
+          <p className="dashboard-caption">Visao executiva do condominio com indicadores de caixa.</p>
+          <h2>Resumo Financeiro</h2>
         </div>
         <button type="button" className="dashboard-refresh" onClick={carregar} disabled={loading}>
           {loading ? "Atualizando..." : "Atualizar dados"}
@@ -640,34 +815,128 @@ const Dashboard: React.FC<{
 
         <div className="dashboard-card">
           <div className="dashboard-card-label">
-            <span className="dashboard-card-icon">CF</span>
-            Contas ativas
+            <span className="dashboard-card-icon">R</span>
+            Receitas
           </div>
-          <div className="dashboard-card-value">{contasAtivas}</div>
-          <div className="dashboard-card-sub">Contas financeiras habilitadas</div>
+          <div className="dashboard-card-value">{formatarMoeda(receitasMesAtual)}</div>
+          <div
+            className={`dashboard-card-sub dashboard-card-sub--trend dashboard-trend--${variacaoClasse(variacaoReceitas)}`}
+          >
+            {formatarVariacao(variacaoReceitas)} vs mes anterior
+          </div>
         </div>
 
         <div className="dashboard-card">
           <div className="dashboard-card-label">
-            <span className="dashboard-card-icon">CH</span>
-            Chamados abertos
+            <span className="dashboard-card-icon">D</span>
+            Despesas
           </div>
-          <div className="dashboard-card-value">{chamadosAbertos}</div>
-          <div className="dashboard-card-sub">Chamados pendentes na operacao</div>
+          <div className="dashboard-card-value">{formatarMoeda(despesasMesAtual)}</div>
+          <div
+            className={`dashboard-card-sub dashboard-card-sub--trend dashboard-trend--${variacaoClasse(variacaoDespesas, true)}`}
+          >
+            {formatarVariacao(variacaoDespesas)} vs mes anterior
+          </div>
         </div>
 
         <div className="dashboard-card">
           <div className="dashboard-card-label">
-            <span className="dashboard-card-icon">AL</span>
-            Alertas nao lidos
+            <span className="dashboard-card-icon">IN</span>
+            Inadimplencia
           </div>
-          <div className="dashboard-card-value">{alertasNaoLidos}</div>
-          <div className="dashboard-card-sub">Alertas aguardando visualizacao</div>
+          <div className="dashboard-card-value">{vencidosReceber.length} unidades</div>
+          <div className="dashboard-card-sub">{formatarMoeda(valorInadimplencia)} em atraso</div>
         </div>
       </div>
 
-      <div className="dashboard-panels">
-        <div className="dashboard-panel dashboard-chart-card">
+      {mostrarFinanceiro && (
+        <div className="dashboard-panels dashboard-panels--intelligence">
+          <div className="dashboard-panel dashboard-intelligence-card">
+            <div className="dashboard-panel-header">
+              <div>
+                <h3>Comparativo mensal</h3>
+                <p>Mes atual vs mes anterior com tendencia.</p>
+              </div>
+            </div>
+            <div className="dashboard-intelligence-grid">
+              <article className="dashboard-intelligence-item">
+                <span className="dashboard-intelligence-label">Receitas</span>
+                <strong>{formatarMoeda(receitasMesAtual)}</strong>
+                <small
+                  className={`dashboard-trend dashboard-trend--${variacaoClasse(variacaoReceitas)}`}
+                >
+                  {formatarVariacao(variacaoReceitas)} vs {formatarMoeda(receitasMesAnterior)}
+                </small>
+              </article>
+
+              <article className="dashboard-intelligence-item">
+                <span className="dashboard-intelligence-label">Despesas</span>
+                <strong>{formatarMoeda(despesasMesAtual)}</strong>
+                <small
+                  className={`dashboard-trend dashboard-trend--${variacaoClasse(variacaoDespesas, true)}`}
+                >
+                  {formatarVariacao(variacaoDespesas)} vs {formatarMoeda(despesasMesAnterior)}
+                </small>
+              </article>
+
+              <article className="dashboard-intelligence-item">
+                <span className="dashboard-intelligence-label">Saldo do mes</span>
+                <strong>{formatarMoeda(saldoMesAtual)}</strong>
+                <small
+                  className={`dashboard-trend dashboard-trend--${variacaoClasse(variacaoSaldo)}`}
+                >
+                  {formatarVariacao(variacaoSaldo)} vs {formatarMoeda(saldoMesAnterior)}
+                </small>
+              </article>
+            </div>
+          </div>
+
+          <div className="dashboard-panel dashboard-strategy-card">
+            <div className="dashboard-panel-header">
+              <div>
+                <h3>Alertas e projecao</h3>
+                <p>Sinalizacao rapida para decisao.</p>
+              </div>
+            </div>
+            <div className="dashboard-projection">
+              <span>Projecao proximo mes</span>
+              <strong>{formatarMoeda(projecaoSaldoProximoMes)}</strong>
+              <small>Media ultimos 3 meses: {formatarMoeda(mediaSaldo3Meses)}</small>
+            </div>
+            <ul className="dashboard-strategy-list">
+              {alertasEstrategicos.map((item) => {
+                const podeAbrir = Boolean(item.destino && onAbrirDestino);
+                return (
+                  <li
+                    key={item.id}
+                    className={`dashboard-strategy-item dashboard-strategy-item--${item.nivel}${podeAbrir ? " dashboard-strategy-item--actionable" : ""}`}
+                    role={podeAbrir ? "button" : undefined}
+                    tabIndex={podeAbrir ? 0 : undefined}
+                    onClick={() => {
+                      if (podeAbrir && item.destino) {
+                        onAbrirDestino?.(item.destino.view, item.destino.aba);
+                      }
+                    }}
+                    onKeyDown={(event) => {
+                      if (!podeAbrir || !item.destino) return;
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        onAbrirDestino?.(item.destino.view, item.destino.aba);
+                      }
+                    }}
+                  >
+                    <strong>{item.titulo}</strong>
+                    <span>{item.detalhe}</span>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        </div>
+      )}
+
+      <div className="dashboard-panels dashboard-panels--single">
+        <div className="dashboard-panel dashboard-chart-card dashboard-chart-card--full">
           <div className="dashboard-panel-header">
             <div>
               <h3>Atividade semanal</h3>
@@ -684,10 +953,10 @@ const Dashboard: React.FC<{
               const chamadosValue = serieChamados[index] ?? 0;
               const reservasValue = serieReservas[index] ?? 0;
               const alertasValue = serieAlertas[index] ?? 0;
-                const scale = 52;
+              const scale = 64;
               const heightFor = (value: number) => {
-                if (!value) return 6;
-                return Math.max(12, Math.round((value / serieMax) * scale));
+                if (!value) return 8;
+                return Math.max(14, Math.round((value / serieMax) * scale));
               };
               return (
                 <div key={label} className="dashboard-chart-day">
@@ -713,48 +982,28 @@ const Dashboard: React.FC<{
               );
             })}
           </div>
-        </div>
-
-        <div className="dashboard-panel dashboard-insights-card">
-          <div className="dashboard-panel-header">
-            <div>
-              <h3>Resumo executivo</h3>
-              <p>Indicadores para decisao rapida.</p>
-            </div>
-          </div>
-          <ul className="dashboard-insights">
+          <div className="dashboard-insight-chips">
             {resumoExecutivo.map((item) => {
               const podeAbrir = Boolean(item.destino && onAbrirDestino);
               return (
-                <li
+                <button
                   key={item.id}
+                  type="button"
                   className={
-                    "dashboard-insight-row" +
-                    (podeAbrir ? " dashboard-insight-row--actionable" : "")
+                    "dashboard-insight-chip" +
+                    (podeAbrir ? " dashboard-insight-chip--actionable" : "")
                   }
-                  role={podeAbrir ? "button" : undefined}
-                  tabIndex={podeAbrir ? 0 : undefined}
                   onClick={() => {
                     if (!podeAbrir || !item.destino) return;
                     onAbrirDestino?.(item.destino.view, item.destino.aba);
                   }}
-                  onKeyDown={(event) => {
-                    if (!podeAbrir || !item.destino) return;
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      onAbrirDestino?.(item.destino.view, item.destino.aba);
-                    }
-                  }}
                 >
-                  <span className="insight-label">{item.label}</span>
-                  <strong className="dashboard-insight-value">{item.valor}</strong>
-                </li>
+                  <span>{item.label}</span>
+                  <strong>{item.valor}</strong>
+                </button>
               );
             })}
-          </ul>
-          <p className="dashboard-insights-note">
-            Ultima atualizacao: {new Date().toLocaleDateString("pt-BR")}
-          </p>
+          </div>
         </div>
       </div>
 
@@ -4027,14 +4276,14 @@ const InnerApp: React.FC = () => {
           {mensagemDemo && <p className="success">{mensagemDemo}</p>}
 
           {viewPermitido && ajudaPassos.length > 0 && (
-            <details className="quick-help-card">
-              <summary>Autoajuda desta tela</summary>
+            <section className="quick-help-card" role="note" aria-label="Autoajuda desta tela">
+              <h3 className="quick-help-title">Como usar esta tela</h3>
               <ol className="quick-help-list">
                 {ajudaPassos.map((item, index) => (
                   <li key={`${view}-ajuda-${index}`}>{item}</li>
                 ))}
               </ol>
-            </details>
+            </section>
           )}
 
           {!viewPermitido && (
@@ -4222,3 +4471,4 @@ export const App: React.FC = () => (
 );
 
 export default App;
+

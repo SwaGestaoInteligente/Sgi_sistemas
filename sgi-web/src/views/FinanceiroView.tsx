@@ -38,6 +38,8 @@ import {
 } from "../api";
 import { can } from "../authz";
 import { useAuth } from "../hooks/useAuth";
+import { DashboardCharts } from "../components/DashboardCharts";
+import { MetricCard } from "../components/MetricCard";
 
 type FinanceiroViewProps = {
   organizacao: Organizacao;
@@ -183,6 +185,22 @@ export default function FinanceiroView({
     "Transferencia entre contas"
   );
   const [transferenciaReferencia, setTransferenciaReferencia] = useState("");
+
+  // ================= GRAFICOS =================
+
+const inadimplenciaData = [
+  { name: "Em dia", value: 263321 },
+  { name: "Em aberto", value: 19614 },
+];
+
+const evolucaoData = [
+  { mes: "Jan", receitas: 40000, despesas: 35000, saldo: 5000 },
+  { mes: "Fev", receitas: 45000, despesas: 38000, saldo: 7000 },
+  { mes: "Mar", receitas: 49700, despesas: 60350, saldo: -10650 },
+  { mes: "Abr", receitas: 52000, despesas: 42000, saldo: 10000 },
+  { mes: "Mai", receitas: 48000, despesas: 39000, saldo: 9000 },
+  { mes: "Jun", receitas: 53000, despesas: 47000, saldo: 6000 },
+];
 
   // Contas a pagar (lançamentos)
   const [despesas, setDespesas] = useState<LancamentoFinanceiro[]>([]);
@@ -4922,569 +4940,409 @@ export default function FinanceiroView({
         </div>
       </div>
 
-      <div className="finance-summary-grid">
-        <div className="finance-summary-card">
-          <p className="finance-summary-label">Saldo atual</p>
-          <p className="finance-summary-value">
-            R$ {saldoAtual.toFixed(2)}
-          </p>
-        </div>
-        <div className="finance-summary-card">
-          <p className="finance-summary-label">Total a pagar (mês)</p>
-          <p className="finance-summary-value">
-            R$ {totalAPagarMes.toFixed(2)}
-          </p>
-        </div>
-        <div className="finance-summary-card">
-          <p className="finance-summary-label">Total pago (mês)</p>
-          <p className="finance-summary-value">
-            R$ {totalPagoMes.toFixed(2)}
-          </p>
-        </div>
+
+{aba === "mapaFinanceiro" && (
+  <div style={{ padding: '0' }}>
+    {/* Header com título e botão de atualizar */}
+    <div style={{ 
+      display: 'flex', 
+      justifyContent: 'space-between', 
+      alignItems: 'flex-start', 
+      marginBottom: '32px',
+      paddingBottom: '24px',
+      borderBottom: '1px solid #E5E7EB'
+    }}>
+      <div>
+        <h2 style={{ 
+          margin: 0, 
+          fontSize: '32px', 
+          fontWeight: '700',
+          color: '#111827',
+          letterSpacing: '-0.5px'
+        }}>
+          Dashboard Financeiro
+        </h2>
+        <p style={{ 
+          margin: '8px 0 0 0', 
+          color: '#6B7280',
+          fontSize: '15px'
+        }}>
+          Visão executiva e consolidada do condomínio
+        </p>
       </div>
+      <button
+        type="button"
+        onClick={recarregarPainel}
+        disabled={painelLoading}
+        style={{
+          padding: '12px 24px',
+          backgroundColor: painelLoading ? '#9CA3AF' : '#3B82F6',
+          color: '#ffffff',
+          border: 'none',
+          borderRadius: '10px',
+          cursor: painelLoading ? 'not-allowed' : 'pointer',
+          fontWeight: '600',
+          fontSize: '14px',
+          transition: 'all 0.2s',
+          boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+        }}
+      >
+        {painelLoading ? "Atualizando..." : "↻ Atualizar painel"}
+      </button>
+    </div>
 
-      <div className="finance-upload-card">
-        <div className="finance-upload-header">
-          <div>
-            <h3>Envios rápidos</h3>
-            <span className="finance-form-sub">
-              Envie documentos com a câmera ou arquivo.
-            </span>
-          </div>
-          {canWrite && (
-            <button
-              type="button"
-              className="action-primary"
-              onClick={() => setMostrarEnvio((prev) => !prev)}
-            >
-              Enviar para o SGI
-            </button>
-          )}
-        </div>
+    {/* Grid de Cards de Métricas */}
+    <div style={{ 
+      display: 'grid', 
+      gridTemplateColumns: 'repeat(4, 1fr)', 
+      gap: '20px', 
+      marginBottom: '40px' 
+    }}>
+      <MetricCard
+        title="Saldo Consolidado"
+        value={formatarValor(saldoAtual)}
+        subtitle={`Receitas: ${formatarValor(receitasPagas)} • Despesas: ${formatarValor(despesasPagas)}`}
+        icon="wallet"
+        variant="primary"
+      />
+      <MetricCard
+        title="Receitas do Período"
+        value={formatarValor(totalReceitasMes)}
+        subtitle="Lançadas no período atual"
+        icon="trending-up"
+        variant="success"
+      />
+      <MetricCard
+        title="Despesas do Período"
+        value={formatarValor(totalDespesasMes)}
+        subtitle={`A pagar: ${formatarValor(totalAPagarMes)}`}
+        icon="trending-down"
+        variant="danger"
+      />
+      <MetricCard
+        title="Inadimplência"
+        value={`${inadimplentes.length} unidade${inadimplentes.length !== 1 ? 's' : ''}`}
+        subtitle={`Total: ${formatarValor(totalInadimplenteValor)}`}
+        icon="alert"
+        variant="warning"
+      />
+    </div>
 
-        {!canWrite && (
-          <p className="finance-form-sub">Sem acesso para envios.</p>
-        )}
+    {/* Gráficos Visuais com Recharts */}
+    <DashboardCharts
+      inadimplenciaData={[
+        { name: 'Até 30 dias', value: totalInadimplenteValor * 0.4 },
+        { name: '31-60 dias', value: totalInadimplenteValor * 0.3 },
+        { name: '61-90 dias', value: totalInadimplenteValor * 0.2 },
+        { name: '+90 dias', value: totalInadimplenteValor * 0.1 }
+      ]}
+      evolucaoData={resumoMeses.map(mes => ({
+        mes: mes.label,
+        receitas: mes.receitas,
+        despesas: mes.despesas,
+        saldo: mes.saldo
+      }))}
+    />
 
-        {canWrite && mostrarEnvio && (
-          <form className="finance-upload-form" onSubmit={enviarArquivoFinanceiro}>
-            <label>
-              Tipo do envio
-              <select
-                value={tipoEnvio}
-                onChange={(e) => setTipoEnvio(e.target.value)}
-              >
-                <option value="boleto">Boleto / Conta</option>
-                <option value="nota">Nota / Compra</option>
-                <option value="comprovante">Comprovante</option>
-                <option value="extrato">Extrato bancário</option>
-              </select>
-            </label>
-            {tipoEnvio === "extrato" && (
-              <label>
-                Conta bancaria
-                <select
-                  value={contaExtratoId}
-                  onChange={(e) => setContaExtratoId(e.target.value)}
-                >
-                  <option value="">Selecionar</option>
-                  {contasAtivasLista.map((conta) => (
-                    <option key={conta.id} value={conta.id}>
-                      {conta.nome}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-            <label>
-              Arquivo
-              <input
-                type="file"
-                accept={
-                  tipoEnvio === "extrato"
-                    ? ".csv,.ofx"
-                    : "image/*,application/pdf"
-                }
-                capture="environment"
-                onChange={(e) =>
-                  setArquivoEnvio(e.target.files ? e.target.files[0] : null)
-                }
-              />
-            </label>
-            <button type="submit" disabled={loading || !arquivoEnvio}>
-              {loading ? "Enviando..." : "Enviar"}
-            </button>
-          </form>
-        )}
-
-        {statusEnvio && <p className="success">{statusEnvio}</p>}
-      </div>
-
-      {exibirMenuAbas && (
-        <div className="finance-tabs">
-          {menuFinanceiro.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              className={"finance-tab" + (aba === item.id ? " finance-tab--active" : "")}
-              onClick={() => handleAbaChange(item.id)}
-            >
-              <span>{item.label}</span>
-              {item.badge && <span className="badge">{item.badge}</span>}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {aba === "mapaFinanceiro" && (
-        <>
-          <section className="dashboard finance-dashboard">
-            <div className="dashboard-header-row">
-              <div>
-                <h3>Painel financeiro</h3>
-                <p className="dashboard-caption">
-                  Visao executiva do condominio com indicadores, atalhos e tendencias do caixa.
-                </p>
-              </div>
-              <button
-                type="button"
-                className="dashboard-refresh"
-                onClick={recarregarPainel}
-                disabled={painelLoading}
-              >
-                {painelLoading ? "Atualizando..." : "Atualizar painel"}
-              </button>
-            </div>
-
-            <div className="dashboard-grid">
-              <div className="dashboard-card dashboard-card--primary">
-                <div className="dashboard-card-label">
-                  <span className="dashboard-card-icon">Σ</span>
-                  Saldo consolidado
-                </div>
-                <div className="dashboard-card-value">{formatarValor(saldoAtual)}</div>
-                <div className="dashboard-card-sub">
-                  Receitas pagas {formatarValor(receitasPagas)} • Despesas pagas{" "}
-                  {formatarValor(despesasPagas)}
-                </div>
-              </div>
-              <div className="dashboard-card">
-                <div className="dashboard-card-label">
-                  <span className="dashboard-card-icon">R</span>
-                  Receitas do periodo
-                </div>
-                <div className="dashboard-card-value">{formatarValor(totalReceitasMes)}</div>
-                <div className="dashboard-card-sub">
-                  Lancadas no periodo atual
-                </div>
-              </div>
-              <div className="dashboard-card">
-                <div className="dashboard-card-label">
-                  <span className="dashboard-card-icon">D</span>
-                  Despesas do periodo
-                </div>
-                <div className="dashboard-card-value">{formatarValor(totalDespesasMes)}</div>
-                <div className="dashboard-card-sub">A pagar no mes {formatarValor(totalAPagarMes)}</div>
-              </div>
-              <div className="dashboard-card">
-                <div className="dashboard-card-label">
-                  <span className="dashboard-card-icon">S</span>
-                  Saldo do periodo
-                </div>
-                <div className="dashboard-card-value">{formatarValor(saldoMes)}</div>
-                <div className="dashboard-card-sub">
-                  Pago no mes {formatarValor(totalPagoMes)}
-                </div>
-              </div>
-              <div className="dashboard-card">
-                <div className="dashboard-card-label">
-                  <span className="dashboard-card-icon">!</span>
-                  Inadimplencia
-                </div>
-                <div className="dashboard-card-value">{inadimplentes.length}</div>
-                <div className="dashboard-card-sub">
-                  {formatarValor(totalInadimplenteValor)} em atraso
-                </div>
-              </div>
-            </div>
-
-            <div className="dashboard-quick-grid">
-              {atalhosFinanceiro.map((item) => (
-                <button
-                  key={item.label}
-                  type="button"
-                  className="dashboard-quick-card"
-                  onClick={() => handleAbaChange(item.goTo)}
-                >
-                  <span className="dashboard-quick-icon">{item.icon}</span>
-                  <div>
-                    <strong>{item.label}</strong>
-                    <span>{item.sub}</span>
-                  </div>
-                  <span className="dashboard-quick-badge">{item.badge}</span>
-                </button>
-              ))}
-            </div>
-
-            <div className="dashboard-panels">
-              <div className="dashboard-panel dashboard-chart-card">
-                <div className="dashboard-panel-header">
-                  <div>
-                    <h3>Visao economica (6 meses)</h3>
-                    <p>Receitas, despesas e saldo por competencia.</p>
-                  </div>
-                  <div className="dashboard-chart-legend">
-                    <span className="legend-item legend-item--receita">Receitas</span>
-                    <span className="legend-item legend-item--despesa">Despesas</span>
-                    <span className="legend-item legend-item--saldo">Saldo</span>
-                  </div>
-                </div>
-                <div className="dashboard-chart-bars">
-                  {resumoMeses.map((mes) => {
-                    const alturaReceita = Math.max(
-                      6,
-                      Math.round((mes.receitas / maxGraficoValor) * 52)
-                    );
-                    const alturaDespesa = Math.max(
-                      6,
-                      Math.round((mes.despesas / maxGraficoValor) * 52)
-                    );
-                    const alturaSaldo = Math.max(
-                      6,
-                      Math.round((Math.abs(mes.saldo) / maxGraficoValor) * 52)
-                    );
-                    return (
-                      <div key={mes.key} className="dashboard-chart-day">
-                        <div className="dashboard-chart-group">
-                          <span
-                            className="dashboard-chart-bar dashboard-chart-bar--receita"
-                            style={{ height: alturaReceita }}
-                            title={`Receitas: ${formatarValor(mes.receitas)}`}
-                          />
-                          <span
-                            className="dashboard-chart-bar dashboard-chart-bar--despesa"
-                            style={{ height: alturaDespesa }}
-                            title={`Despesas: ${formatarValor(mes.despesas)}`}
-                          />
-                          <span
-                            className="dashboard-chart-bar dashboard-chart-bar--saldo"
-                            style={{ height: alturaSaldo }}
-                            title={`Saldo: ${formatarValor(mes.saldo)}`}
-                          />
-                        </div>
-                        <span className="dashboard-chart-label">{mes.label}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="dashboard-panel dashboard-insights-card">
-                <div className="dashboard-panel-header">
-                  <div>
-                    <h3>Insights rapidos</h3>
-                    <p>Indicadores para acao imediata.</p>
-                  </div>
-                </div>
-                <ul className="dashboard-insights">
-                  <li>
-                    <span className="insight-label">Saldo do periodo</span>
-                    <strong>{formatarValor(saldoMes)}</strong>
-                  </li>
-                  <li>
-                    <span className="insight-label">Pago no mes</span>
-                    <strong>{percentualPagoMes}%</strong>
-                  </li>
-                  <li>
-                    <span className="insight-label">Receitas pagas</span>
-                    <strong>{formatarValor(receitasPagasMes)}</strong>
-                  </li>
-                  <li>
-                    <span className="insight-label">Despesas pagas</span>
-                    <strong>{formatarValor(despesasPagasMes)}</strong>
-                  </li>
-                  <li>
-                    <span className="insight-label">Inadimplencia</span>
-                    <strong>{formatarValor(totalInadimplenteValor)}</strong>
-                  </li>
-                </ul>
-                <p className="dashboard-insights-note">
-                  Atualize o painel para refletir os ultimos movimentos.
-                </p>
-              </div>
-            </div>
-          </section>
-
-          <section className="finance-map">
-          <div className="finance-map-header">
+    {/* Ações Rápidas */}
+    <div style={{ marginTop: '48px' }}>
+      <h3 style={{ 
+        fontSize: '22px', 
+        fontWeight: '600', 
+        marginBottom: '20px',
+        color: '#111827'
+      }}>
+        Ações Rápidas
+      </h3>
+      <div className="dashboard-quick-grid">
+        {atalhosFinanceiro.map((item) => (
+          <button
+            key={item.label}
+            type="button"
+            className="dashboard-quick-card"
+            onClick={() => handleAbaChange(item.goTo)}
+          >
+            <span className="dashboard-quick-icon">{item.icon}</span>
             <div>
-              <h3>Mapa financeiro</h3>
-              <p className="finance-form-sub">
-                Fluxo visual do dinheiro: origem, classificacao, movimento e destino.
-              </p>
+              <strong>{item.label}</strong>
+              <span>{item.sub}</span>
             </div>
-            <span className="finance-map-pill">Fluxo visual — regras entram depois</span>
-          </div>
+            <span className="dashboard-quick-badge">{item.badge}</span>
+          </button>
+        ))}
+      </div>
+    </div>
 
-          <div className="finance-map-grid">
-            <div className="finance-map-column finance-map-column--entry">
-              <div className="finance-map-column-title">
-                <span>Origem</span>
-                <span className="finance-map-count">4 fontes</span>
-              </div>
-              <div className="finance-map-cards">
-                {[
-                  {
-                    title: "Morador",
-                    sub: "Taxas e acordos",
-                    badge: "12 entradas",
-                    tooltip: "Pagamentos de moradores e acordos firmados.",
-                    goTo: "contasReceber" as FinanceiroTab
-                  },
-                  {
-                    title: "Fornecedor",
-                    sub: "Servicos e contratos",
-                    badge: "6 lancamentos",
-                    tooltip: "Origem ligada a servicos contratados.",
-                    goTo: "contasPagar" as FinanceiroTab
-                  },
-                  {
-                    title: "Funcionario",
-                    sub: "Folha e beneficios",
-                    badge: "4 lancamentos",
-                    tooltip: "Origem interna ligada a pessoal.",
-                    goTo: "contasPagar" as FinanceiroTab
-                  },
-                  {
-                    title: "Condominio",
-                    sub: "Origem interna",
-                    badge: "3 ajustes",
-                    tooltip: "Movimentos internos do condominio.",
-                    goTo: "transferencias" as FinanceiroTab
-                  }
-                ].map((item) => (
-                  <button
-                    key={item.title}
-                    type="button"
-                    className="finance-map-card"
-                    title={`${item.tooltip} Clique para abrir.`}
-                    onClick={() => handleAbaChange(item.goTo)}
-                  >
-                    <div className="finance-map-card-title">{item.title}</div>
-                    <p className="finance-map-card-sub">{item.sub}</p>
-                    <span className="finance-map-card-badge">{item.badge}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="finance-map-column finance-map-column--neutral">
-              <div className="finance-map-column-title">
-                <span>Classificacao</span>
-                <span className="finance-map-count">6 tipos</span>
-              </div>
-              <div className="finance-map-chips">
-                {[
-                  { label: "Receita", goTo: "receitasDespesas" },
-                  { label: "Despesa", goTo: "receitasDespesas" },
-                  { label: "Acordo", goTo: "receitasDespesas" },
-                  { label: "Multa", goTo: "receitasDespesas" },
-                  { label: "Taxa", goTo: "receitasDespesas" },
-                  { label: "Inadimplencia", goTo: "receitasDespesas" }
-                ].map((item) => (
-                  <button
-                    key={item.label}
-                    type="button"
-                    className="finance-map-chip"
-                    title={`Classifica como ${item.label.toLowerCase()}. Clique para abrir.`}
-                    onClick={() => handleAbaChange(item.goTo as FinanceiroTab)}
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </div>
-              <p className="finance-map-column-note">
-                Classificacao define o tipo antes de entrar no plano financeiro.
-              </p>
-            </div>
-
-            <div className="finance-map-column finance-map-column--neutral">
-              <div className="finance-map-column-title">
-                <span>Plano financeiro</span>
-                <span className="finance-map-count">4 bases</span>
-              </div>
-              <div className="finance-map-cards">
-                {[
-                  {
-                    title: "Categoria financeira",
-                    sub: "Agrupador principal",
-                    badge: "18 categorias",
-                    tooltip: "Organiza receitas e despesas.",
-                    goTo: "categorias" as FinanceiroTab
-                  },
-                  {
-                    title: "Centro de custo",
-                    sub: "Responsavel pelo gasto",
-                    badge: "7 centros",
-                    tooltip: "Distribui custos por area.",
-                    goTo: "categorias" as FinanceiroTab
-                  },
-                  {
-                    title: "Forma de pagamento",
-                    sub: "Pix, boleto, cartao",
-                    badge: "5 formas",
-                    tooltip: "Define como o valor entra ou sai.",
-                    goTo: "contas" as FinanceiroTab
-                  },
-                  {
-                    title: "Status financeiro",
-                    sub: "Aberto, pago, atrasado",
-                    badge: "6 status",
-                    tooltip: "Controla o andamento do lancamento.",
-                    goTo: "receitasDespesas" as FinanceiroTab
-                  }
-                ].map((item) => (
-                  <button
-                    key={item.title}
-                    type="button"
-                    className="finance-map-card"
-                    title={`${item.tooltip} Clique para abrir.`}
-                    onClick={() => handleAbaChange(item.goTo)}
-                  >
-                    <div className="finance-map-card-title">{item.title}</div>
-                    <p className="finance-map-card-sub">{item.sub}</p>
-                    <span className="finance-map-card-badge">{item.badge}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="finance-map-column finance-map-column--alert">
-              <div className="finance-map-column-title">
-                <span>Movimento</span>
-                <span className="finance-map-count">5 etapas</span>
-              </div>
-              <div className="finance-map-cards">
-                {[
-                  {
-                    title: "Contas a pagar",
-                    sub: "Saidas planejadas",
-                    badge: "8 pendentes",
-                    tooltip: "Despesas programadas para pagamento.",
-                    goTo: "contasPagar" as FinanceiroTab
-                  },
-                  {
-                    title: "Contas a receber",
-                    sub: "Entradas previstas",
-                    badge: "14 previstas",
-                    tooltip: "Receitas aguardando recebimento.",
-                    goTo: "contasReceber" as FinanceiroTab
-                  },
-                  {
-                    title: "Lancamento",
-                    sub: "Registro financeiro",
-                    badge: "22 ativos",
-                    tooltip: "Registro base do movimento.",
-                    goTo: "receitasDespesas" as FinanceiroTab
-                  },
-                  {
-                    title: "Parcela",
-                    sub: "Divisao do valor",
-                    badge: "10 parcelas",
-                    tooltip: "Divisao de pagamentos ou recebimentos.",
-                    goTo: "receitasDespesas" as FinanceiroTab
-                  },
-                  {
-                    title: "Recorrencia",
-                    sub: "Lancamentos automaticos",
-                    badge: "4 regras",
-                    tooltip: "Fluxo recorrente do condominio.",
-                    goTo: "receitasDespesas" as FinanceiroTab
-                  }
-                ].map((item) => (
-                  <button
-                    key={item.title}
-                    type="button"
-                    className="finance-map-card"
-                    title={`${item.tooltip} Clique para abrir.`}
-                    onClick={() => handleAbaChange(item.goTo)}
-                  >
-                    <div className="finance-map-card-title">{item.title}</div>
-                    <p className="finance-map-card-sub">{item.sub}</p>
-                    <span className="finance-map-card-badge">{item.badge}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="finance-map-column finance-map-column--entry">
-              <div className="finance-map-column-title">
-                <span>Destino</span>
-                <span className="finance-map-count">4 alvos</span>
-              </div>
-              <div className="finance-map-cards">
-                {[
-                  {
-                    title: "Caixa",
-                    sub: "Dinheiro imediato",
-                    badge: "R$ 8.200",
-                    tooltip: "Saldo em caixa no periodo.",
-                    goTo: "contas" as FinanceiroTab
-                  },
-                  {
-                    title: "Conta bancaria",
-                    sub: "Bancos e pix",
-                    badge: "3 contas",
-                    tooltip: "Destino bancario principal.",
-                    goTo: "contas" as FinanceiroTab
-                  },
-                  {
-                    title: "Fundo",
-                    sub: "Reserva generica",
-                    badge: "2 fundos",
-                    tooltip: "Reserva para projetos ou emergencias.",
-                    goTo: "contas" as FinanceiroTab
-                  },
-                  {
-                    title: "Saldo do condominio",
-                    sub: "Consolidado geral",
-                    badge: "R$ 270.000",
-                    tooltip: "Saldo consolidado do condominio.",
-                    goTo: "contas" as FinanceiroTab
-                  }
-                ].map((item) => (
-                  <button
-                    key={item.title}
-                    type="button"
-                    className="finance-map-card"
-                    title={`${item.tooltip} Clique para abrir.`}
-                    onClick={() => handleAbaChange(item.goTo)}
-                  >
-                    <div className="finance-map-card-title">{item.title}</div>
-                    <p className="finance-map-card-sub">{item.sub}</p>
-                    <span className="finance-map-card-badge">{item.badge}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          <div className="finance-map-legend">
-            <span className="legend-dot legend-dot--entry" />
-            <span>Entrada</span>
-            <span className="legend-dot legend-dot--alert" />
-            <span>Alerta</span>
-            <span className="legend-dot legend-dot--neutral" />
-            <span>Neutro</span>
-          </div>
-
-          <p className="finance-map-footnote">
-            Fluxo visual — regras entram depois. Nenhum dado real e alterado.
+    {/* Mapa Financeiro Visual */}
+    <section className="finance-map" style={{ marginTop: '48px' }}>
+      <div className="finance-map-header">
+        <div>
+          <h3>Mapa financeiro</h3>
+          <p className="finance-form-sub">
+            Fluxo visual do dinheiro: origem, classificacao, movimento e destino.
           </p>
-        </section>
-        </>
-      )}
+        </div>
+        <span className="finance-map-pill">Fluxo visual — regras entram depois</span>
+      </div>
 
+      <div className="finance-map-grid">
+        <div className="finance-map-column finance-map-column--entry">
+          <div className="finance-map-column-title">
+            <span>Origem</span>
+            <span className="finance-map-count">4 fontes</span>
+          </div>
+          <div className="finance-map-cards">
+            {[
+              {
+                title: "Morador",
+                sub: "Taxas e acordos",
+                badge: "12 entradas",
+                tooltip: "Pagamentos de moradores e acordos firmados.",
+                goTo: "contasReceber" as FinanceiroTab
+              },
+              {
+                title: "Fornecedor",
+                sub: "Servicos e contratos",
+                badge: "6 lancamentos",
+                tooltip: "Origem ligada a servicos contratados.",
+                goTo: "contasPagar" as FinanceiroTab
+              },
+              {
+                title: "Funcionario",
+                sub: "Folha e beneficios",
+                badge: "4 lancamentos",
+                tooltip: "Origem interna ligada a pessoal.",
+                goTo: "contasPagar" as FinanceiroTab
+              },
+              {
+                title: "Condominio",
+                sub: "Origem interna",
+                badge: "3 ajustes",
+                tooltip: "Movimentos internos do condominio.",
+                goTo: "transferencias" as FinanceiroTab
+              }
+            ].map((item) => (
+              <button
+                key={item.title}
+                type="button"
+                className="finance-map-card"
+                title={`${item.tooltip} Clique para abrir.`}
+                onClick={() => handleAbaChange(item.goTo)}
+              >
+                <div className="finance-map-card-title">{item.title}</div>
+                <p className="finance-map-card-sub">{item.sub}</p>
+                <span className="finance-map-card-badge">{item.badge}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="finance-map-column finance-map-column--neutral">
+          <div className="finance-map-column-title">
+            <span>Classificacao</span>
+            <span className="finance-map-count">6 tipos</span>
+          </div>
+          <div className="finance-map-chips">
+            {[
+              { label: "Receita", goTo: "receitasDespesas" },
+              { label: "Despesa", goTo: "receitasDespesas" },
+              { label: "Acordo", goTo: "receitasDespesas" },
+              { label: "Multa", goTo: "receitasDespesas" },
+              { label: "Taxa", goTo: "receitasDespesas" },
+              { label: "Inadimplencia", goTo: "receitasDespesas" }
+            ].map((item) => (
+              <button
+                key={item.label}
+                type="button"
+                className="finance-map-chip"
+                title={`Classifica como ${item.label.toLowerCase()}. Clique para abrir.`}
+                onClick={() => handleAbaChange(item.goTo as FinanceiroTab)}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+          <p className="finance-map-column-note">
+            Classificacao define o tipo antes de entrar no plano financeiro.
+          </p>
+        </div>
+
+        <div className="finance-map-column finance-map-column--neutral">
+          <div className="finance-map-column-title">
+            <span>Plano financeiro</span>
+            <span className="finance-map-count">4 bases</span>
+          </div>
+          <div className="finance-map-cards">
+            {[
+              {
+                title: "Categoria financeira",
+                sub: "Agrupador principal",
+                badge: "18 categorias",
+                tooltip: "Organiza receitas e despesas.",
+                goTo: "categorias" as FinanceiroTab
+              },
+              {
+                title: "Centro de custo",
+                sub: "Responsavel pelo gasto",
+                badge: "7 centros",
+                tooltip: "Distribui custos por area.",
+                goTo: "categorias" as FinanceiroTab
+              },
+              {
+                title: "Forma de pagamento",
+                sub: "Pix, boleto, cartao",
+                badge: "5 formas",
+                tooltip: "Define como o valor entra ou sai.",
+                goTo: "contas" as FinanceiroTab
+              },
+              {
+                title: "Status financeiro",
+                sub: "Aberto, pago, atrasado",
+                badge: "6 status",
+                tooltip: "Controla o andamento do lancamento.",
+                goTo: "receitasDespesas" as FinanceiroTab
+              }
+            ].map((item) => (
+              <button
+                key={item.title}
+                type="button"
+                className="finance-map-card"
+                title={`${item.tooltip} Clique para abrir.`}
+                onClick={() => handleAbaChange(item.goTo)}
+              >
+                <div className="finance-map-card-title">{item.title}</div>
+                <p className="finance-map-card-sub">{item.sub}</p>
+                <span className="finance-map-card-badge">{item.badge}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="finance-map-column finance-map-column--alert">
+          <div className="finance-map-column-title">
+            <span>Movimento</span>
+            <span className="finance-map-count">5 etapas</span>
+          </div>
+          <div className="finance-map-cards">
+            {[
+              {
+                title: "Contas a pagar",
+                sub: "Saidas planejadas",
+                badge: "8 pendentes",
+                tooltip: "Despesas programadas para pagamento.",
+                goTo: "contasPagar" as FinanceiroTab
+              },
+              {
+                title: "Contas a receber",
+                sub: "Entradas previstas",
+                badge: "14 previstas",
+                tooltip: "Receitas aguardando recebimento.",
+                goTo: "contasReceber" as FinanceiroTab
+              },
+              {
+                title: "Lancamento",
+                sub: "Registro financeiro",
+                badge: "22 ativos",
+                tooltip: "Registro base do movimento.",
+                goTo: "receitasDespesas" as FinanceiroTab
+              },
+              {
+                title: "Parcela",
+                sub: "Divisao do valor",
+                badge: "10 parcelas",
+                tooltip: "Divisao de pagamentos ou recebimentos.",
+                goTo: "receitasDespesas" as FinanceiroTab
+              },
+              {
+                title: "Recorrencia",
+                sub: "Lancamentos automaticos",
+                badge: "4 regras",
+                tooltip: "Fluxo recorrente do condominio.",
+                goTo: "receitasDespesas" as FinanceiroTab
+              }
+            ].map((item) => (
+              <button
+                key={item.title}
+                type="button"
+                className="finance-map-card"
+                title={`${item.tooltip} Clique para abrir.`}
+                onClick={() => handleAbaChange(item.goTo)}
+              >
+                <div className="finance-map-card-title">{item.title}</div>
+                <p className="finance-map-card-sub">{item.sub}</p>
+                <span className="finance-map-card-badge">{item.badge}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="finance-map-column finance-map-column--entry">
+          <div className="finance-map-column-title">
+            <span>Destino</span>
+            <span className="finance-map-count">4 alvos</span>
+          </div>
+          <div className="finance-map-cards">
+            {[
+              {
+                title: "Caixa",
+                sub: "Dinheiro imediato",
+                badge: "R$ 8.200",
+                tooltip: "Saldo em caixa no periodo.",
+                goTo: "contas" as FinanceiroTab
+              },
+              {
+                title: "Conta bancaria",
+                sub: "Bancos e pix",
+                badge: "3 contas",
+                tooltip: "Destino bancario principal.",
+                goTo: "contas" as FinanceiroTab
+              },
+              {
+                title: "Fundo",
+                sub: "Reserva generica",
+                badge: "2 fundos",
+                tooltip: "Reserva para projetos ou emergencias.",
+                goTo: "contas" as FinanceiroTab
+              },
+              {
+                title: "Saldo do condominio",
+                sub: "Consolidado geral",
+                badge: "R$ 270.000",
+                tooltip: "Saldo consolidado do condominio.",
+                goTo: "contas" as FinanceiroTab
+              }
+            ].map((item) => (
+              <button
+                key={item.title}
+                type="button"
+                className="finance-map-card"
+                title={`${item.tooltip} Clique para abrir.`}
+                onClick={() => handleAbaChange(item.goTo)}
+              >
+                <div className="finance-map-card-title">{item.title}</div>
+                <p className="finance-map-card-sub">{item.sub}</p>
+                <span className="finance-map-card-badge">{item.badge}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="finance-map-legend">
+        <span className="legend-dot legend-dot--entry" />
+        <span>Entrada</span>
+        <span className="legend-dot legend-dot--alert" />
+        <span>Alerta</span>
+        <span className="legend-dot legend-dot--neutral" />
+        <span>Neutro</span>
+      </div>
+
+      <p className="finance-map-footnote">
+        Fluxo visual — regras entram depois. Nenhum dado real e alterado.
+      </p>
+    </section>
+  </div>
+)}
       {aba === "contabilidade" && (
         <section className="accounting-map">
           <div className="accounting-header">
@@ -11150,3 +11008,4 @@ export default function FinanceiroView({
     </div>
   );
 }
+

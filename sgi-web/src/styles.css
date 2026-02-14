@@ -1,4 +1,6 @@
-@import "tailwindcss";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 * {
   box-sizing: border-box;
@@ -86,7 +88,7 @@ body {
 }
 
 .app-header-button {
-  border-radius: 999px;
+  border-radius: 300px;
   min-height: 34px;
   padding: 0 14px;
   border: 1px solid rgba(15, 26, 51, 0.12);
@@ -146,11 +148,11 @@ body {
   width: 52px;
   height: 52px;
   border-radius: 16px;
-  background: linear-gradient(135deg, #4f46e5, #6366f1);
+  background: linear-gradient(135deg, #2018c0, #6366f1);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #eef2ff;
+  color: #8899cf;
   font-weight: 800;
   font-size: 20px;
   margin-bottom: 20px;
@@ -4857,16 +4859,12 @@ button:focus-visible {
   padding: 10px 12px;
 }
 
-.quick-help-card > summary {
-  cursor: pointer;
-  list-style: none;
+.quick-help-title {
+  margin: 0;
   font-size: 13px;
   font-weight: 700;
   color: #1f3b73;
-}
-
-.quick-help-card > summary::-webkit-details-marker {
-  display: none;
+  line-height: 1.2;
 }
 
 .quick-help-list {
@@ -4923,6 +4921,151 @@ button:focus-visible {
   gap: 14px;
   align-items: start;
   flex-wrap: wrap;
+}
+
+.dashboard-panels--intelligence {
+  margin-top: 14px;
+}
+
+.dashboard-intelligence-card {
+  flex: 1 1 620px;
+  min-width: 320px;
+}
+
+.dashboard-strategy-card {
+  flex: 0 1 420px;
+  min-width: 280px;
+}
+
+.dashboard-intelligence-grid {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 10px;
+}
+
+.dashboard-intelligence-item {
+  border: 1px solid var(--divider);
+  border-radius: 12px;
+  background: #edf5ff;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dashboard-intelligence-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #5b6f8e;
+}
+
+.dashboard-intelligence-item strong {
+  font-size: 22px;
+  color: #10213f;
+  line-height: 1.1;
+}
+
+.dashboard-trend {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.dashboard-trend--up {
+  color: #0f766e;
+}
+
+.dashboard-trend--down {
+  color: #b91c1c;
+}
+
+.dashboard-trend--neutral {
+  color: #6b7280;
+}
+
+.dashboard-projection {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border: 1px solid var(--divider);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: #edf5ff;
+}
+
+.dashboard-projection span {
+  font-size: 12px;
+  font-weight: 700;
+  color: #5b6f8e;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.dashboard-projection strong {
+  font-size: 24px;
+  color: #10213f;
+  line-height: 1.1;
+}
+
+.dashboard-projection small {
+  font-size: 12px;
+  color: #4b6287;
+}
+
+.dashboard-strategy-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dashboard-strategy-item {
+  border-radius: 10px;
+  border: 1px solid #d0deef;
+  background: #eef5ff;
+  padding: 9px 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.dashboard-strategy-item strong {
+  font-size: 13px;
+  color: #17325f;
+}
+
+.dashboard-strategy-item span {
+  font-size: 12px;
+  color: #516580;
+}
+
+.dashboard-strategy-item--ok {
+  border-color: #8ad2be;
+  background: #ecfff6;
+}
+
+.dashboard-strategy-item--atencao {
+  border-color: #f0c97f;
+  background: #fff9ed;
+}
+
+.dashboard-strategy-item--critico {
+  border-color: #f2a7a7;
+  background: #fff1f1;
+}
+
+.dashboard-strategy-item--actionable {
+  cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.14s ease;
+}
+
+.dashboard-strategy-item--actionable:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 14px rgba(63, 127, 216, 0.15);
 }
 
 .dashboard-panel {
@@ -6042,4 +6185,339 @@ button:focus-visible {
   .finance-table-scroll--wide > .table {
     min-width: 760px;
   }
+}
+/* ============================
+   SWA ENTERPRISE LIGHT 2026
+   ============================ */
+
+:root {
+  --bg-main: #f4f6f9;
+  --bg-surface: #ffffff;
+  --bg-soft: #f8fafc;
+
+  --primary: #1e3a8a;
+  --primary-soft: #dbeafe;
+
+  --text-main: #0f172a;
+  --text-muted: #64748b;
+
+  --border-soft: #e5e7eb;
+  --shadow-soft: 0 8px 24px rgba(15, 23, 42, 0.04);
+}
+
+/* ===== Layout base ===== */
+
+body {
+  background: var(--bg-main);
+  color: var(--text-main);
+  font-family: Inter, system-ui, sans-serif;
+}
+
+/* ===== Cards viram painéis suaves ===== */
+
+.finance-card,
+.finance-form-card,
+.finance-table-card,
+.dashboard-card,
+.unit-card {
+  background: var(--bg-surface);
+  border: none;
+  border-radius: 16px;
+  box-shadow: var(--shadow-soft);
+  padding: 24px;
+}
+
+/* Remove visual de caixa dentro de caixa */
+
+.finance-card-grid,
+.chamados-summary-grid,
+.unit-summary-grid,
+.dashboard-grid {
+  gap: 24px;
+}
+
+/* ===== Títulos fortes ===== */
+
+h1, h2, h3 {
+  font-weight: 600;
+  letter-spacing: -0.5px;
+}
+
+/* ===== Sidebar Moderna ===== */
+
+.sidebar {
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  border-right: 1px solid var(--border-soft);
+}
+
+.sidebar-section-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-muted);
+  margin: 18px 0 8px;
+}
+
+.sidebar-item {
+  border-radius: 12px;
+  transition: all 0.2s ease;
+}
+
+.sidebar-item:hover {
+  background: var(--primary-soft);
+}
+
+.sidebar-item--active {
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-weight: 600;
+}
+
+/* ===== Tabelas elegantes ===== */
+
+.table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.table th {
+  text-align: left;
+  font-size: 12px;
+  color: var(--text-muted);
+  padding-bottom: 12px;
+}
+
+.table td {
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.table tr:hover {
+  background: #f9fafb;
+}
+
+/* ===== Botões modernos ===== */
+
+button,
+.action-primary,
+.button-secondary {
+  border-radius: 10px;
+  border: none;
+  padding: 8px 14px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+button:hover {
+  opacity: 0.9;
+}
+
+/* ===== Alertas elegantes ===== */
+
+.unit-alert {
+  background: #fef2f2;
+  border-left: 4px solid #ef4444;
+  border-radius: 12px;
+  padding: 16px;
+}
+/* ===== BASE LIMPA DO SISTEMA ===== */
+
+body {
+  background-color: #f5f7fa; /* fundo neutro elegante */
+}
+
+/* Containers principais */
+.main-content,
+.page-container {
+  padding: 24px;
+}
+
+/* Cards e blocos */
+.card,
+.section-box {
+  background: #ffffff;
+  border-radius: 14px;
+  padding: 20px;
+  border: 1px solid #e6e9ef; /* quase invisível */
+  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  margin-bottom: 24px;
+}
+
+/* Tabelas */
+table {
+  border-collapse: collapse;
+  background: #ffffff;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+table thead {
+  background: #f1f4f8;
+}
+
+table th {
+  font-weight: 600;
+  color: #475569;
+  border-bottom: 1px solid #e6e9ef;
+}
+
+table td {
+  border-bottom: 1px solid #f0f2f5;
+  padding: 12px;
+}
+
+/* Remove azul exagerado */
+* {
+  outline-color: transparent !important;
+}
+/* REMOVE BURACOS ENTRE SEÇÕES */
+.finance-page {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.finance-summary-grid,
+.finance-dashboard-grid,
+.finance-charts-grid {
+  display: grid;
+  gap: 24px;
+  align-items: stretch;
+}
+
+/* FORÇA CARDS A TEREM ALTURA CONSISTENTE */
+.finance-summary-card,
+.finance-upload-card,
+.finance-unload-card,
+.finance-map-card {
+  height: 100%;
+}
+
+/* REMOVE MARGENS EXCESSIVAS */
+.finance-page > div {
+  margin-bottom: 0 !important;
+}
+/* REMOVE BURACOS ENTRE SEÇÕES */
+.finance-page {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.finance-summary-grid,
+.finance-dashboard-grid,
+.finance-charts-grid {
+  display: grid;
+  gap: 24px;
+  align-items: stretch;
+}
+
+/* FORÇA CARDS A TEREM ALTURA CONSISTENTE */
+.finance-summary-card,
+.finance-upload-card,
+.finance-unload-card,
+.finance-map-card {
+  height: 100%;
+}
+
+/* REMOVE MARGENS EXCESSIVAS */
+.finance-page > div {
+  margin-bottom: 0 !important;
+}
+/* ===== CORREÇÃO DE BURACOS E QUEBRAS ===== */
+
+body {
+  background: #f4f6f9 !important;
+}
+
+.main-content,
+.page-container,
+.finance-page {
+  padding: 20px !important;
+  margin: 0 !important;
+  background: transparent !important;
+}
+
+.finance-summary-grid,
+.finance-panel,
+.finance-card,
+.finance-upload-card {
+  margin-bottom: 20px !important;
+}
+
+.finance-page > div {
+  margin-bottom: 20px !important;
+}
+
+.finance-page > div:last-child {
+  margin-bottom: 0 !important;
+}
+/* ===== AJUSTE FINO VISUAL EXECUTIVO ===== */
+
+body {
+  background: #f6f8fb !important;
+}
+
+/* Cards principais */
+.finance-summary-card,
+.finance-panel,
+.finance-upload-card,
+.finance-card {
+  background: #ffffff !important;
+  border: 1px solid #e6ebf2 !important;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04) !important;
+  border-radius: 14px !important;
+}
+
+/* Remove azul exagerado das bordas */
+.finance-summary-card,
+.finance-panel {
+  border-color: #e6ebf2 !important;
+}
+
+/* Títulos mais fortes */
+.finance-summary-label,
+.finance-panel h3 {
+  color: #334155 !important;
+}
+
+/* Valores principais */
+.finance-summary-value {
+  color: #0f172a !important;
+}
+
+/* Cards laterais (alertas) */
+.finance-alert-card {
+  background: #fff !important;
+  border: 1px solid #f1f5f9 !important;
+}
+/* ===== CORREÇÃO DO BURACO ENTRE BLOCOS ===== */
+
+.finance-page {
+  padding-bottom: 40px !important;
+}
+
+.finance-summary-grid {
+  margin-bottom: 16px !important;
+  gap: 16px !important;
+}
+
+.finance-upload-card,
+.finance-panel,
+.finance-card {
+  margin-bottom: 16px !important;
+}
+
+.finance-page > div {
+  margin-bottom: 16px !important;
+}
+/* ===== REMOVE ALTURAS FORÇADAS ===== */
+
+.finance-page,
+.finance-panel,
+.finance-summary-grid,
+.page-container,
+.main-content {
+  min-height: auto !important;
+  height: auto !important;
 }
